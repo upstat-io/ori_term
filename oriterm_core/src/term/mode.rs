@@ -48,6 +48,8 @@ bitflags! {
         const KITTY_KEYBOARD     = 1 << 16;
         /// ATT610 — cursor blinking.
         const CURSOR_BLINKING    = 1 << 17;
+        /// LNM — linefeed/new line mode (LF acts as CR+LF).
+        const LINE_FEED_NEW_LINE = 1 << 18;
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()
                         | Self::MOUSE_DRAG.bits()

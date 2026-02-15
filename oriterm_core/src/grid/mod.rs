@@ -122,6 +122,11 @@ impl Grid {
         &self.scrollback
     }
 
+    /// The scroll region as a half-open range (top inclusive, bottom exclusive).
+    pub fn scroll_region(&self) -> &Range<usize> {
+        &self.scroll_region
+    }
+
     /// Immutable reference to the dirty tracker.
     pub fn dirty(&self) -> &DirtyTracker {
         &self.dirty

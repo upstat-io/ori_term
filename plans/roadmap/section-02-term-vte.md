@@ -25,7 +25,7 @@ sections:
     status: complete
   - id: "2.7"
     title: "VTE Handler — CSI Sequences"
-    status: not-started
+    status: complete
   - id: "2.8"
     title: "VTE Handler — SGR (Select Graphic Rendition)"
     status: not-started
@@ -269,63 +269,63 @@ Cursor movement, erase, scroll, insert/delete, device status, mode setting.
 
 **File:** `oriterm_core/src/term/handler.rs` (continued)
 
-- [ ] Cursor movement CSIs:
-  - [ ] `CUU` (CSI n A) — `move_up(n)`
-  - [ ] `CUD` (CSI n B) — `move_down(n)`
-  - [ ] `CUF` (CSI n C) — `move_forward(n)`
-  - [ ] `CUB` (CSI n D) — `move_backward(n)`
-  - [ ] `CNL` (CSI n E) — move down n, column 0
-  - [ ] `CPL` (CSI n F) — move up n, column 0
-  - [ ] `CHA` (CSI n G) — `move_to_column(n-1)` (1-based)
-  - [ ] `CUP` (CSI n;m H) — `move_to(n-1, m-1)` (1-based)
-  - [ ] `VPA` (CSI n d) — `move_to_line(n-1)` (1-based)
-  - [ ] `HVP` (CSI n;m f) — same as CUP
-- [ ] Erase CSIs:
-  - [ ] `ED` (CSI n J) — `erase_display(mode)`
-  - [ ] `EL` (CSI n K) — `erase_line(mode)`
-  - [ ] `ECH` (CSI n X) — `erase_chars(n)`
-- [ ] Insert/Delete CSIs:
-  - [ ] `ICH` (CSI n @) — `insert_blank(n)`
-  - [ ] `DCH` (CSI n P) — `delete_chars(n)`
-  - [ ] `IL` (CSI n L) — `insert_lines(n)`
-  - [ ] `DL` (CSI n M) — `delete_lines(n)`
-- [ ] Scroll CSIs:
-  - [ ] `SU` (CSI n S) — `scroll_up(n)`
-  - [ ] `SD` (CSI n T) — `scroll_down(n)`
-- [ ] Tab CSIs:
-  - [ ] `CHT` (CSI n I) — tab forward n times
-  - [ ] `CBT` (CSI n Z) — tab backward n times
-  - [ ] `TBC` (CSI n g) — clear tab stops
-- [ ] Mode CSIs:
-  - [ ] `SM` (CSI n h) — set ANSI mode
-  - [ ] `RM` (CSI n l) — reset ANSI mode
-  - [ ] `DECSET` (CSI ? n h) — set DEC private mode
-  - [ ] `DECRST` (CSI ? n l) — reset DEC private mode
-  - [ ] Supported DECSET/DECRST modes: 1 (DECCKM), 6 (DECOM), 7 (DECAWM), 12 (cursor blinking), 25 (DECTCEM), 47/1047/1049 (alt screen), 1000/1002/1003/1005/1006 (mouse), 1004 (focus), 2004 (bracketed paste), 2026 (sync output)
-- [ ] Device status:
-  - [ ] `DSR` (CSI 6 n) — report cursor position (CPR response)
-  - [ ] `DA` (CSI c) — primary device attributes response
-  - [ ] `DA2` (CSI > c) — secondary device attributes response
-- [ ] Scroll region:
-  - [ ] `DECSTBM` (CSI n;m r) — `set_scroll_region(n-1, m)`
-- [ ] `DECSC` (CSI s when not in alt screen) — save cursor
-- [ ] `DECRC` (CSI u when not in alt screen) — restore cursor
-- [ ] `DECRPM` (CSI ? n $ p) — report mode (respond if mode is set/reset)
-- [ ] **Tests** (feed CSI sequences through processor):
-  - [ ] `ESC[5A` moves cursor up 5
-  - [ ] `ESC[10;20H` moves cursor to line 9, column 19 (0-based)
-  - [ ] `ESC[2J` clears screen
-  - [ ] `ESC[K` clears to end of line
-  - [ ] `ESC[5@` inserts 5 blanks
-  - [ ] `ESC[3P` deletes 3 chars
-  - [ ] `ESC[2L` inserts 2 lines
-  - [ ] `ESC[3M` deletes 3 lines
-  - [ ] `ESC[?25l` hides cursor (DECTCEM)
-  - [ ] `ESC[?25h` shows cursor
-  - [ ] `ESC[?1049h` switches to alt screen
-  - [ ] `ESC[?1049l` switches back to primary
-  - [ ] `ESC[3;20r` sets scroll region lines 3–20
-  - [ ] `ESC[6n` produces cursor position report (`ESC[line;colR`)
+- [x] Cursor movement CSIs:
+  - [x] `CUU` (CSI n A) — `move_up(n)`
+  - [x] `CUD` (CSI n B) — `move_down(n)`
+  - [x] `CUF` (CSI n C) — `move_forward(n)`
+  - [x] `CUB` (CSI n D) — `move_backward(n)`
+  - [x] `CNL` (CSI n E) — move down n, column 0
+  - [x] `CPL` (CSI n F) — move up n, column 0
+  - [x] `CHA` (CSI n G) — `move_to_column(n-1)` (1-based)
+  - [x] `CUP` (CSI n;m H) — `move_to(n-1, m-1)` (1-based)
+  - [x] `VPA` (CSI n d) — `move_to_line(n-1)` (1-based)
+  - [x] `HVP` (CSI n;m f) — same as CUP
+- [x] Erase CSIs:
+  - [x] `ED` (CSI n J) — `erase_display(mode)`
+  - [x] `EL` (CSI n K) — `erase_line(mode)`
+  - [x] `ECH` (CSI n X) — `erase_chars(n)`
+- [x] Insert/Delete CSIs:
+  - [x] `ICH` (CSI n @) — `insert_blank(n)`
+  - [x] `DCH` (CSI n P) — `delete_chars(n)`
+  - [x] `IL` (CSI n L) — `insert_lines(n)`
+  - [x] `DL` (CSI n M) — `delete_lines(n)`
+- [x] Scroll CSIs:
+  - [x] `SU` (CSI n S) — `scroll_up(n)`
+  - [x] `SD` (CSI n T) — `scroll_down(n)`
+- [x] Tab CSIs:
+  - [x] `CHT` (CSI n I) — tab forward n times
+  - [x] `CBT` (CSI n Z) — tab backward n times
+  - [x] `TBC` (CSI n g) — clear tab stops
+- [x] Mode CSIs:
+  - [x] `SM` (CSI n h) — set ANSI mode
+  - [x] `RM` (CSI n l) — reset ANSI mode
+  - [x] `DECSET` (CSI ? n h) — set DEC private mode
+  - [x] `DECRST` (CSI ? n l) — reset DEC private mode
+  - [x] Supported DECSET/DECRST modes: 1 (DECCKM), 6 (DECOM), 7 (DECAWM), 12 (cursor blinking), 25 (DECTCEM), 47/1047/1049 (alt screen), 1000/1002/1003/1005/1006 (mouse), 1004 (focus), 2004 (bracketed paste), 2026 (sync output)
+- [x] Device status:
+  - [x] `DSR` (CSI 6 n) — report cursor position (CPR response)
+  - [x] `DA` (CSI c) — primary device attributes response
+  - [x] `DA2` (CSI > c) — secondary device attributes response
+- [x] Scroll region:
+  - [x] `DECSTBM` (CSI n;m r) — `set_scroll_region(n-1, m)`
+- [x] `DECSC` (CSI s when not in alt screen) — save cursor
+- [x] `DECRC` (CSI u when not in alt screen) — restore cursor
+- [x] `DECRPM` (CSI ? n $ p) — report mode (respond if mode is set/reset)
+- [x] **Tests** (feed CSI sequences through processor):
+  - [x] `ESC[5A` moves cursor up 5
+  - [x] `ESC[10;20H` moves cursor to line 9, column 19 (0-based)
+  - [x] `ESC[2J` clears screen
+  - [x] `ESC[K` clears to end of line
+  - [x] `ESC[5@` inserts 5 blanks
+  - [x] `ESC[3P` deletes 3 chars
+  - [x] `ESC[2L` inserts 2 lines
+  - [x] `ESC[3M` deletes 3 lines
+  - [x] `ESC[?25l` hides cursor (DECTCEM)
+  - [x] `ESC[?25h` shows cursor
+  - [x] `ESC[?1049h` switches to alt screen
+  - [x] `ESC[?1049l` switches back to primary
+  - [x] `ESC[3;20r` sets scroll region lines 3–20
+  - [x] `ESC[6n` produces cursor position report (`ESC[line;colR`)
 
 ---
 
