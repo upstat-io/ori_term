@@ -5,7 +5,6 @@
 //! framework — tests use `VoidListener`, the real app routes events
 //! through winit's event loop proxy.
 
-use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
 
@@ -83,15 +82,6 @@ impl fmt::Debug for Event {
 pub trait EventListener: Send + 'static {
     /// Handle a terminal event. Default: no-op.
     fn send_event(&self, _event: Event) {}
-}
-
-/// Writes response bytes back to the PTY.
-///
-/// VTE handler methods that need to respond (DA, DSR, DECRPM, OSC queries)
-/// call `Notify::notify` to send bytes without going through the event system.
-pub trait Notify: Send {
-    /// Write response bytes to the PTY.
-    fn notify<B: Into<Cow<'static, [u8]>>>(&self, bytes: B);
 }
 
 /// No-op event listener for tests and headless operation.

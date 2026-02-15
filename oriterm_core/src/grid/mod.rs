@@ -161,15 +161,15 @@ impl Index<Line> for Grid {
     type Output = Row;
 
     fn index(&self, line: Line) -> &Row {
-        &self.rows[usize::try_from(line.0)
-            .expect("negative Line index used on Grid without scrollback")]
+        debug_assert!(line.0 >= 0, "negative Line index on Grid (got {})", line.0);
+        &self.rows[line.0 as usize]
     }
 }
 
 impl IndexMut<Line> for Grid {
     fn index_mut(&mut self, line: Line) -> &mut Row {
-        &mut self.rows[usize::try_from(line.0)
-            .expect("negative Line index used on Grid without scrollback")]
+        debug_assert!(line.0 >= 0, "negative Line index on Grid (got {})", line.0);
+        &mut self.rows[line.0 as usize]
     }
 }
 
