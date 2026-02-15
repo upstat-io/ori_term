@@ -22,7 +22,7 @@ fn grid_returns_primary_by_default() {
     // Write to primary grid.
     term.grid_mut().put_char('A');
     assert_eq!(term.grid()[crate::index::Line(0)][crate::index::Column(0)].ch, 'A');
-    assert!(!term.active_is_alt);
+    assert!(!term.mode().contains(TermMode::ALT_SCREEN));
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn swap_alt_switches_to_alt_grid_and_back() {
 
     // Switch to alt screen.
     term.swap_alt();
-    assert!(term.active_is_alt);
+    assert!(term.mode().contains(TermMode::ALT_SCREEN));
 
     // Alt grid should be clean.
     assert_eq!(term.grid()[crate::index::Line(0)][crate::index::Column(0)].ch, ' ');
@@ -43,7 +43,7 @@ fn swap_alt_switches_to_alt_grid_and_back() {
 
     // Switch back to primary.
     term.swap_alt();
-    assert!(!term.active_is_alt);
+    assert!(!term.mode().contains(TermMode::ALT_SCREEN));
 
     // Primary still has 'A'.
     assert_eq!(term.grid()[crate::index::Line(0)][crate::index::Column(0)].ch, 'A');

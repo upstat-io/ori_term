@@ -45,7 +45,6 @@ impl<T: EventListener> Term<T> {
                 if !self.mode.contains(TermMode::ALT_SCREEN) {
                     self.swap_alt();
                 }
-                self.mode.insert(TermMode::ALT_SCREEN);
             }
             NamedPrivateMode::BracketedPaste => self.mode.insert(TermMode::BRACKETED_PASTE),
             NamedPrivateMode::SyncUpdate => self.mode.insert(TermMode::SYNC_UPDATE),
@@ -89,7 +88,6 @@ impl<T: EventListener> Term<T> {
                 if self.mode.contains(TermMode::ALT_SCREEN) {
                     self.swap_alt();
                 }
-                self.mode.remove(TermMode::ALT_SCREEN);
             }
             NamedPrivateMode::BracketedPaste => self.mode.remove(TermMode::BRACKETED_PASTE),
             NamedPrivateMode::SyncUpdate => self.mode.remove(TermMode::SYNC_UPDATE),
