@@ -7,6 +7,7 @@
 use vte::ansi::Color;
 
 use crate::cell::CellFlags;
+use crate::color::palette::dim_rgb;
 use crate::color::{Palette, Rgb};
 use crate::grid::cursor::CursorShape;
 use crate::index::Column;
@@ -126,15 +127,6 @@ pub(super) fn apply_inverse(fg: Rgb, bg: Rgb, flags: CellFlags) -> (Rgb, Rgb) {
         (bg, fg)
     } else {
         (fg, bg)
-    }
-}
-
-/// Dim an RGB color to 2/3 brightness.
-fn dim_rgb(c: Rgb) -> Rgb {
-    Rgb {
-        r: (c.r as u16 * 2 / 3) as u8,
-        g: (c.g as u16 * 2 / 3) as u8,
-        b: (c.b as u16 * 2 / 3) as u8,
     }
 }
 

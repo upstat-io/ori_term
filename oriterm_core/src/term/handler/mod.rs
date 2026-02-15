@@ -36,11 +36,13 @@ impl<T: EventListener> Handler for Term<T> {
     #[inline]
     fn input(&mut self, c: char) {
         let c = self.charset.translate(c);
-        if self.mode.contains(TermMode::INSERT) {
+        let insert = self.mode.contains(TermMode::INSERT);
+        let grid = self.grid_mut();
+        if insert {
             let width = UnicodeWidthChar::width(c).unwrap_or(1);
-            self.grid_mut().insert_blank(width);
+            grid.insert_blank(width);
         }
-        self.grid_mut().put_char(c);
+        grid.put_char(c);
     }
 
     /// Move cursor left by one column, clearing the wrap-pending state.

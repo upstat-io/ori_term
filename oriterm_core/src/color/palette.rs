@@ -131,18 +131,18 @@ fn build_default_palette() -> [Rgb; NUM_COLORS] {
 
     // Dim variants (2/3 brightness of ANSI 0–7).
     for i in 0..8 {
-        colors[NamedColor::DimBlack as usize + i] = dim(colors[i]);
+        colors[NamedColor::DimBlack as usize + i] = dim_rgb(colors[i]);
     }
 
     // Bright/dim foreground.
     colors[NamedColor::BrightForeground as usize] = DEFAULT_FG;
-    colors[NamedColor::DimForeground as usize] = dim(DEFAULT_FG);
+    colors[NamedColor::DimForeground as usize] = dim_rgb(DEFAULT_FG);
 
     colors
 }
 
 /// Reduce a color to 2/3 brightness for dim variants.
-fn dim(c: Rgb) -> Rgb {
+pub(crate) fn dim_rgb(c: Rgb) -> Rgb {
     Rgb {
         r: (c.r as u16 * 2 / 3) as u8,
         g: (c.g as u16 * 2 / 3) as u8,

@@ -52,8 +52,9 @@ impl Grid {
         if is_full_screen {
             // Keep user's scrollback view stable when new content arrives.
             if self.display_offset > 0 {
-                self.display_offset = (self.display_offset + count)
-                    .min(self.scrollback.max_scrollback());
+                let max_after_push =
+                    (self.scrollback.len() + count).min(self.scrollback.max_scrollback());
+                self.display_offset = (self.display_offset + count).min(max_after_push);
             }
 
             for i in 0..count {

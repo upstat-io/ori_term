@@ -157,19 +157,19 @@ impl<T: EventListener> Term<T> {
 
         let mut cells = Vec::with_capacity(lines * cols);
 
-        for vis_line in 0..lines {
-            let row = if offset > 0 && vis_line < offset {
-                // This visible line maps into scrollback.
-                let sb_idx = offset - 1 - vis_line;
-                grid.scrollback().get(sb_idx)
-            } else {
-                None
-            };
+        debug_assert!(
+            offset <= grid.scrollback().len(),
+            "display_offset ({offset}) must be <= scrollback.len() ({})",
+            grid.scrollback().len(),
+        );
 
-            // If display_offset > 0, the top `offset` lines come from scrollback
-            // and the remaining come from the grid shifted down.
-            let row = if let Some(sb_row) = row {
-                sb_row
+        for vis_line in 0..lines {
+            // Top `offset` lines come from scrollback; the rest from the grid.
+            let row = if vis_line < offset {
+                let sb_idx = offset - 1 - vis_line;
+                grid.scrollback()
+                    .get(sb_idx)
+                    .expect("display_offset must be <= scrollback.len()")
             } else {
                 let grid_line = vis_line - offset;
                 &grid[Line(grid_line as i32)]
@@ -236,14 +236,17 @@ impl<T: EventListener> Term<T> {
     fn collect_damage(&self, grid: &Grid, lines: usize, cols: usize) -> (bool, Vec<DamageLine>) {
         let dirty = grid.dirty();
 
-        // Check for all-dirty fast path.
-        let mut all_dirty = true;
-        let mut any_dirty = false;
-        let mut damage = Vec::new();
+        // Fast path: tracker explicitly flagged all-dirty (resize, alt swap).
+        // Avoids building a Vec that would be immediately discarded.
+        if dirty.is_all_dirty() {
+            return (true, Vec::new());
+        }
 
+        // Slow path: check individual bits (handles mark_range covering all lines).
+        let mut all_dirty = true;
+        let mut damage = Vec::new();
         for line in 0..lines {
             if dirty.is_dirty(line) {
-                any_dirty = true;
                 damage.push(DamageLine {
                     line,
                     left: Column(0),
@@ -254,8 +257,7 @@ impl<T: EventListener> Term<T> {
             }
         }
 
-        if all_dirty && any_dirty {
-            // All lines dirty — signal full redraw, empty damage list.
+        if all_dirty && !damage.is_empty() {
             (true, Vec::new())
         } else {
             (false, damage)

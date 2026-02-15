@@ -48,6 +48,11 @@ impl DirtyTracker {
         self.all_dirty = true;
     }
 
+    /// Check whether all lines are marked dirty.
+    pub fn is_all_dirty(&self) -> bool {
+        self.all_dirty
+    }
+
     /// Check whether a specific line is dirty.
     pub fn is_dirty(&self, line: usize) -> bool {
         self.all_dirty || self.dirty.get(line).copied().unwrap_or(false)
