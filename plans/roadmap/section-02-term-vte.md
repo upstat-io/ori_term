@@ -37,7 +37,7 @@ sections:
     status: complete
   - id: "2.11"
     title: "VTE Handler — DCS + Misc"
-    status: not-started
+    status: complete
   - id: "2.12"
     title: RenderableContent Snapshot
     status: not-started
@@ -448,26 +448,26 @@ Device Control Strings and remaining handler methods.
 
 **File:** `oriterm_core/src/term/handler.rs` (continued)
 
-- [ ] DCS sequences:
-  - [ ] `DECRQSS` — request selection or setting (respond with current state)
-  - [ ] `XTGETTCAP` — xterm get termcap (respond with capabilities)
-- [ ] Kitty keyboard protocol:
-  - [ ] `CSI > u` — push keyboard mode onto stack
-  - [ ] `CSI < u` — pop keyboard mode from stack
-  - [ ] `CSI ? u` — query keyboard mode
-  - [ ] Store modes in `keyboard_mode_stack: Vec<u8>`
-- [ ] `CSI t` — window manipulation (report terminal size, etc.)
-- [ ] `CSI q` — DECSCUSR: set cursor shape
-  - [ ] 0/1 = blinking block, 2 = steady block, 3 = blinking underline, 4 = steady underline, 5 = blinking bar, 6 = steady bar
-- [ ] Unhandled sequences:
-  - [ ] Log at `debug!` level, do not panic or error
-  - [ ] Return gracefully from handler methods
-- [ ] **Tests**:
-  - [ ] `ESC[1 q` sets cursor to blinking block
-  - [ ] `ESC[5 q` sets cursor to blinking bar
-  - [ ] `ESC[>1u` pushes keyboard mode 1
-  - [ ] `ESC[<u` pops keyboard mode
-  - [ ] Unknown sequences don't panic
+- [x] DCS sequences:
+  - [x] `DECRQSS` — request selection or setting (respond with current state)
+  - [x] `XTGETTCAP` — xterm get termcap (respond with capabilities)
+- [x] Kitty keyboard protocol:
+  - [x] `CSI > u` — push keyboard mode onto stack
+  - [x] `CSI < u` — pop keyboard mode from stack
+  - [x] `CSI ? u` — query keyboard mode
+  - [x] Store modes in `keyboard_mode_stack: Vec<KeyboardModes>`
+- [x] `CSI t` — window manipulation (report terminal size, etc.)
+- [x] `CSI q` — DECSCUSR: set cursor shape
+  - [x] 0/1 = blinking block, 2 = steady block, 3 = blinking underline, 4 = steady underline, 5 = blinking bar, 6 = steady bar
+- [x] Unhandled sequences:
+  - [x] Log at `debug!` level, do not panic or error
+  - [x] Return gracefully from handler methods
+- [x] **Tests**:
+  - [x] `ESC[1 q` sets cursor to blinking block
+  - [x] `ESC[5 q` sets cursor to blinking bar
+  - [x] `ESC[>1u` pushes keyboard mode 1
+  - [x] `ESC[<u` pops keyboard mode
+  - [x] Unknown sequences don't panic
 
 ---
 

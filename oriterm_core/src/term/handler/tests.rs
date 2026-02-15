@@ -2351,3 +2351,323 @@ fn dec_special_charset_ignores_non_ascii() {
     let ch1 = t.grid()[crate::index::Line(0)][Column(1)].ch;
     assert_eq!(ch1, 'é', "Non-ASCII should not be affected by DEC special charset");
 }
+
+// --- DECSCUSR (cursor shape) tests ---
+
+#[test]
+fn decscusr_1_sets_blinking_block() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[1 q");
+
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Block);
+    assert!(
+        t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        "CSI 1 q should enable blinking"
+    );
+}
+
+#[test]
+fn decscusr_2_sets_steady_block() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[2 q");
+
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Block);
+    assert!(
+        !t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        "CSI 2 q should disable blinking"
+    );
+}
+
+#[test]
+fn decscusr_5_sets_blinking_bar() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[5 q");
+
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
+    assert!(
+        t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        "CSI 5 q should enable blinking"
+    );
+}
+
+#[test]
+fn decscusr_6_sets_steady_bar() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[6 q");
+
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
+    assert!(
+        !t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        "CSI 6 q should disable blinking"
+    );
+}
+
+#[test]
+fn decscusr_3_sets_blinking_underline() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[3 q");
+
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Underline);
+    assert!(t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+}
+
+#[test]
+fn decscusr_4_sets_steady_underline() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[4 q");
+
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Underline);
+    assert!(!t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+}
+
+#[test]
+fn decscusr_0_resets_to_default() {
+    let (mut t, _listener) = term_with_recorder();
+    // Set to bar first.
+    feed(&mut t, b"\x1b[5 q");
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
+
+    // Reset.
+    feed(&mut t, b"\x1b[0 q");
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Block);
+}
+
+#[test]
+fn decscusr_fires_cursor_blinking_change_event() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[5 q");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("CursorBlinkingChange")),
+        "DECSCUSR should fire CursorBlinkingChange event"
+    );
+}
+
+// --- Kitty keyboard protocol tests ---
+
+#[test]
+fn push_keyboard_mode_1() {
+    let (mut t, _listener) = term_with_recorder();
+    // CSI > 1 u — push mode with DISAMBIGUATE_ESC_CODES.
+    feed(&mut t, b"\x1b[>1u");
+
+    assert_eq!(t.keyboard_mode_stack().len(), 1);
+    assert!(
+        t.mode().contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES),
+        "push_keyboard_mode(1) should set DISAMBIGUATE_ESC_CODES"
+    );
+}
+
+#[test]
+fn push_keyboard_mode_3() {
+    let (mut t, _listener) = term_with_recorder();
+    // Mode 3 = DISAMBIGUATE_ESC_CODES | REPORT_EVENT_TYPES.
+    feed(&mut t, b"\x1b[>3u");
+
+    assert_eq!(t.keyboard_mode_stack().len(), 1);
+    assert!(t.mode().contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES));
+    assert!(t.mode().contains(crate::term::TermMode::REPORT_EVENT_TYPES));
+}
+
+#[test]
+fn pop_keyboard_mode() {
+    let (mut t, _listener) = term_with_recorder();
+    // Push two modes.
+    feed(&mut t, b"\x1b[>1u");
+    feed(&mut t, b"\x1b[>3u");
+    assert_eq!(t.keyboard_mode_stack().len(), 2);
+
+    // Pop one.
+    feed(&mut t, b"\x1b[<u");
+    assert_eq!(t.keyboard_mode_stack().len(), 1);
+    // Active mode should be the remaining mode (1 = DISAMBIGUATE_ESC_CODES).
+    assert!(t.mode().contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES));
+    assert!(
+        !t.mode().contains(crate::term::TermMode::REPORT_EVENT_TYPES),
+        "after pop, only first pushed mode should remain active"
+    );
+}
+
+#[test]
+fn pop_all_keyboard_modes() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[>1u");
+    feed(&mut t, b"\x1b[>3u");
+
+    // Pop both (pop 2).
+    feed(&mut t, b"\x1b[<2u");
+    assert!(t.keyboard_mode_stack().is_empty());
+    assert!(
+        !t.mode().intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL),
+        "all kitty flags should be cleared after popping all modes"
+    );
+}
+
+#[test]
+fn query_keyboard_mode_responds_with_current() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[>1u");
+    // CSI ? u — query.
+    feed(&mut t, b"\x1b[?u");
+
+    let events = listener.events();
+    let pty_writes: Vec<_> = events.iter().filter(|e| e.contains("PtyWrite")).collect();
+    assert!(
+        pty_writes.iter().any(|w| w.contains("[?1u")),
+        "report should contain current mode bits: {pty_writes:?}"
+    );
+}
+
+#[test]
+fn pop_from_empty_stack_is_noop() {
+    let mut t = term();
+    // Pop from empty — should not panic.
+    feed(&mut t, b"\x1b[<u");
+    assert!(t.keyboard_mode_stack().is_empty());
+}
+
+// --- Unhandled sequences ---
+
+#[test]
+fn unknown_csi_does_not_panic() {
+    let mut t = term();
+    // Random unknown CSI.
+    feed(&mut t, b"\x1b[999z");
+    // Should not panic — grid still functional.
+    feed(&mut t, b"ok");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'o');
+}
+
+#[test]
+fn unknown_osc_does_not_panic() {
+    let mut t = term();
+    // Unknown OSC number.
+    feed(&mut t, b"\x1b]9999;data\x07");
+    feed(&mut t, b"ok");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'o');
+}
+
+#[test]
+fn unknown_esc_does_not_panic() {
+    let mut t = term();
+    // Unknown ESC final.
+    feed(&mut t, b"\x1bZ");
+    feed(&mut t, b"ok");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'o');
+}
+
+#[test]
+fn ris_clears_keyboard_mode_stack_and_flags() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[>3u");
+    assert!(!t.keyboard_mode_stack().is_empty());
+
+    // RIS.
+    feed(&mut t, b"\x1bc");
+    assert!(t.keyboard_mode_stack().is_empty());
+    assert!(!t.mode().intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL));
+}
+
+#[test]
+fn ris_resets_cursor_shape() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[5 q");
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
+
+    feed(&mut t, b"\x1bc");
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Block);
+}
+
+#[test]
+fn query_keyboard_mode_empty_stack_reports_zero() {
+    let (mut t, listener) = term_with_recorder();
+    // Query with nothing on the stack.
+    feed(&mut t, b"\x1b[?u");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("[?0u")),
+        "empty stack should report mode 0: {events:?}"
+    );
+}
+
+#[test]
+fn query_keyboard_mode_reports_bitmask() {
+    let (mut t, listener) = term_with_recorder();
+    // Mode 3 = DISAMBIGUATE_ESC_CODES (1) | REPORT_EVENT_TYPES (2).
+    feed(&mut t, b"\x1b[>3u");
+    feed(&mut t, b"\x1b[?u");
+
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("[?3u")),
+        "should report combined bitmask 3: {events:?}"
+    );
+}
+
+#[test]
+fn pop_more_than_stack_depth_clamps() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[>1u");
+    feed(&mut t, b"\x1b[>3u");
+    assert_eq!(t.keyboard_mode_stack().len(), 2);
+
+    // Pop 999 from a stack of 2 — should clamp to empty.
+    feed(&mut t, b"\x1b[<999u");
+    assert!(t.keyboard_mode_stack().is_empty());
+    assert!(!t.mode().intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL));
+}
+
+#[test]
+fn keyboard_mode_stack_survives_alt_screen_swap() {
+    let (mut t, _listener) = term_with_recorder();
+    // Push mode on primary screen.
+    feed(&mut t, b"\x1b[>1u");
+    assert_eq!(t.keyboard_mode_stack().len(), 1);
+
+    // Switch to alt screen — primary stack is swapped out.
+    feed(&mut t, b"\x1b[?1049h");
+    assert!(
+        t.keyboard_mode_stack().is_empty(),
+        "alt screen should have its own empty keyboard mode stack"
+    );
+
+    // Push a different mode on alt screen.
+    feed(&mut t, b"\x1b[>3u");
+    assert_eq!(t.keyboard_mode_stack().len(), 1);
+
+    // Switch back to primary — original mode should be restored.
+    feed(&mut t, b"\x1b[?1049l");
+    assert_eq!(t.keyboard_mode_stack().len(), 1);
+    assert!(
+        t.mode().contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES),
+        "primary stack mode should be restored after alt screen exit"
+    );
+}
+
+#[test]
+fn decscusr_set_same_shape_twice_is_idempotent() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[5 q");
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
+    assert!(t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+
+    // Set the same shape again.
+    feed(&mut t, b"\x1b[5 q");
+    assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
+    assert!(t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+}
+
+#[test]
+fn ris_clears_cursor_blinking() {
+    let (mut t, _listener) = term_with_recorder();
+    feed(&mut t, b"\x1b[5 q");
+    assert!(t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+
+    feed(&mut t, b"\x1bc");
+    assert!(
+        !t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        "RIS should clear cursor blinking flag"
+    );
+}

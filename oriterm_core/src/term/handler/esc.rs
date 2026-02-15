@@ -34,6 +34,7 @@ impl<T: EventListener> Term<T> {
         self.cwd = None;
         self.keyboard_mode_stack.clear();
         self.inactive_keyboard_mode_stack.clear();
+        self.mode.remove(TermMode::KITTY_KEYBOARD_PROTOCOL);
 
         self.event_listener.send_event(Event::ResetTitle);
     }

@@ -18,6 +18,19 @@ pub enum CursorShape {
     Underline,
     Bar,
     HollowBlock,
+    Hidden,
+}
+
+impl From<vte::ansi::CursorShape> for CursorShape {
+    fn from(shape: vte::ansi::CursorShape) -> Self {
+        match shape {
+            vte::ansi::CursorShape::Block => Self::Block,
+            vte::ansi::CursorShape::Underline => Self::Underline,
+            vte::ansi::CursorShape::Beam => Self::Bar,
+            vte::ansi::CursorShape::HollowBlock => Self::HollowBlock,
+            vte::ansi::CursorShape::Hidden => Self::Hidden,
+        }
+    }
 }
 
 /// Terminal cursor: position and template cell.

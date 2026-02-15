@@ -9,8 +9,9 @@ use std::cmp;
 use log::debug;
 use unicode_width::UnicodeWidthChar;
 use vte::ansi::{
-    Attr, CharsetIndex, ClearMode, Handler, Hyperlink as VteHyperlink, LineClearMode, Mode,
-    NamedMode, PrivateMode, Rgb, StandardCharset, TabulationClearMode,
+    Attr, CharsetIndex, ClearMode, CursorStyle, Handler, Hyperlink as VteHyperlink,
+    KeyboardModes, KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, NamedMode,
+    PrivateMode, Rgb, StandardCharset, TabulationClearMode,
 };
 
 use crate::event::{Event, EventListener};
@@ -20,22 +21,18 @@ use crate::index::Column;
 
 use super::{Term, TermMode};
 
+mod dcs;
 mod esc;
 mod helpers;
 mod modes;
 mod osc;
 mod sgr;
-
-use helpers::{crate_version_number, mode_report_value, named_private_mode_flag,
-    named_private_mode_number};
+mod status;
 
 impl<T: EventListener> Handler for Term<T> {
     // --- Print + Execute (C0 controls) ---
 
-    /// Print a character to the terminal.
-    ///
-    /// Translates through the active charset, then writes via `grid.put_char`.
-    /// In INSERT mode, shifts existing content right before writing.
+    /// Print a character, translated through the active charset.
     #[inline]
     fn input(&mut self, c: char) {
         let c = self.charset.translate(c);
@@ -59,8 +56,7 @@ impl<T: EventListener> Handler for Term<T> {
         }
     }
 
-    /// Move cursor down one line, scrolling if at the bottom of the scroll
-    /// region. In LNM mode, also performs a carriage return.
+    /// LF: linefeed (+ CR in LNM mode).
     #[inline]
     fn linefeed(&mut self) {
         let lnm = self.mode.contains(TermMode::LINE_FEED_NEW_LINE);
@@ -109,9 +105,7 @@ impl<T: EventListener> Handler for Term<T> {
 
     // --- CSI cursor movement ---
 
-    /// CUP / HVP: absolute cursor positioning.
-    ///
-    /// In ORIGIN mode, coordinates are relative to the scroll region.
+    /// CUP / HVP: absolute cursor positioning (ORIGIN-aware).
     fn goto(&mut self, line: i32, col: usize) {
         let origin = self.mode.contains(TermMode::ORIGIN);
         let grid = self.grid_mut();
@@ -338,79 +332,29 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// DECRQM: report ANSI mode status.
     fn report_mode(&mut self, mode: Mode) {
-        let (num, value) = match mode {
-            Mode::Named(NamedMode::Insert) => {
-                (4u16, mode_report_value(self.mode.contains(TermMode::INSERT)))
-            }
-            Mode::Named(NamedMode::LineFeedNewLine) => {
-                (20, mode_report_value(self.mode.contains(TermMode::LINE_FEED_NEW_LINE)))
-            }
-            Mode::Unknown(n) => (n, 0),
-        };
-        let response = format!("\x1b[{num};{value}$y");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.status_report_mode(mode);
     }
 
     /// DECRQM: report DEC private mode status.
     fn report_private_mode(&mut self, mode: PrivateMode) {
-        let (num, value) = match mode {
-            PrivateMode::Named(named) => {
-                let num = named_private_mode_number(named);
-                let flag = named_private_mode_flag(named);
-                let value = flag.map_or(0, |f| mode_report_value(self.mode.contains(f)));
-                (num, value)
-            }
-            PrivateMode::Unknown(n) => (n, 0),
-        };
-        let response = format!("\x1b[?{num};{value}$y");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.status_report_private_mode(mode);
     }
 
     // --- CSI device status ---
 
     /// DA: device attributes response.
     fn identify_terminal(&mut self, intermediate: Option<char>) {
-        match intermediate {
-            None => {
-                // DA1: report VT220 with ANSI color.
-                let response = "\x1b[?6c".to_string();
-                self.event_listener.send_event(Event::PtyWrite(response));
-            }
-            Some('>') => {
-                // DA2: terminal type 0, version, conformance level 1.
-                let version = crate_version_number();
-                let response = format!("\x1b[>0;{version};1c");
-                self.event_listener.send_event(Event::PtyWrite(response));
-            }
-            Some(c) => debug!("Unsupported DA intermediate '{c}'"),
-        }
+        self.status_identify_terminal(intermediate);
     }
 
     /// DSR: device status report.
     fn device_status(&mut self, arg: usize) {
-        match arg {
-            5 => {
-                // Terminal OK.
-                self.event_listener
-                    .send_event(Event::PtyWrite("\x1b[0n".to_string()));
-            }
-            6 => {
-                // Cursor position report (1-based, always absolute).
-                let line = self.grid().cursor().line() + 1;
-                let col = self.grid().cursor().col().0 + 1;
-                let response = format!("\x1b[{line};{col}R");
-                self.event_listener.send_event(Event::PtyWrite(response));
-            }
-            _ => debug!("Unknown device status query: {arg}"),
-        }
+        self.status_device_status(arg);
     }
 
     /// CSI 18 t: report text area size in characters.
     fn text_area_size_chars(&mut self) {
-        let lines = self.grid().lines();
-        let cols = self.grid().cols();
-        let response = format!("\x1b[8;{lines};{cols}t");
-        self.event_listener.send_event(Event::PtyWrite(response));
+        self.status_text_area_size_chars();
     }
 
     // --- ESC sequences (keypad mode, reset) ---
@@ -432,11 +376,7 @@ impl<T: EventListener> Handler for Term<T> {
 
     // --- SGR (Select Graphic Rendition) ---
 
-    /// Set a terminal attribute (bold, italic, colors, etc.).
-    ///
-    /// The VTE parser decodes `CSI n m` parameters into high-level `Attr`
-    /// variants. Delegates to [`sgr::apply`] which modifies the cursor
-    /// template cell so subsequent characters inherit the attribute.
+    /// SGR: set a terminal attribute (bold, italic, colors, etc.).
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         let template = &mut self.grid_mut().cursor_mut().template;
@@ -493,6 +433,53 @@ impl<T: EventListener> Handler for Term<T> {
     /// OSC 8: set or clear hyperlink.
     fn set_hyperlink(&mut self, hyperlink: Option<VteHyperlink>) {
         self.osc_set_hyperlink(hyperlink);
+    }
+
+    // --- DCS + Misc (cursor shape, keyboard protocol) ---
+
+    /// DECSCUSR: set cursor shape and blinking state.
+    fn set_cursor_style(&mut self, style: Option<CursorStyle>) {
+        self.dcs_set_cursor_style(style);
+    }
+
+    /// Set cursor shape (no blinking change).
+    fn set_cursor_shape(&mut self, shape: vte::ansi::CursorShape) {
+        self.dcs_set_cursor_shape(shape);
+    }
+
+    /// CSI > u: push keyboard mode onto Kitty keyboard protocol stack.
+    fn push_keyboard_mode(&mut self, mode: KeyboardModes) {
+        self.dcs_push_keyboard_mode(mode);
+    }
+
+    /// CSI < u: pop keyboard modes from the stack.
+    fn pop_keyboard_modes(&mut self, to_pop: u16) {
+        self.dcs_pop_keyboard_modes(to_pop);
+    }
+
+    /// Apply keyboard mode flags with the given behavior.
+    fn set_keyboard_mode(&mut self, mode: KeyboardModes, apply: KeyboardModesApplyBehavior) {
+        self.dcs_set_keyboard_mode(mode, apply);
+    }
+
+    /// CSI ? u: report current keyboard mode.
+    fn report_keyboard_mode(&mut self) {
+        self.dcs_report_keyboard_mode();
+    }
+
+    /// `XTerm` `modifyOtherKeys`: stub.
+    fn set_modify_other_keys(&mut self, mode: ModifyOtherKeys) {
+        self.dcs_set_modify_other_keys(mode);
+    }
+
+    /// `XTerm` `modifyOtherKeys` report: stub.
+    fn report_modify_other_keys(&mut self) {
+        self.dcs_report_modify_other_keys();
+    }
+
+    /// CSI 14 t: report text area size in pixels.
+    fn text_area_size_pixels(&mut self) {
+        self.dcs_text_area_size_pixels();
     }
 }
 

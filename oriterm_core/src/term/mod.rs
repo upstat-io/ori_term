@@ -14,6 +14,8 @@ pub use mode::TermMode;
 
 use std::collections::VecDeque;
 
+use vte::ansi::KeyboardModes;
+
 use crate::color::Palette;
 use crate::event::EventListener;
 use crate::grid::{CursorShape, Grid};
@@ -27,9 +29,8 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 /// Maximum depth for Kitty keyboard enhancement mode stacks.
 ///
 /// Prevents OOM from malicious PTY input. Matches Alacritty's cap.
-/// Enforced in the VTE handler's `set_keyboard_mode`.
-#[expect(dead_code, reason = "cap enforced when VTE handler set_keyboard_mode is implemented")]
-const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
+/// Enforced in the VTE handler's `push_keyboard_mode`.
+pub(crate) const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 4096;
 
 /// The terminal state machine.
 ///
@@ -59,10 +60,10 @@ pub struct Term<T: EventListener> {
     cursor_shape: CursorShape,
     /// Kitty keyboard enhancement mode stack (active screen).
     /// Capped at [`KEYBOARD_MODE_STACK_MAX_DEPTH`].
-    keyboard_mode_stack: Vec<u8>,
+    keyboard_mode_stack: Vec<KeyboardModes>,
     /// Kitty keyboard enhancement mode stack (inactive screen).
     /// Capped at [`KEYBOARD_MODE_STACK_MAX_DEPTH`].
-    inactive_keyboard_mode_stack: Vec<u8>,
+    inactive_keyboard_mode_stack: Vec<KeyboardModes>,
     /// Event sink for terminal events.
     event_listener: T,
 }
@@ -129,6 +130,11 @@ impl<T: EventListener> Term<T> {
     /// The title stack (xterm push/pop title).
     pub fn title_stack(&self) -> &VecDeque<String> {
         &self.title_stack
+    }
+
+    /// Current keyboard mode stack (Kitty keyboard protocol).
+    pub fn keyboard_mode_stack(&self) -> &[KeyboardModes] {
+        &self.keyboard_mode_stack
     }
 
     /// Switch between primary and alternate screen.

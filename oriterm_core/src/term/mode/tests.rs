@@ -1,5 +1,7 @@
 //! Tests for terminal mode flags.
 
+use vte::ansi::KeyboardModes;
+
 use super::TermMode;
 
 #[test]
@@ -76,12 +78,45 @@ fn all_flags_are_distinct() {
         TermMode::BRACKETED_PASTE,
         TermMode::SYNC_UPDATE,
         TermMode::URGENCY_HINTS,
-        TermMode::KITTY_KEYBOARD,
         TermMode::CURSOR_BLINKING,
+        TermMode::LINE_FEED_NEW_LINE,
+        TermMode::DISAMBIGUATE_ESC_CODES,
+        TermMode::REPORT_EVENT_TYPES,
+        TermMode::REPORT_ALTERNATE_KEYS,
+        TermMode::REPORT_ALL_KEYS_AS_ESC,
+        TermMode::REPORT_ASSOCIATED_TEXT,
     ];
 
     // Each individual flag has exactly one bit set (excluding composite ANY_MOUSE).
     for flag in &flags {
         assert!(flag.bits().is_power_of_two(), "{flag:?} is not a single bit");
     }
+}
+
+#[test]
+fn kitty_keyboard_protocol_is_union_of_all_kitty_flags() {
+    let expected = TermMode::DISAMBIGUATE_ESC_CODES
+        | TermMode::REPORT_EVENT_TYPES
+        | TermMode::REPORT_ALTERNATE_KEYS
+        | TermMode::REPORT_ALL_KEYS_AS_ESC
+        | TermMode::REPORT_ASSOCIATED_TEXT;
+    assert_eq!(TermMode::KITTY_KEYBOARD_PROTOCOL, expected);
+}
+
+#[test]
+fn keyboard_modes_to_term_mode_conversion() {
+    let modes = KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_EVENT_TYPES;
+    let term_mode = TermMode::from(modes);
+
+    assert!(term_mode.contains(TermMode::DISAMBIGUATE_ESC_CODES));
+    assert!(term_mode.contains(TermMode::REPORT_EVENT_TYPES));
+    assert!(!term_mode.contains(TermMode::REPORT_ALTERNATE_KEYS));
+    assert!(!term_mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC));
+    assert!(!term_mode.contains(TermMode::REPORT_ASSOCIATED_TEXT));
+}
+
+#[test]
+fn keyboard_modes_no_mode_converts_to_empty() {
+    let term_mode = TermMode::from(KeyboardModes::NO_MODE);
+    assert!(!term_mode.intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
 }

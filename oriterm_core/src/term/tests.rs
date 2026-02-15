@@ -1,5 +1,7 @@
 //! Tests for Term<T> struct.
 
+use vte::ansi::KeyboardModes;
+
 use crate::event::VoidListener;
 use crate::grid::CursorShape;
 
@@ -85,16 +87,18 @@ fn primary_grid_has_scrollback() {
 #[test]
 fn swap_alt_preserves_keyboard_mode_stacks() {
     let mut term = make_term();
-    term.keyboard_mode_stack.push(1);
-    term.keyboard_mode_stack.push(3);
+    let mode1 = KeyboardModes::DISAMBIGUATE_ESC_CODES;
+    let mode3 = KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_EVENT_TYPES;
+    term.keyboard_mode_stack.push(mode1);
+    term.keyboard_mode_stack.push(mode3);
 
     // After swap, the active stack should be the (empty) inactive stack.
     term.swap_alt();
     assert!(term.keyboard_mode_stack.is_empty());
-    assert_eq!(term.inactive_keyboard_mode_stack, vec![1, 3]);
+    assert_eq!(term.inactive_keyboard_mode_stack, vec![mode1, mode3]);
 
     // Swap back: stacks return.
     term.swap_alt();
-    assert_eq!(term.keyboard_mode_stack, vec![1, 3]);
+    assert_eq!(term.keyboard_mode_stack, vec![mode1, mode3]);
     assert!(term.inactive_keyboard_mode_stack.is_empty());
 }
