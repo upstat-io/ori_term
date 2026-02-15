@@ -60,10 +60,10 @@ pub struct Term<T: EventListener> {
     cursor_shape: CursorShape,
     /// Kitty keyboard enhancement mode stack (active screen).
     /// Capped at [`KEYBOARD_MODE_STACK_MAX_DEPTH`].
-    keyboard_mode_stack: Vec<KeyboardModes>,
+    keyboard_mode_stack: VecDeque<KeyboardModes>,
     /// Kitty keyboard enhancement mode stack (inactive screen).
     /// Capped at [`KEYBOARD_MODE_STACK_MAX_DEPTH`].
-    inactive_keyboard_mode_stack: Vec<KeyboardModes>,
+    inactive_keyboard_mode_stack: VecDeque<KeyboardModes>,
     /// Event sink for terminal events.
     event_listener: T,
 }
@@ -81,8 +81,8 @@ impl<T: EventListener> Term<T> {
             cwd: None,
             title_stack: VecDeque::new(),
             cursor_shape: CursorShape::default(),
-            keyboard_mode_stack: Vec::new(),
-            inactive_keyboard_mode_stack: Vec::new(),
+            keyboard_mode_stack: VecDeque::new(),
+            inactive_keyboard_mode_stack: VecDeque::new(),
             event_listener: listener,
         }
     }
@@ -128,12 +128,14 @@ impl<T: EventListener> Term<T> {
     }
 
     /// The title stack (xterm push/pop title).
-    pub fn title_stack(&self) -> &VecDeque<String> {
+    #[cfg(test)]
+    pub(crate) fn title_stack(&self) -> &VecDeque<String> {
         &self.title_stack
     }
 
     /// Current keyboard mode stack (Kitty keyboard protocol).
-    pub fn keyboard_mode_stack(&self) -> &[KeyboardModes] {
+    #[cfg(test)]
+    pub(crate) fn keyboard_mode_stack(&self) -> &VecDeque<KeyboardModes> {
         &self.keyboard_mode_stack
     }
 

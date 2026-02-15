@@ -40,9 +40,9 @@ impl<T: EventListener> Term<T> {
     /// entry is removed. After pushing, the mode flags are applied.
     pub(super) fn dcs_push_keyboard_mode(&mut self, mode: KeyboardModes) {
         if self.keyboard_mode_stack.len() >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-            self.keyboard_mode_stack.remove(0);
+            self.keyboard_mode_stack.pop_front();
         }
-        self.keyboard_mode_stack.push(mode);
+        self.keyboard_mode_stack.push_back(mode);
         self.dcs_set_keyboard_mode(mode, KeyboardModesApplyBehavior::Replace);
     }
 
@@ -53,7 +53,7 @@ impl<T: EventListener> Term<T> {
 
         let mode = self
             .keyboard_mode_stack
-            .last()
+            .back()
             .copied()
             .unwrap_or(KeyboardModes::NO_MODE);
         self.dcs_set_keyboard_mode(mode, KeyboardModesApplyBehavior::Replace);
@@ -83,7 +83,7 @@ impl<T: EventListener> Term<T> {
     pub(super) fn dcs_report_keyboard_mode(&mut self) {
         let bits = self
             .keyboard_mode_stack
-            .last()
+            .back()
             .copied()
             .unwrap_or(KeyboardModes::NO_MODE)
             .bits();
