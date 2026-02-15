@@ -8,7 +8,6 @@ use std::mem;
 use std::ops::Range;
 
 use crate::cell::Cell;
-use crate::index::Column;
 
 use super::row::Row;
 use super::Grid;
@@ -19,7 +18,9 @@ impl Grid {
     /// Parameters are 1-based (matching VTE/ECMA-48). `top` is the first
     /// line of the region, `bottom` is the last line (or `None` for the
     /// screen height). Stored internally as a 0-based half-open range.
-    /// Moves the cursor to the origin after setting.
+    ///
+    /// Does **not** move the cursor — that's the handler's job (via
+    /// `goto(0, 0)` which respects ORIGIN mode).
     pub fn set_scroll_region(&mut self, top: usize, bottom: Option<usize>) {
         // 1-based params: top=0 is invalid, treat as 1.
         let top = top.max(1) - 1;
@@ -31,8 +32,6 @@ impl Grid {
         }
 
         self.scroll_region = top..bottom;
-        self.cursor.set_line(0);
-        self.cursor.set_col(Column(0));
     }
 
     /// Scroll the scroll region up by `count` lines.
@@ -58,11 +57,10 @@ impl Grid {
             }
 
             for i in 0..count {
-                // Move the row out, leave a placeholder in its place.
+                // Move the row out, leave a zero-alloc placeholder in its place.
                 // The placeholder rotates to the bottom via scroll_range_up,
-                // where it gets reset anyway.
-                let placeholder = Row::new(self.cols);
-                let evicted = mem::replace(&mut self.rows[i], placeholder);
+                // where reset() will resize it to the correct column count.
+                let evicted = mem::replace(&mut self.rows[i], Row::new(0));
                 if let Some(mut recycled) = self.scrollback.push(evicted) {
                     // Scrollback was full: reuse the evicted row's allocation
                     // instead of the fresh placeholder we just inserted.

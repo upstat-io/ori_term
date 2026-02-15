@@ -51,13 +51,14 @@ fn set_scroll_region_clamps_oversized_bottom() {
 }
 
 #[test]
-fn set_scroll_region_moves_cursor_to_origin() {
+fn set_scroll_region_does_not_move_cursor() {
     let mut grid = Grid::new(24, 80);
     grid.cursor_mut().set_line(10);
     grid.cursor_mut().set_col(Column(40));
     grid.set_scroll_region(5, Some(20));
-    assert_eq!(grid.cursor().line(), 0);
-    assert_eq!(grid.cursor().col(), Column(0));
+    // Cursor positioning is the handler's job (respects ORIGIN mode).
+    assert_eq!(grid.cursor().line(), 10);
+    assert_eq!(grid.cursor().col(), Column(40));
 }
 
 // --- scroll_up ---
