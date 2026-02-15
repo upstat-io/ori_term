@@ -9,8 +9,8 @@ use std::cmp;
 use log::debug;
 use unicode_width::UnicodeWidthChar;
 use vte::ansi::{
-    Attr, CharsetIndex, ClearMode, Handler, LineClearMode, Mode, NamedMode, PrivateMode,
-    TabulationClearMode,
+    Attr, CharsetIndex, ClearMode, Handler, Hyperlink as VteHyperlink, LineClearMode, Mode,
+    NamedMode, PrivateMode, Rgb, TabulationClearMode,
 };
 
 use crate::event::{Event, EventListener};
@@ -22,6 +22,7 @@ use super::{Term, TermMode};
 
 mod helpers;
 mod modes;
+mod osc;
 mod sgr;
 
 use helpers::{crate_version_number, mode_report_value, named_private_mode_flag,
@@ -423,6 +424,53 @@ impl<T: EventListener> Handler for Term<T> {
     fn terminal_attribute(&mut self, attr: Attr) {
         let template = &mut self.grid_mut().cursor_mut().template;
         sgr::apply(template, &attr);
+    }
+
+    // --- OSC (Operating System Commands) ---
+
+    /// OSC 0/2: set window title.
+    fn set_title(&mut self, title: Option<String>) {
+        self.osc_set_title(title);
+    }
+
+    /// Push current title onto the title stack.
+    fn push_title(&mut self) {
+        self.osc_push_title();
+    }
+
+    /// Pop title from the stack and set it.
+    fn pop_title(&mut self) {
+        self.osc_pop_title();
+    }
+
+    /// OSC 4/10/11/12: set a palette color.
+    fn set_color(&mut self, index: usize, color: Rgb) {
+        self.osc_set_color(index, color);
+    }
+
+    /// OSC 104/110/111/112: reset a palette color.
+    fn reset_color(&mut self, index: usize) {
+        self.osc_reset_color(index);
+    }
+
+    /// OSC 4/10/11/12 query: respond with current color.
+    fn dynamic_color_sequence(&mut self, prefix: String, index: usize, terminator: &str) {
+        self.osc_dynamic_color_sequence(prefix, index, terminator);
+    }
+
+    /// OSC 52: store clipboard content.
+    fn clipboard_store(&mut self, clipboard: u8, base64: &[u8]) {
+        self.osc_clipboard_store(clipboard, base64);
+    }
+
+    /// OSC 52: request clipboard content.
+    fn clipboard_load(&mut self, clipboard: u8, terminator: &str) {
+        self.osc_clipboard_load(clipboard, terminator);
+    }
+
+    /// OSC 8: set or clear hyperlink.
+    fn set_hyperlink(&mut self, hyperlink: Option<VteHyperlink>) {
+        self.osc_set_hyperlink(hyperlink);
     }
 }
 

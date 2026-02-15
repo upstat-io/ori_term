@@ -6,6 +6,7 @@ description = "Core terminal emulation data structures and logic for oriterm"
 license = "MIT"
 
 [dependencies]
+base64 = "0.22"
 bitflags = "2"
 log = "0.4"
 unicode-width = "0.2"

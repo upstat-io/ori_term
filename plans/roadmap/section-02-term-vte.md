@@ -31,7 +31,7 @@ sections:
     status: complete
   - id: "2.9"
     title: "VTE Handler — OSC Sequences"
-    status: not-started
+    status: in-progress
   - id: "2.10"
     title: "VTE Handler — ESC Sequences"
     status: not-started
@@ -382,34 +382,34 @@ Operating System Commands: title, palette, clipboard.
 
 **File:** `oriterm_core/src/term/handler.rs` (continued)
 
-- [ ] `OSC 0` — set icon name + window title
-  - [ ] `self.title = payload.to_string()`
-  - [ ] `self.event_listener.send_event(Event::Title(...))`
-- [ ] `OSC 1` — set icon name (ignored, just update title)
-- [ ] `OSC 2` — set window title
-- [ ] `OSC 4` — set/query indexed color
-  - [ ] `OSC 4;index;rgb` → `palette.set_indexed(index, parse_rgb(rgb))`
-  - [ ] `OSC 4;index;?` → query: respond with current color
-- [ ] `OSC 7` — set working directory (shell integration)
+- [x] `OSC 0` — set icon name + window title
+  - [x] `self.title = payload.to_string()`
+  - [x] `self.event_listener.send_event(Event::Title(...))`
+- [ ] `OSC 1` — set icon name (ignored, just update title) <!-- blocked: VTE 0.15 osc_dispatch does not match b"1"; needs VTE extension -->
+- [x] `OSC 2` — set window title
+- [x] `OSC 4` — set/query indexed color
+  - [x] `OSC 4;index;rgb` → `palette.set_indexed(index, parse_rgb(rgb))`
+  - [x] `OSC 4;index;?` → query: respond with current color
+- [ ] `OSC 7` — set working directory (shell integration) <!-- blocked: VTE 0.15 osc_dispatch does not match b"7"; needs VTE extension -->
   - [ ] Store as `Term.cwd: Option<String>`
-- [ ] `OSC 8` — hyperlink
-  - [ ] `OSC 8;;url` → set hyperlink on cursor template (CellExtra)
-  - [ ] `OSC 8;;` → clear hyperlink
-- [ ] `OSC 10` — set/query default foreground color
-- [ ] `OSC 11` — set/query default background color
-- [ ] `OSC 12` — set/query cursor color
-- [ ] `OSC 52` — clipboard operations (base64 encoded)
-  - [ ] `OSC 52;c;base64data` → decode, send `Event::ClipboardStore`
-  - [ ] `OSC 52;c;?` → send `Event::ClipboardLoad`
-- [ ] `OSC 104` — reset indexed color to default
-- [ ] `OSC 110` — reset foreground color
-- [ ] `OSC 111` — reset background color
-- [ ] `OSC 112` — reset cursor color
-- [ ] **Tests**:
-  - [ ] `ESC]2;Hello World\x07` sets title to "Hello World"
-  - [ ] `ESC]4;1;rgb:ff/00/00\x07` sets color 1 to red
-  - [ ] `ESC]52;c;aGVsbG8=\x07` triggers clipboard store with "hello"
-  - [ ] `ESC]8;;https://example.com\x07` sets hyperlink on template
+- [x] `OSC 8` — hyperlink
+  - [x] `OSC 8;;url` → set hyperlink on cursor template (CellExtra)
+  - [x] `OSC 8;;` → clear hyperlink
+- [x] `OSC 10` — set/query default foreground color
+- [x] `OSC 11` — set/query default background color
+- [x] `OSC 12` — set/query cursor color
+- [x] `OSC 52` — clipboard operations (base64 encoded)
+  - [x] `OSC 52;c;base64data` → decode, send `Event::ClipboardStore`
+  - [x] `OSC 52;c;?` → send `Event::ClipboardLoad`
+- [x] `OSC 104` — reset indexed color to default
+- [x] `OSC 110` — reset foreground color
+- [x] `OSC 111` — reset background color
+- [x] `OSC 112` — reset cursor color
+- [x] **Tests**:
+  - [x] `ESC]2;Hello World\x07` sets title to "Hello World"
+  - [x] `ESC]4;1;rgb:ff/00/00\x07` sets color 1 to red
+  - [x] `ESC]52;c;aGVsbG8=\x07` triggers clipboard store with "hello"
+  - [x] `ESC]8;;https://example.com\x07` sets hyperlink on template
 
 ---
 

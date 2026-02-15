@@ -20,7 +20,6 @@ use crate::grid::{CursorShape, Grid};
 ///
 /// Prevents OOM from malicious PTY input pushing unlimited titles.
 /// Matches Alacritty's cap. Enforced in the VTE handler's `push_title`.
-#[expect(dead_code, reason = "cap enforced when VTE handler push_title is implemented")]
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
 
 /// Maximum depth for Kitty keyboard enhancement mode stacks.

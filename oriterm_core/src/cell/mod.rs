@@ -189,6 +189,27 @@ impl Cell {
         }
     }
 
+    /// Set or clear the hyperlink (OSC 8).
+    ///
+    /// `Some(link)` allocates `CellExtra` if needed. `None` clears the
+    /// hyperlink and drops `CellExtra` if it becomes empty.
+    pub fn set_hyperlink(&mut self, link: Option<Hyperlink>) {
+        match link {
+            Some(l) => {
+                let extra = self.extra.get_or_insert_with(Default::default);
+                Arc::make_mut(extra).hyperlink = Some(l);
+            }
+            None => {
+                if let Some(extra) = &mut self.extra {
+                    Arc::make_mut(extra).hyperlink = None;
+                    if extra.zerowidth.is_empty() && extra.underline_color.is_none() {
+                        self.extra = None;
+                    }
+                }
+            }
+        }
+    }
+
     /// Append a combining mark (zero-width character) to this cell.
     ///
     /// Lazily allocates `CellExtra` on first combining mark. Uses
