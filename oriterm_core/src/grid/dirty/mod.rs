@@ -37,9 +37,20 @@ impl DirtyTracker {
     }
 
     /// Mark a contiguous range of lines dirty.
+    ///
+    /// When the range covers all lines, sets `all_dirty` instead of
+    /// individual bits — avoids O(n) bit-setting and lets `collect_damage`
+    /// take the fast path. Out-of-bounds indices are clamped silently.
     pub fn mark_range(&mut self, range: Range<usize>) {
-        for b in &mut self.dirty[range] {
-            *b = true;
+        let len = self.dirty.len();
+        if range.start == 0 && range.end >= len {
+            self.mark_all();
+        } else {
+            let start = range.start.min(len);
+            let end = range.end.min(len);
+            for b in &mut self.dirty[start..end] {
+                *b = true;
+            }
         }
     }
 
@@ -114,9 +125,7 @@ impl Iterator for DirtyIter<'_> {
 impl Drop for DirtyIter<'_> {
     fn drop(&mut self) {
         // Clear any remaining dirty entries that were not iterated.
-        for b in &mut self.dirty[self.pos..] {
-            *b = false;
-        }
+        self.dirty[self.pos..].fill(false);
     }
 }
 

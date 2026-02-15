@@ -119,6 +119,9 @@ impl Grid {
             return;
         }
         let count = count.min(len);
+        if count == 0 {
+            return;
+        }
         let template = Cell::from(self.cursor.template.bg);
 
         self.rows[range.start..range.end].rotate_left(count);
@@ -139,6 +142,9 @@ impl Grid {
             return;
         }
         let count = count.min(len);
+        if count == 0 {
+            return;
+        }
         let template = Cell::from(self.cursor.template.bg);
 
         self.rows[range.start..range.end].rotate_right(count);

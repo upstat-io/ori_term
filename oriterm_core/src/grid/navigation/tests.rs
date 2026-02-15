@@ -180,7 +180,7 @@ fn save_and_restore_cursor_round_trip() {
     assert_eq!(grid.cursor().col(), Column(42));
 }
 
-// --- Backspace ---
+// Backspace
 
 #[test]
 fn backspace_from_mid_line_moves_left() {
@@ -206,7 +206,7 @@ fn backspace_from_wrap_pending_snaps_to_last_column() {
     assert_eq!(grid.cursor().col(), Column(79));
 }
 
-// --- Additional tests from reference repo gap analysis ---
+// Additional edge cases
 
 #[test]
 fn move_backward_clamps_to_zero() {
@@ -466,7 +466,7 @@ fn save_cursor_preserves_template() {
     assert!(grid.cursor().template.flags.contains(crate::cell::CellFlags::BOLD));
 }
 
-// --- Reference repo gap analysis: additional edge cases ---
+// Reference repo gap analysis edge cases
 
 #[test]
 fn backspace_consecutive_moves_left_each_time() {

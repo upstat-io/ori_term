@@ -623,12 +623,14 @@ fn scroll_up_zero_is_noop() {
     grid.cursor_mut().set_line(0);
     grid.cursor_mut().set_col(Column(0));
     grid.put_char('A');
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
 
     grid.scroll_up(0);
 
-    // Nothing changed.
+    // Nothing changed — content, scrollback, and dirty state all untouched.
     assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
     assert_eq!(grid.scrollback().len(), 0);
+    assert!(!grid.dirty().is_any_dirty());
 }
 
 #[test]
@@ -637,10 +639,42 @@ fn scroll_down_zero_is_noop() {
     grid.cursor_mut().set_line(0);
     grid.cursor_mut().set_col(Column(0));
     grid.put_char('A');
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
 
     grid.scroll_down(0);
 
     assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
+    assert!(!grid.dirty().is_any_dirty());
+}
+
+#[test]
+fn insert_lines_zero_is_noop() {
+    let mut grid = Grid::new(5, 10);
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid.put_char('A');
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.cursor_mut().set_line(2);
+    grid.insert_lines(0);
+
+    assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
+    assert!(!grid.dirty().is_any_dirty());
+}
+
+#[test]
+fn delete_lines_zero_is_noop() {
+    let mut grid = Grid::new(5, 10);
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid.put_char('A');
+    let _: Vec<usize> = grid.dirty_mut().drain().collect();
+
+    grid.cursor_mut().set_line(2);
+    grid.delete_lines(0);
+
+    assert_eq!(grid[Line(0)][Column(0)].ch, 'A');
+    assert!(!grid.dirty().is_any_dirty());
 }
 
 // --- accumulated scrollback via linefeed cycles ---

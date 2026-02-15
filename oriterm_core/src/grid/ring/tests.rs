@@ -5,10 +5,6 @@ use crate::index::{Column, Line};
 
 use super::ScrollbackBuffer;
 
-// ---------------------------------------------------------------------------
-// ScrollbackBuffer unit tests
-// ---------------------------------------------------------------------------
-
 #[test]
 fn new_buffer_is_empty() {
     let sb = ScrollbackBuffer::new(100);
@@ -129,9 +125,7 @@ fn max_scrollback_returns_configured_limit() {
     assert_eq!(sb_zero.max_scrollback(), 0);
 }
 
-// ---------------------------------------------------------------------------
 // Ring buffer boundary tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn exact_capacity_boundary_first_eviction() {
@@ -153,9 +147,7 @@ fn exact_capacity_boundary_first_eviction() {
     assert_eq!(row_text(sb.get(2).unwrap()), "R1");
 }
 
-// ---------------------------------------------------------------------------
 // Push return value tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn push_returns_none_during_growth() {
@@ -187,9 +179,7 @@ fn push_returns_evicted_row_when_full() {
     assert_eq!(row_text(sb.get(2).unwrap()), "R2");
 }
 
-// ---------------------------------------------------------------------------
 // Wide character scrollback tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn wide_char_flags_preserved_in_scrollback() {
@@ -238,9 +228,7 @@ fn wide_char_survives_scrollback_via_grid_scroll_up() {
     assert_eq!(row[Column(2)].ch, 'X');
 }
 
-// ---------------------------------------------------------------------------
 // Grid integration tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn scroll_up_pushes_to_scrollback() {
@@ -348,9 +336,7 @@ fn total_lines_reflects_scrollback() {
     assert_eq!(grid.total_lines(), 5);
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /// Create a row with ASCII characters (one char per cell).
 fn make_row(text: &str) -> Row {

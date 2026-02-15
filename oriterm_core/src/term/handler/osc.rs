@@ -89,8 +89,8 @@ impl<T: EventListener> Term<T> {
             index,
             Arc::new(move |color| {
                 format!(
-                    "\x1b]{};rgb:{:02x}{:02x}/{:02x}{:02x}/{:02x}{:02x}{}",
-                    prefix, color.r, color.r, color.g, color.g, color.b, color.b, terminator,
+                    "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
+                    prefix, color.r, color.g, color.b, terminator,
                 )
             }),
         ));

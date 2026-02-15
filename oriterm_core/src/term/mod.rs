@@ -148,20 +148,24 @@ impl<T: EventListener> Term<T> {
     /// resolves all cell colors via the palette, and captures cursor + damage
     /// info. Designed to be called under lock — copies data so the renderer
     /// can work without holding the lock.
+    ///
+    /// This is a pure read — dirty state is **not** cleared. Callers must
+    /// drain dirty state separately via `grid_mut().dirty_mut().drain()`
+    /// after consuming the snapshot.
     pub fn renderable_content(&self) -> RenderableContent {
         let grid = self.grid();
-        let offset = grid.display_offset().min(grid.scrollback().len());
+        let raw_offset = grid.display_offset();
+        debug_assert!(
+            raw_offset <= grid.scrollback().len(),
+            "display_offset ({raw_offset}) must be <= scrollback.len() ({})",
+            grid.scrollback().len(),
+        );
+        let offset = raw_offset.min(grid.scrollback().len());
         let lines = grid.lines();
         let cols = grid.cols();
         let palette = &self.palette;
 
         let mut cells = Vec::with_capacity(lines * cols);
-
-        debug_assert!(
-            offset <= grid.scrollback().len(),
-            "display_offset ({offset}) must be <= scrollback.len() ({})",
-            grid.scrollback().len(),
-        );
 
         for vis_line in 0..lines {
             // Top `offset` lines come from scrollback; the rest from the grid.
@@ -184,17 +188,13 @@ impl<T: EventListener> Term<T> {
                 let bg = renderable::resolve_bg(cell.bg, palette);
                 let (fg, bg) = renderable::apply_inverse(fg, bg, cell.flags);
 
-                let underline_color = cell
-                    .extra
-                    .as_ref()
-                    .and_then(|e| e.underline_color)
-                    .map(|c| palette.resolve(c));
-
-                let zerowidth = cell
-                    .extra
-                    .as_ref()
-                    .map(|e| e.zerowidth.clone())
-                    .unwrap_or_default();
+                let (underline_color, zerowidth) = match cell.extra.as_ref() {
+                    Some(e) => (
+                        e.underline_color.map(|c| palette.resolve(c)),
+                        e.zerowidth.clone(),
+                    ),
+                    None => (None, Vec::new()),
+                };
 
                 cells.push(RenderableCell {
                     line: vis_line,
@@ -241,6 +241,11 @@ impl<T: EventListener> Term<T> {
         // Avoids building a Vec that would be immediately discarded.
         if dirty.is_all_dirty() {
             return (true, Vec::new());
+        }
+
+        // Fast path: nothing dirty — skip the per-line scan entirely.
+        if !dirty.is_any_dirty() {
+            return (false, Vec::new());
         }
 
         // Slow path: check individual bits (handles mark_range covering all lines).

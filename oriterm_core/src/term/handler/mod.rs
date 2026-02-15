@@ -256,10 +256,7 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// CHT: cursor forward tabulation.
     fn move_forward_tabs(&mut self, count: u16) {
-        let grid = self.grid_mut();
-        for _ in 0..count {
-            grid.tab();
-        }
+        self.put_tab(count);
     }
 
     /// CBT: cursor backward tabulation.

@@ -83,34 +83,38 @@ pub struct RenderableContent {
 }
 
 /// Resolve a cell's foreground color, applying bold-as-bright and dim.
+///
+/// When both BOLD and DIM are set, DIM takes priority — the base color is
+/// dimmed without bright promotion. This matches Alacritty's behavior and
+/// avoids the inconsistency where BOLD and DIM would cancel each other on
+/// Named colors but stack on Indexed colors.
 pub(super) fn resolve_fg(color: Color, flags: CellFlags, palette: &Palette) -> Rgb {
+    let is_bold = flags.contains(CellFlags::BOLD);
+    let is_dim = flags.contains(CellFlags::DIM);
+
     match color {
         Color::Spec(rgb) => {
-            if flags.contains(CellFlags::DIM) {
-                dim_rgb(rgb)
-            } else {
-                rgb
-            }
+            if is_dim { dim_rgb(rgb) } else { rgb }
         }
         Color::Indexed(idx) => {
-            let named = if flags.contains(CellFlags::BOLD) && idx < 8 {
+            if is_dim {
+                // DIM takes priority — dim the base color, no bright promotion.
+                dim_rgb(palette.resolve(color))
+            } else if is_bold && idx < 8 {
                 // Bold-as-bright: promote ANSI 0–7 to 8–15.
                 palette.resolve(Color::Indexed(idx + 8))
             } else {
                 palette.resolve(color)
-            };
-            if flags.contains(CellFlags::DIM) { dim_rgb(named) } else { named }
+            }
         }
         Color::Named(name) => {
-            let bright = if flags.contains(CellFlags::BOLD) {
-                name.to_bright()
+            if is_dim {
+                // DIM takes priority over BOLD-as-bright.
+                palette.resolve(Color::Named(name.to_dim()))
+            } else if is_bold {
+                palette.resolve(Color::Named(name.to_bright()))
             } else {
-                name
-            };
-            if flags.contains(CellFlags::DIM) {
-                palette.resolve(Color::Named(bright.to_dim()))
-            } else {
-                palette.resolve(Color::Named(bright))
+                palette.resolve(Color::Named(name))
             }
         }
     }

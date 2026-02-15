@@ -143,6 +143,38 @@ fn mark_range_drain_yields_only_range() {
 }
 
 #[test]
+fn mark_range_full_sets_all_dirty() {
+    let mut tracker = DirtyTracker::new(10);
+    tracker.mark_range(0..10);
+
+    // Full-range mark_range should set the all_dirty flag.
+    assert!(tracker.is_all_dirty());
+
+    // Drain should yield every line.
+    let indices: Vec<usize> = tracker.drain().collect();
+    assert_eq!(indices, vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+}
+
+#[test]
+fn mark_range_superset_sets_all_dirty() {
+    let mut tracker = DirtyTracker::new(5);
+    // Range extends beyond dirty.len() — still triggers all_dirty.
+    tracker.mark_range(0..100);
+
+    assert!(tracker.is_all_dirty());
+}
+
+#[test]
+fn mark_range_partial_does_not_set_all_dirty() {
+    let mut tracker = DirtyTracker::new(10);
+    tracker.mark_range(0..9);
+
+    // Partial range should NOT set all_dirty.
+    assert!(!tracker.is_all_dirty());
+    assert!(tracker.is_any_dirty());
+}
+
+#[test]
 fn mark_out_of_bounds_is_safe() {
     let mut tracker = DirtyTracker::new(5);
     tracker.mark(100); // no panic, no effect

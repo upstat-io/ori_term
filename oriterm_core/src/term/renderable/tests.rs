@@ -557,35 +557,34 @@ fn no_combining_marks_produces_empty_zerowidth() {
 fn bold_plus_dim_named_color() {
     let mut t = term();
     // SGR 1 = bold, SGR 2 = dim, SGR 31 = red.
-    // Bold promotes Red→BrightRed, then dim brings it back down.
+    // DIM takes priority — no bright promotion, just dim the base color.
     feed(&mut t, b"\x1b[1;2;31mX");
 
     let content = t.renderable_content();
     let palette = Palette::default();
 
     let cell = &content.cells[0];
-    // Bold promotes to BrightRed, then dim calls .to_dim() which maps
-    // BrightRed back to Red (the dim of bright is the normal color).
-    let expected = palette.resolve(Color::Named(NamedColor::BrightRed.to_dim()));
+    // DIM wins: Red.to_dim() = DimRed, no bright promotion.
+    let expected = palette.resolve(Color::Named(NamedColor::DimRed));
     assert_eq!(cell.fg, expected);
 }
 
 #[test]
 fn bold_plus_dim_indexed_0_to_7() {
     let palette = Palette::default();
-    // Bold + dim on indexed 2 (Green): bold promotes 2→10 (BrightGreen).
-    // Then dim reduces RGB to 2/3 brightness.
+    // Bold + dim on indexed 2 (Green): DIM takes priority — dim the base
+    // color without bright promotion.
     let result = resolve_fg(
         Color::Indexed(2),
         CellFlags::BOLD | CellFlags::DIM,
         &palette,
     );
-    // Bold promotes idx 2 → idx 10 first, then dim reduces the resolved RGB.
-    let bright_green = palette.resolve(Color::Indexed(10));
+    // DIM wins: dim_rgb of base color (idx 2 = Green), no promotion to idx 10.
+    let base_green = palette.resolve(Color::Indexed(2));
     let expected = Rgb {
-        r: (bright_green.r as u16 * 2 / 3) as u8,
-        g: (bright_green.g as u16 * 2 / 3) as u8,
-        b: (bright_green.b as u16 * 2 / 3) as u8,
+        r: (base_green.r as u16 * 2 / 3) as u8,
+        g: (base_green.g as u16 * 2 / 3) as u8,
+        b: (base_green.b as u16 * 2 / 3) as u8,
     };
     assert_eq!(result, expected);
 }
@@ -600,6 +599,52 @@ fn bold_plus_dim_truecolor() {
         &palette,
     );
     assert_eq!(result, Rgb { r: 100, g: 80, b: 60 });
+}
+
+#[test]
+fn bold_plus_dim_indexed_8_to_15() {
+    let palette = Palette::default();
+    // Bold + dim on indexed 9 (BrightRed, already in 8–15 range).
+    // DIM takes priority — dim the base color, no further promotion.
+    let result = resolve_fg(
+        Color::Indexed(9),
+        CellFlags::BOLD | CellFlags::DIM,
+        &palette,
+    );
+    let base = palette.resolve(Color::Indexed(9));
+    let expected = Rgb {
+        r: (base.r as u16 * 2 / 3) as u8,
+        g: (base.g as u16 * 2 / 3) as u8,
+        b: (base.b as u16 * 2 / 3) as u8,
+    };
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn bold_plus_dim_consistent_across_named_and_indexed() {
+    let palette = Palette::default();
+    // Named Red and Indexed 1 should produce the same result with BOLD+DIM.
+    let flags = CellFlags::BOLD | CellFlags::DIM;
+    let named = resolve_fg(Color::Named(NamedColor::Red), flags, &palette);
+    let indexed = resolve_fg(Color::Indexed(1), flags, &palette);
+    // Both should dim the base Red color without bright promotion.
+    assert_eq!(
+        named, indexed,
+        "Named and Indexed paths must agree on BOLD+DIM",
+    );
+}
+
+#[test]
+fn bold_plus_dim_default_foreground() {
+    let palette = Palette::default();
+    // BOLD+DIM on default foreground: DIM wins → DimForeground.
+    let result = resolve_fg(
+        Color::Named(NamedColor::Foreground),
+        CellFlags::BOLD | CellFlags::DIM,
+        &palette,
+    );
+    let expected = palette.resolve(Color::Named(NamedColor::DimForeground));
+    assert_eq!(result, expected);
 }
 
 // --- Underline color resolution ---
@@ -1350,7 +1395,7 @@ fn combining_mark_with_color_resolves_correctly() {
     let cell = &content.cells[0];
     assert_eq!(cell.ch, 'e');
     assert_eq!(cell.zerowidth, vec!['\u{0301}']);
-    assert_eq!(cell.fg, palette.resolve(vte::ansi::Color::Named(vte::ansi::NamedColor::Red)));
+    assert_eq!(cell.fg, palette.resolve(Color::Named(NamedColor::Red)));
 }
 
 #[test]

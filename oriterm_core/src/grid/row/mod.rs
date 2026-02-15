@@ -48,9 +48,7 @@ impl Row {
     pub fn reset(&mut self, cols: usize, template: &Cell) {
         // If template bg differs from what empty cells currently contain,
         // the entire row needs updating (BCE background change).
-        if !self.inner.is_empty()
-            && self.inner[self.inner.len() - 1].bg != template.bg
-        {
+        if self.inner.last().is_some_and(|last| last.bg != template.bg) {
             self.occ = self.inner.len();
         }
 

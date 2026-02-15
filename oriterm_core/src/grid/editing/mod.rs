@@ -182,6 +182,15 @@ impl Grid {
         }
 
         let count = count.min(cols - col);
+
+        // Clean the partner of any wide char pair at the insertion point,
+        // then strip the cell's own wide flag so the shifted copy doesn't
+        // carry a stale WIDE_CHAR or WIDE_CHAR_SPACER to its new position.
+        self.clear_wide_char_at(line, col);
+        self.rows[line][Column(col)]
+            .flags
+            .remove(CellFlags::WIDE_CHAR | CellFlags::WIDE_CHAR_SPACER);
+
         let row = &mut self.rows[line];
         let cells = row.as_mut_slice();
 
@@ -193,6 +202,12 @@ impl Grid {
         // Reset the gap cells in-place.
         for cell in &mut cells[col..col + count] {
             cell.reset(&template);
+        }
+
+        // Fix wide char base pushed to the right edge (spacer fell off-screen).
+        if cells[cols - 1].flags.contains(CellFlags::WIDE_CHAR) {
+            cells[cols - 1].ch = ' ';
+            cells[cols - 1].flags.remove(CellFlags::WIDE_CHAR);
         }
 
         // Cells shifted right: occ grows by at most `count`, capped at cols.
@@ -222,6 +237,17 @@ impl Grid {
         }
 
         let count = count.min(cols - col);
+
+        // Clean wide char pair at the cursor so stale flags don't persist.
+        self.clear_wide_char_at(line, col);
+        // Spacer at first shifted position: its base is in the delete zone.
+        if col + count < cols
+            && self.rows[line][Column(col + count)].flags.contains(CellFlags::WIDE_CHAR_SPACER)
+        {
+            self.rows[line][Column(col + count)].ch = ' ';
+            self.rows[line][Column(col + count)].flags.remove(CellFlags::WIDE_CHAR_SPACER);
+        }
+
         let row = &mut self.rows[line];
         let cells = row.as_mut_slice();
 
@@ -304,6 +330,8 @@ impl Grid {
 
         match mode {
             LineEraseMode::Right => {
+                // Fix spacer at cursor whose base is before the erase range.
+                self.fix_wide_boundaries(line, col, cols);
                 let row = &mut self.rows[line];
                 let cells = row.as_mut_slice();
                 for cell in &mut cells[col..cols] {
@@ -317,6 +345,8 @@ impl Grid {
             }
             LineEraseMode::Left => {
                 let end = col.min(cols - 1) + 1;
+                // Fix base at end-1 whose spacer is after the erase range.
+                self.fix_wide_boundaries(line, 0, end);
                 let row = &mut self.rows[line];
                 let cells = row.as_mut_slice();
                 for cell in &mut cells[..end] {
@@ -356,6 +386,10 @@ impl Grid {
         let template = Cell::from(self.cursor.template.bg);
 
         let end = (col + count).min(cols);
+
+        // Fix wide char pairs split by the erase boundary.
+        self.fix_wide_boundaries(line, col, end);
+
         let row = &mut self.rows[line];
         let cells = row.as_mut_slice();
         for cell in &mut cells[col..end] {
@@ -369,6 +403,25 @@ impl Grid {
         }
 
         self.dirty.mark(line);
+    }
+
+    /// Fix wide char pairs split by an erase of `[start..end)`.
+    ///
+    /// Clears orphaned halves OUTSIDE the range. Call BEFORE resetting.
+    fn fix_wide_boundaries(&mut self, line: usize, start: usize, end: usize) {
+        let cols = self.cols;
+        if start > 0 && start < cols
+            && self.rows[line][Column(start)].flags.contains(CellFlags::WIDE_CHAR_SPACER)
+        {
+            self.rows[line][Column(start - 1)].ch = ' ';
+            self.rows[line][Column(start - 1)].flags.remove(CellFlags::WIDE_CHAR);
+        }
+        if end > 0 && end < cols
+            && self.rows[line][Column(end - 1)].flags.contains(CellFlags::WIDE_CHAR)
+        {
+            self.rows[line][Column(end)].ch = ' ';
+            self.rows[line][Column(end)].flags.remove(CellFlags::WIDE_CHAR_SPACER);
+        }
     }
 
     /// Clear any wide char pair at the given position.

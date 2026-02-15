@@ -163,7 +163,7 @@ impl Grid {
         }
         self.cursor = Cursor::new();
         self.saved_cursor = None;
-        self.tab_stops = Self::init_tab_stops(self.cols);
+        Self::reset_tab_stops(&mut self.tab_stops, self.cols);
         self.scroll_region = 0..self.lines;
         self.scrollback.clear();
         self.display_offset = 0;
@@ -173,6 +173,14 @@ impl Grid {
     /// Initialize tab stops every 8 columns.
     fn init_tab_stops(cols: usize) -> Vec<bool> {
         (0..cols).map(|c| c % 8 == 0).collect()
+    }
+
+    /// Reset tab stops in-place every 8 columns, reusing the existing allocation.
+    fn reset_tab_stops(tab_stops: &mut Vec<bool>, cols: usize) {
+        tab_stops.resize(cols, false);
+        for (i, stop) in tab_stops.iter_mut().enumerate() {
+            *stop = i % 8 == 0;
+        }
     }
 }
 

@@ -146,7 +146,9 @@ impl Grid {
 
     /// CBT: move cursor to the previous tab stop, or column 0.
     pub fn tab_backward(&mut self) {
-        let col = self.cursor.col().0;
+        // Clamp to cols so wrap-pending (col == cols) or any out-of-range
+        // value never indexes past the tab_stops array.
+        let col = self.cursor.col().0.min(self.cols);
 
         // Search backward for the previous tab stop.
         for c in (0..col).rev() {
