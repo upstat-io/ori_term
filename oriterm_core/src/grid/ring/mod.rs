@@ -4,6 +4,8 @@
 //! The buffer grows incrementally up to `max_scrollback`, then overwrites
 //! the oldest entry on each push (classic ring buffer).
 
+use std::mem;
+
 use super::row::Row;
 
 /// Default maximum scrollback lines.
@@ -37,20 +39,27 @@ impl ScrollbackBuffer {
         }
     }
 
-    /// Add a row to scrollback (evicts the oldest if full).
-    pub(super) fn push(&mut self, row: Row) {
+    /// Add a row to scrollback, returning the evicted row if full.
+    ///
+    /// During the growth phase (`len < max_scrollback`), returns `None`.
+    /// Once full, the oldest row is evicted and returned so the caller
+    /// can recycle its allocation. When `max_scrollback == 0`, the
+    /// pushed row is returned immediately (no storage).
+    pub(super) fn push(&mut self, row: Row) -> Option<Row> {
         if self.max_scrollback == 0 {
-            return;
+            return Some(row);
         }
 
         if self.inner.len() < self.max_scrollback {
             // Growing phase: just append.
             self.inner.push(row);
             self.len = self.inner.len();
+            None
         } else {
-            // Full: overwrite the oldest slot and advance start.
-            self.inner[self.start] = row;
+            // Full: swap in the new row, return the evicted oldest.
+            let evicted = mem::replace(&mut self.inner[self.start], row);
             self.start = (self.start + 1) % self.max_scrollback;
+            Some(evicted)
         }
     }
 

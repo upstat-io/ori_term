@@ -58,11 +58,17 @@ impl Grid {
             }
 
             for i in 0..count {
-                // Move the row out (zero-copy), leave a blank in its place.
-                // The blank rotates to the bottom via scroll_range_up, where
-                // it would be reset anyway — but it's already blank (no-op).
-                let evicted = mem::replace(&mut self.rows[i], Row::new(self.cols));
-                self.scrollback.push(evicted);
+                // Move the row out, leave a placeholder in its place.
+                // The placeholder rotates to the bottom via scroll_range_up,
+                // where it gets reset anyway.
+                let placeholder = Row::new(self.cols);
+                let evicted = mem::replace(&mut self.rows[i], placeholder);
+                if let Some(mut recycled) = self.scrollback.push(evicted) {
+                    // Scrollback was full: reuse the evicted row's allocation
+                    // instead of the fresh placeholder we just inserted.
+                    recycled.reset(self.cols, &Cell::default());
+                    self.rows[i] = recycled;
+                }
             }
         }
 

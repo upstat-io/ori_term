@@ -27,8 +27,9 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// Advance cursor to the next tab stop (or end of line).
     fn put_tab(&mut self, count: u16) {
+        let grid = self.grid_mut();
         for _ in 0..count {
-            self.grid_mut().tab();
+            grid.tab();
         }
     }
 

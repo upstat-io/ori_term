@@ -111,11 +111,13 @@ fn iter_after_wrap() {
 }
 
 #[test]
-fn zero_max_scrollback_ignores_push() {
+fn zero_max_scrollback_returns_pushed_row() {
     let mut sb = ScrollbackBuffer::new(0);
-    sb.push(make_row("A"));
+    let returned = sb.push(make_row("A"));
     assert_eq!(sb.len(), 0);
     assert!(sb.is_empty());
+    // Row returned immediately — no storage.
+    assert_eq!(row_text(&returned.unwrap()), "A");
 }
 
 #[test]
@@ -149,6 +151,40 @@ fn exact_capacity_boundary_first_eviction() {
     assert_eq!(row_text(sb.get(0).unwrap()), "R3");
     assert_eq!(row_text(sb.get(1).unwrap()), "R2");
     assert_eq!(row_text(sb.get(2).unwrap()), "R1");
+}
+
+// ---------------------------------------------------------------------------
+// Push return value tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn push_returns_none_during_growth() {
+    let mut sb = ScrollbackBuffer::new(3);
+    assert!(sb.push(make_row("R0")).is_none());
+    assert!(sb.push(make_row("R1")).is_none());
+    assert!(sb.push(make_row("R2")).is_none());
+    assert_eq!(sb.len(), 3);
+}
+
+#[test]
+fn push_returns_evicted_row_when_full() {
+    let mut sb = ScrollbackBuffer::new(3);
+    sb.push(make_row("R0"));
+    sb.push(make_row("R1"));
+    sb.push(make_row("R2"));
+
+    // Buffer is full — next push evicts the oldest (R0).
+    let evicted = sb.push(make_row("R3"));
+    assert_eq!(row_text(&evicted.unwrap()), "R0");
+
+    // Next push evicts R1.
+    let evicted = sb.push(make_row("R4"));
+    assert_eq!(row_text(&evicted.unwrap()), "R1");
+
+    // Buffer still holds the 3 most recent.
+    assert_eq!(row_text(sb.get(0).unwrap()), "R4");
+    assert_eq!(row_text(sb.get(1).unwrap()), "R3");
+    assert_eq!(row_text(sb.get(2).unwrap()), "R2");
 }
 
 // ---------------------------------------------------------------------------
