@@ -1,0 +1,11 @@
+[package]
+name = "oriterm_ui"
+version = "0.1.0-alpha.3"
+edition = "2024"
+description = "UI framework types: geometry, hit testing, scale factor, window management"
+license = "MIT"
+
+[dependencies]
+
+[lints]
+workspace = true

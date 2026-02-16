@@ -18,8 +18,8 @@ sections:
     title: GPU Backend Selection
     status: complete
   - id: "03.5"
-    title: Window Management
-    status: not-started
+    title: "Window Management — oriterm_ui Crate Foundation"
+    status: in-progress
   - id: "03.6"
     title: Platform-Specific Code Paths
     status: not-started
@@ -227,42 +227,151 @@ wgpu auto-selects the best GPU backend per platform. Platform-specific configura
 
 ---
 
-## 03.5 Window Management
+## 03.5 Window Management — `oriterm_ui` Crate Foundation
 
-Platform-appropriate window creation and management. The current approach uses a frameless (borderless) window with a custom title bar on Windows. Other platforms may need different strategies.
+Chrome-style frameless window management with client-side decorations (CSD) on all platforms. This section creates the `oriterm_ui` crate — the seed that Section 07 grows into a full UI framework. The architecture follows Chromium's `ui/aura` + `ui/gfx/geometry` patterns: platform-independent geometry and hit-test logic with thin per-platform glue layers.
 
-**Files:** `oriterm/src/window.rs`, `oriterm/src/app/event_loop.rs`
+**Crate:** `oriterm_ui` (new workspace member)
+**Dependencies:** `log`, `winit`; `windows-sys` on Windows only
 
-**Reference:** `_old/src/window.rs`, `_old/src/app/event_loop.rs`
+**Reference:**
+- Chromium `ui/gfx/geometry/` — Point, Size, Rect, Insets (reference repo: `~/projects/reference_repos/chromium_ui/`)
+- Chromium `ui/aura/window_targeter.h` — pluggable hit-test strategy
+- Chromium `ui/aura/window_delegate.h` — `GetNonClientComponent(point)` = our `hit_test()`
+- `_old/src/platform_windows.rs` — existing WndProc subclass to port
 
-- [ ] Windows:
-  - [ ] Frameless window with custom title bar (current approach, working)
-  - [ ] Custom drag regions for window move and resize
-  - [ ] `drag_window()` and `drag_resize_window()` via winit
-  - [ ] Window snap (Aero Snap) works with frameless windows
-  - [ ] DPI awareness: handle `ScaleFactorChanged` for high-DPI displays
-- [ ] Linux:
-  - [ ] X11 window management:
-    - [ ] Test `drag_window()` — may require `_NET_WM_MOVERESIZE` for some WMs
-    - [ ] Test `drag_resize_window()` — may not work on all WMs
-    - [ ] Decision: frameless by default or respect WM decorations?
-    - [ ] If frameless: need to implement client-side decorations (CSD) or use GTK/libdecor
-    - [ ] If decorated: use server-side decorations (SSD) from the WM
-  - [ ] Wayland window management:
-    - [ ] Wayland requires client-side decorations (SSD is optional and WM-dependent)
-    - [ ] `winit` handles basic Wayland support; test with Sway and GNOME Wayland
-    - [ ] `drag_window()` uses `xdg_toplevel.move` — should work
-  - [ ] Test with common WMs/DEs: GNOME, KDE, Sway, i3, Hyprland
-- [ ] macOS:
-  - [ ] Native title bar with traffic light buttons, or frameless with custom title bar
-  - [ ] Handle `NSWindow` full screen properly (green button, Mission Control)
-  - [ ] Menu bar integration: File, Edit, View, Window, Help menus
-  - [ ] Respect macOS window management conventions (snap, Spaces, tabs)
-  - [ ] Handle Retina (HiDPI) displays via `ScaleFactorChanged`
-- [ ] **Tests:**
-  - [ ] Window creation succeeds on the current platform (integration test)
-  - [ ] DPI scale factor is correctly detected
-  - [ ] Window resize events are handled without panic
+**Architecture:**
+
+| Layer | Chrome equivalent | Our module | Platform-specific? |
+|-------|-------------------|------------|-------------------|
+| Geometry | `ui/gfx/geometry/` | `geometry.rs` | No |
+| Scale | `ui/gfx/geometry/dip_util.h` | `scale.rs` | No |
+| Hit testing | `WindowDelegate::GetNonClientComponent` | `hit_test.rs` | No |
+| Window creation | `WindowTreeHost` | `window.rs` + `platform.rs` | `#[cfg]` dispatch |
+| Platform glue | `PlatformWindow` | `platform_windows.rs`, etc. | Yes, per-platform |
+
+### Geometry Types (`geometry.rs`)
+
+Modeled after Chrome's `ui/gfx/geometry/`. All f32 logical pixels. Pure data, no platform deps, fully `const`/testable.
+
+- [x] `Point` — `{ x: f32, y: f32 }`, `Debug + Clone + Copy + PartialEq + Default`
+  - [x] `offset(dx, dy)`, `scale(sx, sy)`, `distance_to(other)`
+- [x] `Size` — `{ width: f32, height: f32 }`, clamp near-zero to 0.0 (Chrome's epsilon pattern: `8 * f32::EPSILON`)
+  - [x] `is_empty()`, `area()`, `scale(sx, sy)`
+- [x] `Rect` — composed as `{ origin: Point, size: Size }` (Chrome pattern, not four independent fields)
+  - [x] Half-open interval semantics: `contains()` uses `[x, x+w)` — standard for non-overlapping tiling
+  - [x] `contains(point)`, `intersects(other)`, `intersection(other)`, `union(other)`
+  - [x] `inset(insets)`, `offset(dx, dy)`, `center()`, `is_empty()`
+  - [x] `from_origin_size(origin, size)`, `right()`, `bottom()`
+- [x] `Insets` — `{ top: f32, right: f32, bottom: f32, left: f32 }`
+  - [x] Factory methods: `Insets::all(v)`, `Insets::vh(v, h)`, `Insets::tlbr(t, l, b, r)`
+  - [x] `width()` (left + right), `height()` (top + bottom)
+  - [x] `Add`, `Sub`, `Neg` operator impls
+
+### Scale Factor (`scale.rs`)
+
+DPI scaling abstraction. Wraps winit's `f64` scale factor as a clamped newtype.
+
+- [x] `ScaleFactor(f64)` — clamped to `[0.25, 8.0]`
+  - [x] `new(factor)`, `factor(self) -> f64`
+  - [x] `scale(logical) -> f64`, `unscale(physical) -> f64`
+  - [x] `scale_u32(logical) -> u32` (rounded)
+  - [x] `scale_point(Point) -> Point`, `scale_size(Size) -> Size`, `scale_rect(Rect) -> Rect`
+
+### Hit Testing (`hit_test.rs`)
+
+Chrome's `WM_NCHITTEST` equivalent as a **platform-independent pure function**. No OS types, no global state. The WndProc subclass on Windows calls this; the event loop calls it directly on Linux/macOS. 100% unit-testable on any platform.
+
+- [x] `HitTestResult` enum — `Client`, `Caption`, `ResizeBorder(ResizeDirection)`
+- [x] `ResizeDirection` enum — `Top`, `Bottom`, `Left`, `Right`, `TopLeft`, `TopRight`, `BottomLeft`, `BottomRight`
+- [x] `hit_test(point, window_size, border_width, caption_height, interactive_rects, is_maximized) -> HitTestResult`
+  - [x] Priority hierarchy (from Chrome's decision tree):
+    1. Interactive rects within caption → `Client` (buttons/tabs are clickable, not draggable)
+    2. Resize edges (unless maximized) → `ResizeBorder(direction)`
+    3. Caption area → `Caption` (draggable title bar)
+    4. Everything else → `Client`
+  - [x] Corners take priority over edges (top-left corner = `TopLeft`, not `Top` or `Left`)
+  - [x] Maximized windows have no resize borders
+
+### Window Creation (`window.rs` + `platform.rs`)
+
+Config-driven window creation. All platforms use frameless windows (Chrome-style CSD) from day one.
+
+- [ ] `WindowConfig` struct — `title`, `inner_size: Size`, `transparent: bool`, `blur: bool`, `position: Option<Point>`, `scale_factor: ScaleFactor`
+- [ ] `WindowError` enum — `Creation(winit::error::OsError)`
+- [ ] `create_window(event_loop, config) -> Result<Arc<Window>, WindowError>`
+  - [ ] Window created invisible (render first frame, then `set_visible(true)` to avoid flash)
+- [ ] `load_icon() -> Option<Icon>` — embedded application icon (RGBA, decoded at build time)
+- [ ] `build_window_attributes(config) -> WindowAttributes` — per-platform `#[cfg]` dispatch:
+  - [ ] **All platforms:** `with_decorations(false)`, `with_visible(false)`, `with_transparent(config.transparent)`
+  - [ ] **Windows:** `with_no_redirection_bitmap(true)` when transparent
+  - [ ] **macOS:** `with_titlebar_transparent(true)`, `with_fullsize_content_view(true)`, `with_option_as_alt(Both)`
+  - [ ] **Linux:** `with_name("oriterm", "oriterm")` for X11 `WM_CLASS`
+
+### Per-Platform Glue (thin layers, `#[cfg]`-gated)
+
+Each platform needs a thin adapter that translates between OS window events and the platform-independent `hit_test()` function. These are the only files with platform-specific code.
+
+- [ ] **Windows** (`platform_windows.rs`):
+  - [ ] WndProc subclass for Aero Snap integration (port from `_old/src/platform_windows.rs`)
+  - [ ] `WM_NCHITTEST` handler calls `hit_test::hit_test()`, maps result to Windows HT constants
+  - [ ] `WM_NCCALCSIZE` — all-client-area trick + DWM 1px margin for shadow/snap
+  - [ ] `WM_DPICHANGED` — stores DPI for app to query
+  - [ ] `WM_MOVING` — position correction + merge detection for tab drag
+  - [ ] Public API: `enable_snap()`, `set_client_rects()`, `get_current_dpi()`, `begin_os_drag()`, `take_os_drag_result()`
+- [ ] **macOS** (`platform_macos.rs`):
+  - [ ] Frameless with transparent title bar + full-size content view
+  - [ ] Traffic light buttons positioned within custom chrome
+  - [ ] `NSWindow` full screen support (green button, Mission Control)
+  - [ ] Drag via winit's `drag_window()` — triggered by `hit_test() == Caption`
+  - [ ] Resize via winit's `drag_resize_window()` — triggered by `hit_test() == ResizeBorder`
+  - [ ] Retina (HiDPI) via `ScaleFactorChanged`
+- [ ] **Linux** (`platform_linux.rs`):
+  - [ ] Frameless CSD — same `hit_test()` drives drag/resize
+  - [ ] X11: `drag_window()` uses `_NET_WM_MOVERESIZE` (winit handles this)
+  - [ ] Wayland: `drag_window()` uses `xdg_toplevel.move` (winit handles this)
+  - [ ] Resize via winit's `drag_resize_window()` — triggered by `hit_test() == ResizeBorder`
+  - [ ] Test with GNOME, KDE, Sway, i3, Hyprland
+
+### Workspace Integration
+
+- [x] Add `oriterm_ui` to workspace `Cargo.toml` members
+- [x] `oriterm_ui/Cargo.toml` — edition 2024, `[lints] workspace = true`
+- [x] `oriterm/Cargo.toml` — add `oriterm_ui = { path = "../oriterm_ui" }` dependency
+- [ ] `oriterm_ui/src/lib.rs` — re-export modules:
+  ```
+  pub mod geometry;
+  pub mod hit_test;
+  pub mod scale;
+  pub mod window;
+  mod platform;
+  #[cfg(target_os = "windows")] pub mod platform_windows;
+  #[cfg(target_os = "macos")] pub mod platform_macos;
+  #[cfg(target_os = "linux")] pub mod platform_linux;
+  ```
+
+### Tests (sibling `tests.rs` pattern)
+
+- [x] `geometry/tests.rs`:
+  - [x] `Rect::contains` — inside, outside, on-edge (half-open: left/top included, right/bottom excluded)
+  - [x] `Rect::intersects` — overlapping, adjacent (no intersection), contained, disjoint
+  - [x] `Rect::inset` — positive insets shrink, negative expand
+  - [x] `Rect::union` — bounding box, one empty, both empty
+  - [x] `Size` epsilon clamping — near-zero becomes 0.0
+  - [x] `Point::offset`, `Point::distance_to`
+- [x] `scale/tests.rs`:
+  - [x] Clamping — values outside `[0.25, 8.0]` clamped
+  - [x] `scale` / `unscale` roundtrip
+  - [x] `scale_u32` rounding behavior
+  - [x] `scale_rect` — origin and size both scaled
+- [x] `hit_test/tests.rs`:
+  - [x] Caption area — point in tab bar region returns `Caption`
+  - [x] Client area — point in terminal grid returns `Client`
+  - [x] All 8 resize directions — each edge and corner detected correctly
+  - [x] Corner priority — point at corner returns corner, not edge
+  - [x] Maximized — all resize borders suppressed, only `Caption` or `Client`
+  - [x] Interactive rects — button within caption returns `Client`, not `Caption`
+  - [x] Edge cases — point exactly on border width boundary
 
 ---
 
