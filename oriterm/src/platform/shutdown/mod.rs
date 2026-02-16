@@ -10,6 +10,8 @@
 //! the event loop.
 
 // Shutdown signal infrastructure is wired into the event loop in Section 04.
+// In test builds, tests exercise init/should_shutdown so dead_code doesn't
+// fire — making #![expect(dead_code)] produce an unfulfilled-lint warning.
 #![allow(dead_code, reason = "shutdown signals used in Section 04")]
 
 use std::io;
@@ -43,30 +45,25 @@ pub fn should_shutdown() -> bool {
 }
 
 /// Unix: register `SIGTERM` and `SIGINT` via `signal-hook`.
+///
+/// Uses `signal_hook::low_level::register` to set the global `SHUTDOWN`
+/// flag directly from the signal handler. `AtomicBool::store` with
+/// `Ordering::Relaxed` is async-signal-safe.
 #[cfg(unix)]
 fn platform_init() -> io::Result<()> {
-    use std::sync::Arc;
-
     use signal_hook::consts::{SIGINT, SIGTERM};
 
-    let flag = Arc::new(AtomicBool::new(false));
-
-    // Both signals share the same flag — any one triggers shutdown.
-    signal_hook::flag::register(SIGINT, Arc::clone(&flag))?;
-    signal_hook::flag::register(SIGTERM, Arc::clone(&flag))?;
-
-    // Bridge the signal-hook flag to our global SHUTDOWN flag.
-    // A background thread polls at 50ms intervals (acceptable latency
-    // for shutdown detection).
-    std::thread::Builder::new()
-        .name("shutdown-signal".into())
-        .spawn(move || loop {
-            if flag.load(Ordering::Relaxed) {
-                SHUTDOWN.store(true, Ordering::Relaxed);
-                return;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
+    // SAFETY: The closure only calls AtomicBool::store (async-signal-safe).
+    // signal_hook::low_level::register requires the closure to be signal-safe.
+    #[allow(unsafe_code)]
+    unsafe {
+        signal_hook::low_level::register(SIGINT, || {
+            SHUTDOWN.store(true, Ordering::Relaxed);
         })?;
+        signal_hook::low_level::register(SIGTERM, || {
+            SHUTDOWN.store(true, Ordering::Relaxed);
+        })?;
+    }
 
     Ok(())
 }
@@ -96,8 +93,9 @@ fn platform_init() -> io::Result<()> {
 #[cfg(windows)]
 #[allow(unsafe_code)]
 unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> i32 {
-    // CTRL_C_EVENT = 0, CTRL_CLOSE_EVENT = 2
-    if ctrl_type == 0 || ctrl_type == 2 {
+    use windows_sys::Win32::System::Console::{CTRL_CLOSE_EVENT, CTRL_C_EVENT};
+
+    if ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_CLOSE_EVENT {
         SHUTDOWN.store(true, Ordering::Relaxed);
         1 // TRUE — we handled it
     } else {

@@ -13,17 +13,10 @@ use std::path::PathBuf;
 
 /// Returns the platform-specific configuration directory for oriterm.
 ///
-/// Creates the directory if it does not exist. Returns an error only if
-/// directory creation fails (the path itself is always resolvable via
-/// fallback to the current directory).
+/// This is a pure path computation — it does not create the directory.
+/// Call [`ensure_config_dir`] to create it if needed.
 pub fn config_dir() -> PathBuf {
-    let dir = platform_config_dir();
-    if !dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(&dir) {
-            log::warn!("failed to create config dir {}: {e}", dir.display());
-        }
-    }
-    dir
+    platform_config_dir()
 }
 
 /// Returns the path to the main configuration file.
