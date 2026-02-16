@@ -16,7 +16,7 @@ sections:
     status: complete
   - id: "03.4"
     title: GPU Backend Selection
-    status: not-started
+    status: complete
   - id: "03.5"
     title: Window Management
     status: not-started
@@ -197,33 +197,33 @@ wgpu auto-selects the best GPU backend per platform. Platform-specific configura
 
 **Reference:** `_old/src/gpu/state.rs`, `_old/src/gpu/pipeline.rs`
 
-- [ ] wgpu backend selection:
-  - [ ] Windows: Vulkan and DX12 (both first-class, wgpu auto-selects best available)
-  - [ ] Linux: Vulkan
-  - [ ] macOS: Metal
-  - [ ] `wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::VULKAN | wgpu::Backends::DX12 | wgpu::Backends::METAL, .. })`
-- [ ] Windows transparency (DirectComposition):
-  - [ ] Use `wgpu::CompositeAlphaMode::PreMultiplied` with DComp surface
-  - [ ] Requires `CreateSwapChainForComposition` path in wgpu
-  - [ ] Acrylic/Mica blur via `DwmSetWindowAttribute` (Windows 11)
-  - [ ] Fallback: opaque background on Windows 10 without DWM composition
-- [ ] Linux transparency:
-  - [ ] X11: ARGB visual for composited transparency (requires compositor like Picom, KWin, Mutter)
-  - [ ] Wayland: compositor handles transparency natively via surface alpha
-  - [ ] Test with common compositors: Picom, KWin, Mutter, Sway
-  - [ ] Fallback: opaque background when no compositor is running
-- [ ] macOS transparency:
-  - [ ] `NSVisualEffectView` for vibrancy/blur effects
-  - [ ] `window-vibrancy` crate provides macOS support
-  - [ ] Standard alpha transparency via `NSWindow.isOpaque = false`
-- [ ] Surface format selection:
-  - [ ] Prefer sRGB formats (`Bgra8UnormSrgb`, `Rgba8UnormSrgb`) for correct color rendering
-  - [ ] Fallback to non-sRGB if preferred format is unavailable
-  - [ ] Log the selected adapter, backend, and surface format at startup
-- [ ] **Tests:**
-  - [ ] GPU adapter is successfully created on the current platform (integration test)
-  - [ ] Surface format is sRGB-capable
-  - [ ] Pipeline creation does not error
+- [x] wgpu backend selection:
+  - [x] Windows: Vulkan and DX12 (both first-class, wgpu auto-selects best available)
+  - [x] Linux: Vulkan
+  - [x] macOS: Metal
+  - [x] `wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::VULKAN | wgpu::Backends::DX12 | wgpu::Backends::METAL, .. })`
+- [x] Windows transparency (DirectComposition):
+  - [x] Use `wgpu::CompositeAlphaMode::PreMultiplied` with DComp surface
+  - [x] Requires `CreateSwapChainForComposition` path in wgpu
+  - [x] Acrylic/Mica blur via `DwmSetWindowAttribute` (Windows 11)
+  - [x] Fallback: opaque background on Windows 10 without DWM composition
+- [x] Linux transparency:
+  - [x] X11: ARGB visual for composited transparency (requires compositor like Picom, KWin, Mutter)
+  - [x] Wayland: compositor handles transparency natively via surface alpha
+  - [x] Test with common compositors: Picom, KWin, Mutter, Sway
+  - [x] Fallback: opaque background when no compositor is running
+- [x] macOS transparency:
+  - [x] `NSVisualEffectView` for vibrancy/blur effects
+  - [x] `window-vibrancy` crate provides macOS support
+  - [x] Standard alpha transparency via `NSWindow.isOpaque = false`
+- [x] Surface format selection:
+  - [x] Prefer sRGB formats (`Bgra8UnormSrgb`, `Rgba8UnormSrgb`) for correct color rendering
+  - [x] Fallback to non-sRGB if preferred format is unavailable
+  - [x] Log the selected adapter, backend, and surface format at startup
+- [x] **Tests:**
+  - [x] GPU adapter is successfully created on the current platform (integration test)
+  - [x] Surface format is sRGB-capable
+  - [x] Pipeline creation does not error
 
 ---
 

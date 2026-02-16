@@ -2,6 +2,7 @@
 
 mod clipboard;
 mod font;
+mod gpu;
 mod pty;
 
 use std::io::{self, Write};
@@ -46,6 +47,10 @@ fn main() {
     }
     // Exercise user fallback resolution (no-op with None result).
     let _ = font::discovery::resolve_user_fallback("__nonexistent__");
+
+    // Validate GPU availability (enumerate adapters without needing a window).
+    let adapter_count = gpu::state::validate_gpu();
+    log::info!("GPU validation: {adapter_count} adapter(s) found");
 
     // Validate clipboard pipeline (falls back to no-op if no display server).
     let mut cb = clipboard::Clipboard::new();
