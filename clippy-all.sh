@@ -7,4 +7,8 @@ echo "=== cargo clippy --workspace (${TARGET}) ==="
 cargo clippy --workspace --target "${TARGET}" -- -D warnings
 
 echo ""
+echo "=== cargo clippy --workspace (host) ==="
+cargo clippy --workspace -- -D warnings
+
+echo ""
 echo "All clippy checks passed."

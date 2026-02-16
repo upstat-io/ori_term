@@ -55,6 +55,12 @@ fn main() {
             }
             PtyEvent::Closed => break,
         }
+
+        // Detect child exit via signal (complements PTY EOF detection).
+        #[cfg(unix)]
+        if pty::signal::check() {
+            break;
+        }
     }
 
     pty_reader.join();
