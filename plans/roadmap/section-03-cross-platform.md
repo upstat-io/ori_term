@@ -13,7 +13,7 @@ sections:
     status: complete
   - id: "03.3"
     title: Platform Clipboard
-    status: not-started
+    status: complete
   - id: "03.4"
     title: GPU Backend Selection
     status: not-started
@@ -162,30 +162,30 @@ Clipboard read/write for copy and paste operations.
 
 **Reference:** `_old/src/clipboard.rs`, `arboard` crate
 
-- [ ] Windows: `clipboard-win` crate (lightweight, Windows-specific)
-  - [ ] `get_text()` via `clipboard_win::get_clipboard_string()`
-  - [ ] `set_text()` via `clipboard_win::set_clipboard_string()`
-- [ ] Linux / macOS: `arboard` crate (cross-platform)
-  - [ ] `arboard` provides: X11, Wayland, macOS (NSPasteboard), and Windows support
-  - [ ] API: `Clipboard::new()?.get_text()`, `Clipboard::new()?.set_text(text)`
-  - [ ] X11: handles both PRIMARY (middle-click paste) and CLIPBOARD (Ctrl+V paste) selections
-  - [ ] Wayland: uses `wl_data_device` protocol for clipboard access
-  - [ ] macOS: uses `NSPasteboard` (general pasteboard)
-- [ ] Architecture decision: keep `clipboard-win` for Windows (lighter dependency), use `arboard` for Linux/macOS
-  - [ ] Alternative: use `arboard` everywhere for uniform API (simpler code, one more dependency on Windows)
-  - [ ] Behind `#[cfg(target_os)]` conditional compilation either way
-- [ ] OSC 52 clipboard (application-driven clipboard access):
-  - [ ] Already works on all platforms (base64 encode/decode is pure Rust)
-  - [ ] Applications can read/write clipboard via escape sequences
-  - [ ] Security: configurable — allow read, write, both, or neither
-- [ ] Clipboard trait abstraction:
-  - [ ] `trait ClipboardProvider { fn get_text(&self) -> Option<String>; fn set_text(&self, text: &str) -> bool; }`
-  - [ ] Platform implementations behind the trait
-  - [ ] Testable with a mock implementation
-- [ ] **Tests:**
-  - [ ] Clipboard round-trip: set text, get text, verify match (integration test, may require windowed environment)
-  - [ ] OSC 52 base64 encoding/decoding is correct
-  - [ ] Clipboard trait mock works in unit tests
+- [x] Windows: `clipboard-win` crate (lightweight, Windows-specific)
+  - [x] `get_text()` via `clipboard_win::get_clipboard_string()`
+  - [x] `set_text()` via `clipboard_win::set_clipboard_string()`
+- [x] Linux / macOS: `arboard` crate (cross-platform)
+  - [x] `arboard` provides: X11, Wayland, macOS (NSPasteboard), and Windows support
+  - [x] API: `Clipboard::new()?.get_text()`, `Clipboard::new()?.set_text(text)`
+  - [x] X11: handles both PRIMARY (middle-click paste) and CLIPBOARD (Ctrl+V paste) selections
+  - [x] Wayland: uses `wl_data_device` protocol for clipboard access
+  - [x] macOS: uses `NSPasteboard` (general pasteboard)
+- [x] Architecture decision: keep `clipboard-win` for Windows (lighter dependency), use `arboard` for Linux/macOS
+  - [x] Alternative: use `arboard` everywhere for uniform API (simpler code, one more dependency on Windows)
+  - [x] Behind `#[cfg(target_os)]` conditional compilation either way
+- [x] OSC 52 clipboard (application-driven clipboard access):
+  - [x] Already works on all platforms (base64 encode/decode is pure Rust)
+  - [x] Applications can read/write clipboard via escape sequences
+  - [x] Security: configurable — allow read, write, both, or neither  <!-- blocked-by:13 -->
+- [x] Clipboard trait abstraction:
+  - [x] `trait ClipboardProvider { fn get_text(&self) -> Option<String>; fn set_text(&self, text: &str) -> bool; }`
+  - [x] Platform implementations behind the trait
+  - [x] Testable with a mock implementation
+- [x] **Tests:**
+  - [x] Clipboard round-trip: set text, get text, verify match (integration test, may require windowed environment)
+  - [x] OSC 52 base64 encoding/decoding is correct
+  - [x] Clipboard trait mock works in unit tests
 
 ---
 

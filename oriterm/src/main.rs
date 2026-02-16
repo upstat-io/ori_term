@@ -1,5 +1,6 @@
 //! Binary entry point for the oriterm terminal emulator.
 
+mod clipboard;
 mod font;
 mod pty;
 
@@ -45,6 +46,15 @@ fn main() {
     }
     // Exercise user fallback resolution (no-op with None result).
     let _ = font::discovery::resolve_user_fallback("__nonexistent__");
+
+    // Validate clipboard pipeline (falls back to no-op if no display server).
+    let mut cb = clipboard::Clipboard::new();
+    cb.store(
+        oriterm_core::event::ClipboardType::Clipboard,
+        "oriterm clipboard test",
+    );
+    let clip = cb.load(oriterm_core::event::ClipboardType::Clipboard);
+    log::info!("clipboard: loaded {} bytes", clip.len());
 
     let config = PtyConfig::default();
     let mut handle = spawn_pty(&config).expect("failed to spawn PTY");
