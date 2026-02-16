@@ -6,4 +6,5 @@
 
 pub mod config_paths;
 pub mod shutdown;
+pub mod theme;
 pub mod url;

@@ -3,6 +3,7 @@
 use vte::ansi::{Color, NamedColor};
 
 use super::{Palette, Rgb};
+use crate::theme::Theme;
 
 #[test]
 fn default_color_0_is_black() {
@@ -157,4 +158,82 @@ fn dim_variants_are_darker() {
     assert!(dim.r <= normal.r, "dim red should be <= normal red");
     assert!(dim.g <= normal.g);
     assert!(dim.b <= normal.b);
+}
+
+// --- Theme-aware palette tests ---
+
+#[test]
+fn dark_theme_has_dark_background() {
+    let p = Palette::for_theme(Theme::Dark);
+    assert_eq!(p.background(), Rgb { r: 0x00, g: 0x00, b: 0x00 });
+}
+
+#[test]
+fn dark_theme_has_light_foreground() {
+    let p = Palette::for_theme(Theme::Dark);
+    assert_eq!(p.foreground(), Rgb { r: 0xd3, g: 0xd7, b: 0xcf });
+}
+
+#[test]
+fn light_theme_has_white_background() {
+    let p = Palette::for_theme(Theme::Light);
+    assert_eq!(p.background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+}
+
+#[test]
+fn light_theme_has_dark_foreground() {
+    let p = Palette::for_theme(Theme::Light);
+    assert_eq!(p.foreground(), Rgb { r: 0x2e, g: 0x34, b: 0x36 });
+}
+
+#[test]
+fn light_theme_cursor_is_black() {
+    let p = Palette::for_theme(Theme::Light);
+    assert_eq!(p.cursor_color(), Rgb { r: 0x00, g: 0x00, b: 0x00 });
+}
+
+#[test]
+fn dark_theme_cursor_is_white() {
+    let p = Palette::for_theme(Theme::Dark);
+    assert_eq!(p.cursor_color(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+}
+
+#[test]
+fn unknown_theme_uses_dark_defaults() {
+    let unknown = Palette::for_theme(Theme::Unknown);
+    let dark = Palette::for_theme(Theme::Dark);
+    assert_eq!(unknown.foreground(), dark.foreground());
+    assert_eq!(unknown.background(), dark.background());
+    assert_eq!(unknown.cursor_color(), dark.cursor_color());
+}
+
+#[test]
+fn indexed_colors_same_across_themes() {
+    let dark = Palette::for_theme(Theme::Dark);
+    let light = Palette::for_theme(Theme::Light);
+    // ANSI colors 0–15 are theme-independent.
+    for i in 0..16 {
+        assert_eq!(
+            dark.resolve(Color::Indexed(i)),
+            light.resolve(Color::Indexed(i)),
+            "ANSI color {i} differs between themes",
+        );
+    }
+    // Cube and grayscale are also theme-independent.
+    for i in 16..=255 {
+        assert_eq!(
+            dark.resolve(Color::Indexed(i)),
+            light.resolve(Color::Indexed(i)),
+            "indexed color {i} differs between themes",
+        );
+    }
+}
+
+#[test]
+fn default_palette_equals_dark_theme() {
+    let default = Palette::default();
+    let dark = Palette::for_theme(Theme::Dark);
+    assert_eq!(default.foreground(), dark.foreground());
+    assert_eq!(default.background(), dark.background());
+    assert_eq!(default.cursor_color(), dark.cursor_color());
 }

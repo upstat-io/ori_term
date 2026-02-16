@@ -6,6 +6,8 @@
 
 use vte::ansi::{Color, NamedColor};
 
+use crate::theme::Theme;
+
 pub use vte::ansi::Rgb;
 
 /// Total palette entries: 256 indexed + 14 named semantic slots.
@@ -31,12 +33,19 @@ const ANSI_COLORS: [Rgb; 16] = [
     Rgb { r: 0xee, g: 0xee, b: 0xec }, // 15 Bright White
 ];
 
-/// Default foreground (light gray).
-const DEFAULT_FG: Rgb = Rgb { r: 0xd3, g: 0xd7, b: 0xcf };
-/// Default background (black).
-const DEFAULT_BG: Rgb = Rgb { r: 0x00, g: 0x00, b: 0x00 };
-/// Default cursor color (white).
-const DEFAULT_CURSOR: Rgb = Rgb { r: 0xff, g: 0xff, b: 0xff };
+/// Default foreground for dark theme (light gray — Tango Aluminium 3).
+const DARK_FG: Rgb = Rgb { r: 0xd3, g: 0xd7, b: 0xcf };
+/// Default background for dark theme (black).
+const DARK_BG: Rgb = Rgb { r: 0x00, g: 0x00, b: 0x00 };
+/// Default cursor color for dark theme (white).
+const DARK_CURSOR: Rgb = Rgb { r: 0xff, g: 0xff, b: 0xff };
+
+/// Default foreground for light theme (dark gray — Tango Aluminium 6).
+const LIGHT_FG: Rgb = Rgb { r: 0x2e, g: 0x34, b: 0x36 };
+/// Default background for light theme (white).
+const LIGHT_BG: Rgb = Rgb { r: 0xff, g: 0xff, b: 0xff };
+/// Default cursor color for light theme (black).
+const LIGHT_CURSOR: Rgb = Rgb { r: 0x00, g: 0x00, b: 0x00 };
 
 /// 270-entry color palette with indexed and named color slots.
 ///
@@ -52,12 +61,22 @@ pub struct Palette {
 
 impl Default for Palette {
     fn default() -> Self {
-        let colors = build_default_palette();
-        Self { colors, defaults: colors }
+        Self::for_theme(Theme::Dark)
     }
 }
 
 impl Palette {
+    /// Build a palette with semantic colors adapted to the given theme.
+    ///
+    /// The 256 indexed colors (ANSI, cube, grayscale) are theme-independent.
+    /// Only semantic slots (foreground, background, cursor, dim/bright
+    /// foreground) change between dark and light themes.
+    #[must_use]
+    pub fn for_theme(theme: Theme) -> Self {
+        let colors = build_palette(theme);
+        Self { colors, defaults: colors }
+    }
+
     /// Resolve a `vte::ansi::Color` to an `Rgb` value.
     pub fn resolve(&self, color: Color) -> Rgb {
         match color {
@@ -97,11 +116,11 @@ impl Palette {
     }
 }
 
-/// Build the default xterm-256 palette with sensible semantic colors.
-fn build_default_palette() -> [Rgb; NUM_COLORS] {
+/// Build the xterm-256 palette with semantic colors adapted to the theme.
+fn build_palette(theme: Theme) -> [Rgb; NUM_COLORS] {
     let mut colors = [Rgb { r: 0, g: 0, b: 0 }; NUM_COLORS];
 
-    // 0–15: ANSI colors.
+    // 0–15: ANSI colors (theme-independent).
     colors[..16].copy_from_slice(&ANSI_COLORS);
 
     // 16–231: 6×6×6 color cube.
@@ -124,10 +143,15 @@ fn build_default_palette() -> [Rgb; NUM_COLORS] {
         colors[232 + i as usize] = Rgb { r: v, g: v, b: v };
     }
 
-    // Named semantic slots.
-    colors[NamedColor::Foreground as usize] = DEFAULT_FG;
-    colors[NamedColor::Background as usize] = DEFAULT_BG;
-    colors[NamedColor::Cursor as usize] = DEFAULT_CURSOR;
+    // Named semantic slots — theme-dependent.
+    let (fg, bg, cursor) = if theme.is_dark() {
+        (DARK_FG, DARK_BG, DARK_CURSOR)
+    } else {
+        (LIGHT_FG, LIGHT_BG, LIGHT_CURSOR)
+    };
+    colors[NamedColor::Foreground as usize] = fg;
+    colors[NamedColor::Background as usize] = bg;
+    colors[NamedColor::Cursor as usize] = cursor;
 
     // Dim variants (2/3 brightness of ANSI 0–7).
     for i in 0..8 {
@@ -135,8 +159,8 @@ fn build_default_palette() -> [Rgb; NUM_COLORS] {
     }
 
     // Bright/dim foreground.
-    colors[NamedColor::BrightForeground as usize] = DEFAULT_FG;
-    colors[NamedColor::DimForeground as usize] = dim_rgb(DEFAULT_FG);
+    colors[NamedColor::BrightForeground as usize] = fg;
+    colors[NamedColor::DimForeground as usize] = dim_rgb(fg);
 
     colors
 }

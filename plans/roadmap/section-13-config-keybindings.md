@@ -87,7 +87,7 @@ Top-level config and per-section structs. All fields have defaults via `#[serde(
     - `cursor_style: String` — "block", "bar"/"beam", "underline" (default: "block")
     - `cursor_blink: bool` — enable cursor blinking (default: true)
     - `cursor_blink_interval_ms: u64` — blink interval (default: 530)
-- [ ] `ColorConfig` struct
+- [ ] `ColorConfig` struct <!-- unblocks:3.7 -->
   - [ ] Fields:
     - `scheme: String` — color scheme name (default: "Catppuccin Mocha")
     - `minimum_contrast: f32` — WCAG 2.0 contrast ratio 1.0-21.0 (default: 1.0 = off)

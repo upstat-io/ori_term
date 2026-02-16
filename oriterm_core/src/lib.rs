@@ -14,6 +14,7 @@ pub mod grid;
 pub mod index;
 pub mod sync;
 pub mod term;
+pub mod theme;
 
 pub use cell::{Cell, CellExtra, CellFlags, Hyperlink};
 pub use color::{Palette, Rgb};
@@ -24,3 +25,4 @@ pub use sync::{FairMutex, FairMutexGuard, FairMutexLease};
 pub use term::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, Term, TermDamage, TermMode,
 };
+pub use theme::Theme;

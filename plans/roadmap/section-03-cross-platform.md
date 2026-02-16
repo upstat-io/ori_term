@@ -25,7 +25,7 @@ sections:
     status: in-progress
   - id: "03.7"
     title: System Theme Detection
-    status: not-started
+    status: in-progress
   - id: "03.8"
     title: Section Completion
     status: not-started
@@ -429,33 +429,33 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 
 **Reference:** Ghostty `src/apprt/` (per-platform surface backends), WezTerm appearance detection
 
-- [ ] Windows:
-  - [ ] Read `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`
-  - [ ] Value 0 = dark mode, value 1 = light mode
-  - [ ] Use `winreg` crate or raw Win32 `RegGetValueW`
-  - [ ] Optional: listen for registry change notifications to detect runtime theme switches
-- [ ] macOS:
-  - [ ] Query `NSAppearance.currentAppearance` via `objc` crate or `cocoa` bindings
-  - [ ] `NSAppearanceNameDarkAqua` = dark mode, `NSAppearanceNameAqua` = light mode
-  - [ ] Listen for `NSApplication.effectiveAppearance` KVO changes for runtime detection
-- [ ] Linux:
-  - [ ] Query `org.freedesktop.appearance.color-scheme` via D-Bus (`org.freedesktop.portal.Settings`)
-  - [ ] Value 1 = dark, value 2 = light, value 0 = no preference
-  - [ ] Use `zbus` crate for D-Bus communication
-  - [ ] Fallback: check `GTK_THEME` environment variable for "dark" substring
+- [x] Windows:
+  - [x] Read `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`
+  - [x] Value 0 = dark mode, value 1 = light mode
+  - [x] Use raw Win32 `RegGetValueW` via `windows-sys`
+  - [ ] Optional: listen for registry change notifications to detect runtime theme switches <!-- blocked-by:4 -->
+- [x] macOS:
+  - [x] Query `AppleInterfaceStyle` via `defaults read -g` (queries same system preference as `NSAppearance`)
+  - [x] `"Dark"` = dark mode, key absent = light mode
+  - [ ] Listen for `NSApplication.effectiveAppearance` KVO changes for runtime detection <!-- blocked-by:4 -->
+- [x] Linux:
+  - [x] Query `org.freedesktop.appearance.color-scheme` via D-Bus (`org.freedesktop.portal.Settings`)
+  - [x] Value 1 = dark, value 2 = light, value 0 = no preference
+  - [x] D-Bus communication via `dbus-send` subprocess (avoids heavy `zbus` dependency)
+  - [x] Fallback: check `GTK_THEME` environment variable for "dark" substring
   - [ ] Fallback: check `$XDG_CURRENT_DESKTOP` and query DE-specific settings
 - [ ] Unified API:
-  - [ ] `fn system_theme() -> Theme` where `Theme` is `Dark`, `Light`, or `Unknown`
-  - [ ] Called at startup to select default color scheme
-  - [ ] Config override: `appearance.theme = "dark" | "light" | "auto"` — `auto` uses system detection
-- [ ] Adapt default palette:
-  - [ ] Dark mode: dark background, light text (current default)
-  - [ ] Light mode: light background, dark text
-  - [ ] User-configured palette always takes priority over system theme
+  - [x] `fn system_theme() -> Theme` where `Theme` is `Dark`, `Light`, or `Unknown`
+  - [ ] Called at startup to select default color scheme <!-- blocked-by:4 -->
+  - [ ] Config override: `appearance.theme = "dark" | "light" | "auto"` — `auto` uses system detection <!-- blocked-by:13 -->
+- [x] Adapt default palette:
+  - [x] Dark mode: dark background, light text (current default)
+  - [x] Light mode: light background, dark text
+  - [x] User-configured palette always takes priority over system theme
 - [ ] **Tests:**
-  - [ ] `system_theme()` returns a valid `Theme` variant on the current platform
-  - [ ] Config override `"dark"` / `"light"` ignores system detection
-  - [ ] `"auto"` uses system detection result
+  - [x] `system_theme()` returns a valid `Theme` variant on the current platform
+  - [ ] Config override `"dark"` / `"light"` ignores system detection <!-- blocked-by:13 -->
+  - [ ] `"auto"` uses system detection result <!-- blocked-by:13 -->
 
 ---
 
