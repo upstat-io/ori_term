@@ -101,7 +101,7 @@ Top-level config and per-section structs. All fields have defaults via `#[serde(
     - `bright: HashMap<String, String>` — override bright colors 8-15 by index
   - [ ] `effective_minimum_contrast(&self) -> f32` — clamped to [1.0, 21.0]
 - [ ] `AlphaBlending` enum — `Linear`, `LinearCorrected` (default)
-- [ ] `WindowConfig` struct
+- [ ] `WindowConfig` struct <!-- unblocks:3.6 -->
   - [ ] Fields:
     - `columns: usize` — initial terminal columns (default: 120)
     - `rows: usize` — initial terminal rows (default: 30)

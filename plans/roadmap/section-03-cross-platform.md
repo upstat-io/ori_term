@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "03.6"
     title: Platform-Specific Code Paths
-    status: not-started
+    status: in-progress
   - id: "03.7"
     title: System Theme Detection
     status: not-started
@@ -379,45 +379,45 @@ Each platform needs a thin adapter that translates between OS window events and 
 
 Audit and implement all platform-conditional code paths. Every `#[cfg(target_os = "windows")]` block needs a working alternative for Linux and macOS.
 
-**Files:** Various — `oriterm/src/app/event_loop.rs`, `oriterm/src/render/font_discovery.rs`, `oriterm/src/clipboard.rs`, `oriterm/src/config/io.rs`
+**Files:** `oriterm/src/platform/url/mod.rs`, `oriterm/src/platform/config_paths/mod.rs`, `oriterm/src/platform/shutdown/mod.rs`, `oriterm/src/gpu/transparency.rs`
 
 **Reference:** Chromium platform abstractions, Alacritty cross-platform modules, WezTerm platform support
 
 ### URL Opening
 
-- [ ] Windows: `ShellExecuteW` (Win32 API) — current implementation
-- [ ] Linux: `xdg-open <url>` subprocess
-- [ ] macOS: `open <url>` subprocess
-- [ ] Unified API: `fn open_url(url: &str) -> io::Result<()>` with `#[cfg]` dispatch
-- [ ] Validate URL scheme before opening (prevent command injection)
+- [x] Windows: `ShellExecuteW` (Win32 API) — current implementation
+- [x] Linux: `xdg-open <url>` subprocess
+- [x] macOS: `open <url>` subprocess
+- [x] Unified API: `fn open_url(url: &str) -> io::Result<()>` with `#[cfg]` dispatch
+- [x] Validate URL scheme before opening (prevent command injection)
 
 ### Config Paths
 
-- [ ] Windows: `%APPDATA%\oriterm\config.toml`
-- [ ] Linux: `$XDG_CONFIG_HOME/oriterm/config.toml` (fallback: `~/.config/oriterm/config.toml`)
-- [ ] macOS: `~/Library/Application Support/oriterm/config.toml`
-- [ ] Unified API: `fn config_dir() -> PathBuf` with `#[cfg]` dispatch
-- [ ] Create config directory if it does not exist (with appropriate permissions)
+- [x] Windows: `%APPDATA%\oriterm\config.toml`
+- [x] Linux: `$XDG_CONFIG_HOME/oriterm/config.toml` (fallback: `~/.config/oriterm/config.toml`)
+- [x] macOS: `~/Library/Application Support/oriterm/config.toml`
+- [x] Unified API: `fn config_dir() -> PathBuf` with `#[cfg]` dispatch
+- [x] Create config directory if it does not exist (with appropriate permissions)
 
 ### Transparency
 
-- [ ] Windows: DirectComposition + DWM blur (see 03.4)
-- [ ] Linux: compositor-dependent ARGB visual (see 03.4)
-- [ ] macOS: `NSVisualEffectView` vibrancy (see 03.4)
-- [ ] Config: `window.opacity` (0.0-1.0), `window.blur` (bool)
-- [ ] Graceful degradation: if transparency is not supported, fall back to opaque
+- [x] Windows: DirectComposition + DWM blur (see 03.4)
+- [x] Linux: compositor-dependent ARGB visual (see 03.4)
+- [x] macOS: `NSVisualEffectView` vibrancy (see 03.4)
+- [ ] Config: `window.opacity` (0.0-1.0), `window.blur` (bool) <!-- blocked-by:13 -->
+- [x] Graceful degradation: if transparency is not supported, fall back to opaque
 
 ### Process Management
 
-- [ ] Windows: `CreateProcessW` via `portable-pty` (handled by crate)
-- [ ] Linux/macOS: `fork` + `exec` via `portable-pty` (handled by crate)
-- [ ] Signal handling: `SIGCHLD` (Unix only), `SIGTERM`/`SIGINT` for clean shutdown
-- [ ] Windows: no POSIX signals — use `SetConsoleCtrlHandler` for Ctrl+C handling
+- [x] Windows: `CreateProcessW` via `portable-pty` (handled by crate)
+- [x] Linux/macOS: `fork` + `exec` via `portable-pty` (handled by crate)
+- [x] Signal handling: `SIGCHLD` (Unix only), `SIGTERM`/`SIGINT` for clean shutdown
+- [x] Windows: no POSIX signals — use `SetConsoleCtrlHandler` for Ctrl+C handling
 
-- [ ] **Tests:**
-  - [ ] `config_dir()` returns a valid path on the current platform
-  - [ ] `open_url()` does not panic with a valid URL (integration test)
-  - [ ] Config file is created in the correct platform-specific directory
+- [x] **Tests:**
+  - [x] `config_dir()` returns a valid path on the current platform
+  - [x] `open_url()` does not panic with a valid URL (integration test)
+  - [x] Config file is created in the correct platform-specific directory
 
 ---
 

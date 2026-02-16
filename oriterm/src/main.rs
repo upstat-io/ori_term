@@ -3,6 +3,7 @@
 mod clipboard;
 mod font;
 mod gpu;
+mod platform;
 mod pty;
 
 use std::io::{self, Write};
