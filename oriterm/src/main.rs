@@ -77,7 +77,7 @@ fn main() {
     let mut writer = handle.take_writer().expect("PTY writer unavailable");
 
     let (tx, rx) = mpsc::channel();
-    let pty_reader = PtyReader::spawn(reader, tx);
+    let pty_reader = PtyReader::spawn(reader, tx).expect("failed to spawn pty-reader thread");
 
     // Relay stdin to PTY input.
     let _input = thread::spawn(move || {

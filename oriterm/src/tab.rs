@@ -195,7 +195,7 @@ impl Tab {
         // 5. Build and spawn the reader thread.
         let event_loop =
             PtyEventLoop::new(Arc::clone(&terminal), reader, writer, rx, control);
-        let reader_thread = event_loop.spawn();
+        let reader_thread = event_loop.spawn()?;
 
         Ok(Self {
             id,

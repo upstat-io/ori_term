@@ -74,11 +74,11 @@ impl<T: EventListener> PtyEventLoop<T> {
     }
 
     /// Spawn the event loop thread. Returns a join handle.
-    pub fn spawn(self) -> JoinHandle<()> {
+    pub fn spawn(self) -> io::Result<JoinHandle<()>> {
         thread::Builder::new()
             .name("pty-event-loop".into())
             .spawn(move || self.run())
-            .expect("failed to spawn pty-event-loop thread")
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     /// Main event loop — runs until PTY closes or shutdown is received.

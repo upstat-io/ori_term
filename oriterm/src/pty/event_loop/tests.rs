@@ -98,7 +98,7 @@ fn shutdown_on_reader_eof() {
         Box::new(Vec::<u8>::new()),
     );
 
-    let join = event_loop.spawn();
+    let join = event_loop.spawn().expect("spawn event loop");
 
     // Drop the write end → reader gets EOF → thread exits.
     drop(pipe_writer);
@@ -115,7 +115,7 @@ fn processes_pty_output_into_terminal() {
         Box::new(Vec::<u8>::new()),
     );
 
-    let join = event_loop.spawn();
+    let join = event_loop.spawn().expect("spawn event loop");
 
     // Simulate shell output: write raw text to the reader pipe.
     pipe_writer.write_all(b"hello world").expect("write");
@@ -148,7 +148,7 @@ fn processes_channel_input() {
         Box::new(capture_writer),
     );
 
-    let join = event_loop.spawn();
+    let join = event_loop.spawn().expect("spawn event loop");
 
     // Write something to the PTY reader so the event loop wakes up and
     // drains the command channel on the next iteration.

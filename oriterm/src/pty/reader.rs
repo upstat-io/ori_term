@@ -33,18 +33,18 @@ impl PtyReader {
     pub fn spawn(
         mut reader: Box<dyn Read + Send>,
         tx: mpsc::Sender<PtyEvent>,
-    ) -> Self {
+    ) -> io::Result<Self> {
         let handle = thread::Builder::new()
             .name("pty-reader".into())
             .spawn(move || {
                 Self::read_loop(&mut *reader, &tx);
                 let _ = tx.send(PtyEvent::Closed);
             })
-            .expect("failed to spawn pty-reader thread");
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
-        Self {
+        Ok(Self {
             handle: Some(handle),
-        }
+        })
     }
 
     /// Block until the reader thread exits.
