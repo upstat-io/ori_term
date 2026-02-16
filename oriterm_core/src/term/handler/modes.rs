@@ -5,7 +5,7 @@
 //! `TermMode` flag changes and side effects (events, screen swaps).
 
 use log::debug;
-use vte::ansi::{Handler, NamedPrivateMode};
+use vte::ansi::NamedPrivateMode;
 
 use crate::event::{Event, EventListener};
 use crate::term::{Term, TermMode};
@@ -17,7 +17,7 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::CursorKeys => self.mode.insert(TermMode::APP_CURSOR),
             NamedPrivateMode::Origin => {
                 self.mode.insert(TermMode::ORIGIN);
-                self.goto(0, 0);
+                self.goto_origin_aware(0, 0);
             }
             NamedPrivateMode::LineWrap => self.mode.insert(TermMode::LINE_WRAP),
             NamedPrivateMode::BlinkingCursor => {
@@ -60,7 +60,7 @@ impl<T: EventListener> Term<T> {
             NamedPrivateMode::CursorKeys => self.mode.remove(TermMode::APP_CURSOR),
             NamedPrivateMode::Origin => {
                 self.mode.remove(TermMode::ORIGIN);
-                self.goto(0, 0);
+                self.goto_origin_aware(0, 0);
             }
             NamedPrivateMode::LineWrap => self.mode.remove(TermMode::LINE_WRAP),
             NamedPrivateMode::BlinkingCursor => {

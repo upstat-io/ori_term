@@ -4,8 +4,6 @@
 //! characters, and printable input. Each method delegates to the
 //! appropriate grid/cursor/mode operation.
 
-use std::cmp;
-
 use log::debug;
 use unicode_width::UnicodeWidthChar;
 use vte::ansi::{
@@ -120,27 +118,13 @@ impl<T: EventListener> Handler for Term<T> {
 
     /// CUP / HVP: absolute cursor positioning (ORIGIN-aware).
     fn goto(&mut self, line: i32, col: usize) {
-        let origin = self.mode.contains(TermMode::ORIGIN);
-        let grid = self.grid_mut();
-        let region_start = grid.scroll_region().start;
-        let region_end = grid.scroll_region().end;
-
-        let (offset, max_line) = if origin {
-            (region_start, region_end.saturating_sub(1))
-        } else {
-            (0, grid.lines().saturating_sub(1))
-        };
-
-        let line = cmp::max(0, line) as usize;
-        let line = cmp::min(line + offset, max_line);
-        let col = Column(col.min(grid.cols().saturating_sub(1)));
-        grid.move_to(line, col);
+        self.goto_origin_aware(line, col);
     }
 
     /// VPA: set cursor line (ORIGIN mode aware).
     fn goto_line(&mut self, line: i32) {
         let col = self.grid().cursor().col().0;
-        self.goto(line, col);
+        self.goto_origin_aware(line, col);
     }
 
     /// CHA: set cursor column.
@@ -288,7 +272,7 @@ impl<T: EventListener> Handler for Term<T> {
     fn set_scrolling_region(&mut self, top: usize, bottom: Option<usize>) {
         self.grid_mut().set_scroll_region(top, bottom);
         // Setting scroll region always moves cursor to origin.
-        self.goto(0, 0);
+        self.goto_origin_aware(0, 0);
     }
 
     /// DECSC / CSI s: save cursor position.

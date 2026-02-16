@@ -81,6 +81,27 @@ pub struct RenderableContent {
     pub damage: Vec<DamageLine>,
 }
 
+impl RenderableContent {
+    /// Clear all fields, keeping allocated capacity for reuse.
+    ///
+    /// After calling this, the snapshot is empty but the underlying `Vec`
+    /// buffers retain their allocations. Used by
+    /// [`Term::renderable_content_into`] to avoid per-frame allocation.
+    pub fn clear(&mut self) {
+        self.cells.clear();
+        self.damage.clear();
+        self.display_offset = 0;
+        self.mode = TermMode::empty();
+        self.all_dirty = false;
+        self.cursor = RenderableCursor {
+            line: 0,
+            column: Column(0),
+            shape: CursorShape::default(),
+            visible: false,
+        };
+    }
+}
+
 /// Drain iterator for terminal damage.
 ///
 /// Yields `DamageLine` entries for each dirty row and clears dirty marks

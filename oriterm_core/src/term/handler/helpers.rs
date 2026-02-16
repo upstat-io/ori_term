@@ -1,11 +1,15 @@
 //! Helper functions for VTE handler dispatch.
 //!
-//! Mode number lookups, mode-to-flag mappings, and version encoding
-//! used by the Handler impl in `mod.rs`.
+//! Mode number lookups, mode-to-flag mappings, cursor positioning helpers,
+//! and version encoding used by the Handler impl and mode dispatch.
+
+use std::cmp;
 
 use vte::ansi::NamedPrivateMode;
 
-use crate::term::TermMode;
+use crate::event::EventListener;
+use crate::index::Column;
+use crate::term::{Term, TermMode};
 
 /// DECRPM value: 1 = set, 2 = reset.
 pub(super) fn mode_report_value(is_set: bool) -> u8 {
@@ -70,4 +74,30 @@ pub(super) fn crate_version_number() -> usize {
         result += n * 100usize.pow(i as u32);
     }
     result
+}
+
+impl<T: EventListener> Term<T> {
+    /// Origin-aware absolute cursor positioning.
+    ///
+    /// When ORIGIN mode is active, `line` is relative to the scroll region
+    /// and clamped to it. Otherwise, `line` is relative to the screen top
+    /// and clamped to the full viewport. Used by `Handler::goto`,
+    /// `set_scrolling_region`, and DECSET/DECRST origin-mode toggling.
+    pub(super) fn goto_origin_aware(&mut self, line: i32, col: usize) {
+        let origin = self.mode.contains(TermMode::ORIGIN);
+        let grid = self.grid_mut();
+        let region_start = grid.scroll_region().start;
+        let region_end = grid.scroll_region().end;
+
+        let (offset, max_line) = if origin {
+            (region_start, region_end.saturating_sub(1))
+        } else {
+            (0, grid.lines().saturating_sub(1))
+        };
+
+        let line = cmp::max(0, line) as usize;
+        let line = cmp::min(line + offset, max_line);
+        let col = Column(col.min(grid.cols().saturating_sub(1)));
+        grid.move_to(line, col);
+    }
 }

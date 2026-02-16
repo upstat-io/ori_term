@@ -144,15 +144,50 @@ impl<T: EventListener> Term<T> {
 
     /// Extract a complete rendering snapshot.
     ///
-    /// Iterates visible rows (accounting for `display_offset` into scrollback),
-    /// resolves all cell colors via the palette, and captures cursor + damage
-    /// info. Designed to be called under lock — copies data so the renderer
-    /// can work without holding the lock.
+    /// Convenience wrapper that allocates a fresh [`RenderableContent`] and
+    /// fills it. For hot-path rendering, prefer [`renderable_content_into`]
+    /// with a reused buffer to avoid per-frame allocation.
     ///
     /// This is a pure read — dirty state is **not** cleared. Callers must
     /// drain dirty state separately via `grid_mut().dirty_mut().drain()`
     /// after consuming the snapshot.
+    ///
+    /// [`renderable_content_into`]: Self::renderable_content_into
     pub fn renderable_content(&self) -> RenderableContent {
+        let grid = self.grid();
+        let mut out = RenderableContent {
+            cells: Vec::with_capacity(grid.lines() * grid.cols()),
+            cursor: RenderableCursor {
+                line: 0,
+                column: Column(0),
+                shape: CursorShape::default(),
+                visible: false,
+            },
+            display_offset: 0,
+            mode: TermMode::empty(),
+            all_dirty: false,
+            damage: Vec::new(),
+        };
+        self.renderable_content_into(&mut out);
+        out
+    }
+
+    /// Fill an existing [`RenderableContent`] with the current terminal state.
+    ///
+    /// Clears `out` and refills it, reusing the underlying `Vec` allocations.
+    /// The renderer should keep a single `RenderableContent` and pass it each
+    /// frame to avoid the ~`lines * cols * 56` byte allocation that
+    /// [`renderable_content`] performs.
+    ///
+    /// This is a pure read — dirty state is **not** cleared. Callers must
+    /// drain dirty state separately via `grid_mut().dirty_mut().drain()`
+    /// after consuming the snapshot.
+    ///
+    /// [`renderable_content`]: Self::renderable_content
+    pub fn renderable_content_into(&self, out: &mut RenderableContent) {
+        out.cells.clear();
+        out.damage.clear();
+
         let grid = self.grid();
         let raw_offset = grid.display_offset();
         debug_assert!(
@@ -164,8 +199,6 @@ impl<T: EventListener> Term<T> {
         let lines = grid.lines();
         let cols = grid.cols();
         let palette = &self.palette;
-
-        let mut cells = Vec::with_capacity(lines * cols);
 
         for vis_line in 0..lines {
             // Top `offset` lines come from scrollback; the rest from the grid.
@@ -196,7 +229,7 @@ impl<T: EventListener> Term<T> {
                     None => (None, Vec::new()),
                 };
 
-                cells.push(RenderableCell {
+                out.cells.push(RenderableCell {
                     line: vis_line,
                     column: col,
                     ch: cell.ch,
@@ -214,7 +247,7 @@ impl<T: EventListener> Term<T> {
             && offset == 0
             && self.cursor_shape != CursorShape::Hidden;
 
-        let cursor = RenderableCursor {
+        out.cursor = RenderableCursor {
             line: grid.cursor().line(),
             column: grid.cursor().col(),
             shape: self.cursor_shape,
@@ -222,15 +255,10 @@ impl<T: EventListener> Term<T> {
         };
 
         let (all_dirty, damage) = self.collect_damage(grid, lines, cols);
-
-        RenderableContent {
-            cells,
-            cursor,
-            display_offset: offset,
-            mode: self.mode,
-            all_dirty,
-            damage,
-        }
+        out.display_offset = offset;
+        out.mode = self.mode;
+        out.all_dirty = all_dirty;
+        out.damage = damage;
     }
 
     /// Collect damage information from the grid's dirty tracker.

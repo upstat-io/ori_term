@@ -40,15 +40,16 @@ impl Grid {
     /// are pushed to scrollback history. With a sub-region, top rows
     /// are lost. Blank rows appear at the bottom of the region.
     pub fn scroll_up(&mut self, count: usize) {
-        let range = self.scroll_region.clone();
-        let len = range.end - range.start;
+        let start = self.scroll_region.start;
+        let end = self.scroll_region.end;
+        let len = end - start;
         if len == 0 {
             return;
         }
         let count = count.min(len);
 
         // Push evicted rows to scrollback when scrolling the full screen.
-        let is_full_screen = range.start == 0 && range.end == self.lines;
+        let is_full_screen = start == 0 && end == self.lines;
         if is_full_screen {
             // Keep user's scrollback view stable when new content arrives.
             if self.display_offset > 0 {
@@ -71,15 +72,16 @@ impl Grid {
             }
         }
 
-        self.scroll_range_up(range, count);
+        self.scroll_range_up(start..end, count);
     }
 
     /// Scroll the scroll region down by `count` lines.
     ///
     /// Bottom rows are lost. Blank rows appear at the top of the region.
     pub fn scroll_down(&mut self, count: usize) {
-        let range = self.scroll_region.clone();
-        self.scroll_range_down(range, count);
+        let start = self.scroll_region.start;
+        let end = self.scroll_region.end;
+        self.scroll_range_down(start..end, count);
     }
 
     /// IL: insert `count` blank lines at the cursor, pushing existing
