@@ -1,20 +1,8 @@
 //! Unit tests for GPU state initialization.
 
-use wgpu::{
-    CompositeAlphaMode, DownlevelFlags, SurfaceCapabilities, TextureFormat, TextureUsages,
-};
+use wgpu::{CompositeAlphaMode, SurfaceCapabilities, TextureFormat, TextureUsages};
 
 use super::{build_surface_config, cache_dir, GpuState};
-
-/// Full downlevel flags (all features supported).
-const ALL_FLAGS: DownlevelFlags = DownlevelFlags::all();
-
-/// Downlevel flags without `SURFACE_VIEW_FORMATS`.
-fn flags_without_view_formats() -> DownlevelFlags {
-    let mut f = DownlevelFlags::all();
-    f.remove(DownlevelFlags::SURFACE_VIEW_FORMATS);
-    f
-}
 
 fn caps_with_formats(formats: Vec<TextureFormat>) -> SurfaceCapabilities {
     SurfaceCapabilities {
@@ -31,44 +19,38 @@ fn caps_with_formats(formats: Vec<TextureFormat>) -> SurfaceCapabilities {
 fn select_formats_srgb_surface() {
     let caps = caps_with_formats(vec![TextureFormat::Bgra8UnormSrgb]);
 
-    let (surface_fmt, render_fmt, view_formats) =
-        GpuState::select_formats(&caps, ALL_FLAGS).unwrap();
+    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
 
-    // When surface is already sRGB, render format matches and no view_formats needed.
+    // When surface is already sRGB, render format matches.
     assert_eq!(surface_fmt, TextureFormat::Bgra8UnormSrgb);
     assert_eq!(render_fmt, TextureFormat::Bgra8UnormSrgb);
-    assert!(view_formats.is_empty());
 }
 
 #[test]
-fn select_formats_non_srgb_surface_gets_view_format() {
+fn select_formats_non_srgb_surface_derives_srgb_render() {
     let caps = caps_with_formats(vec![TextureFormat::Bgra8Unorm]);
 
-    let (surface_fmt, render_fmt, view_formats) =
-        GpuState::select_formats(&caps, ALL_FLAGS).unwrap();
+    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
 
-    // Non-sRGB surface: render format is sRGB suffix, view_formats bridges the gap.
+    // Non-sRGB surface: render format is the sRGB suffix.
     assert_eq!(surface_fmt, TextureFormat::Bgra8Unorm);
     assert_eq!(render_fmt, TextureFormat::Bgra8UnormSrgb);
-    assert_eq!(view_formats, vec![TextureFormat::Bgra8UnormSrgb]);
 }
 
 #[test]
 fn select_formats_rgba_surface() {
     let caps = caps_with_formats(vec![TextureFormat::Rgba8Unorm]);
 
-    let (surface_fmt, render_fmt, view_formats) =
-        GpuState::select_formats(&caps, ALL_FLAGS).unwrap();
+    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
 
     assert_eq!(surface_fmt, TextureFormat::Rgba8Unorm);
     assert_eq!(render_fmt, TextureFormat::Rgba8UnormSrgb);
-    assert_eq!(view_formats, vec![TextureFormat::Rgba8UnormSrgb]);
 }
 
 #[test]
 fn select_formats_empty_formats_returns_none() {
     let caps = caps_with_formats(vec![]);
-    assert!(GpuState::select_formats(&caps, ALL_FLAGS).is_none());
+    assert!(GpuState::select_formats(&caps).is_none());
 }
 
 #[test]
@@ -79,7 +61,7 @@ fn select_formats_picks_first_when_multiple_available() {
         TextureFormat::Bgra8UnormSrgb,
     ]);
 
-    let (surface_fmt, render_fmt, _) = GpuState::select_formats(&caps, ALL_FLAGS).unwrap();
+    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
 
     // Should pick the first format, not scan for an sRGB one.
     assert_eq!(surface_fmt, TextureFormat::Bgra8Unorm);
@@ -93,55 +75,11 @@ fn select_formats_multiple_with_srgb_first() {
         TextureFormat::Rgba8Unorm,
     ]);
 
-    let (surface_fmt, render_fmt, view_formats) =
-        GpuState::select_formats(&caps, ALL_FLAGS).unwrap();
+    let (surface_fmt, render_fmt) = GpuState::select_formats(&caps).unwrap();
 
-    // sRGB is already first, so no view_formats needed.
+    // sRGB is already first, so render_format matches.
     assert_eq!(surface_fmt, TextureFormat::Bgra8UnormSrgb);
     assert_eq!(render_fmt, TextureFormat::Bgra8UnormSrgb);
-    assert!(view_formats.is_empty());
-}
-
-// --- Downlevel view_formats guard ---
-
-#[test]
-fn select_formats_no_view_formats_when_downlevel_unsupported() {
-    let caps = caps_with_formats(vec![TextureFormat::Bgra8Unorm]);
-    let flags = flags_without_view_formats();
-
-    let (surface_fmt, render_fmt, view_formats) =
-        GpuState::select_formats(&caps, flags).unwrap();
-
-    // Non-sRGB surface but downlevel doesn't support view_formats.
-    // Should NOT set view_formats even though render_format differs.
-    assert_eq!(surface_fmt, TextureFormat::Bgra8Unorm);
-    assert_eq!(render_fmt, TextureFormat::Bgra8UnormSrgb);
-    assert!(
-        view_formats.is_empty(),
-        "view_formats should be empty when SURFACE_VIEW_FORMATS unsupported",
-    );
-}
-
-#[test]
-fn select_formats_srgb_surface_unaffected_by_downlevel_flag() {
-    let caps = caps_with_formats(vec![TextureFormat::Bgra8UnormSrgb]);
-    let flags = flags_without_view_formats();
-
-    let (_, _, view_formats) = GpuState::select_formats(&caps, flags).unwrap();
-
-    // sRGB surface never needs view_formats regardless of downlevel support.
-    assert!(view_formats.is_empty());
-}
-
-#[test]
-fn select_formats_empty_downlevel_flags() {
-    let caps = caps_with_formats(vec![TextureFormat::Bgra8Unorm]);
-    let flags = DownlevelFlags::empty();
-
-    let (_, _, view_formats) = GpuState::select_formats(&caps, flags).unwrap();
-
-    // No downlevel flags at all — view_formats must be empty.
-    assert!(view_formats.is_empty());
 }
 
 // --- Alpha mode selection ---

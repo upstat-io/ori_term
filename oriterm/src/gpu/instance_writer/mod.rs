@@ -247,15 +247,5 @@ fn write_u32(buf: &mut [u8], offset: usize, val: u32) {
     buf[offset..offset + 4].copy_from_slice(&val.to_le_bytes());
 }
 
-/// Read a little-endian `f32` from the given byte offset (for tests).
-pub(crate) fn read_f32(buf: &[u8], offset: usize) -> f32 {
-    f32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
-}
-
-/// Read a little-endian `u32` from the given byte offset (for tests).
-pub(crate) fn read_u32(buf: &[u8], offset: usize) -> u32 {
-    u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
-}
-
 #[cfg(test)]
 mod tests;

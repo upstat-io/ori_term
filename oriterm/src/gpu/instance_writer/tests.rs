@@ -2,9 +2,17 @@
 
 use oriterm_core::Rgb;
 
-use super::{
-    InstanceKind, InstanceWriter, INSTANCE_SIZE, read_f32, read_u32,
-};
+use super::{InstanceKind, InstanceWriter, INSTANCE_SIZE};
+
+/// Read a little-endian `f32` from the given byte offset.
+fn read_f32(buf: &[u8], offset: usize) -> f32 {
+    f32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
+}
+
+/// Read a little-endian `u32` from the given byte offset.
+fn read_u32(buf: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
+}
 
 const WHITE: Rgb = Rgb { r: 255, g: 255, b: 255 };
 const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };

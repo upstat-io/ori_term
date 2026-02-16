@@ -39,7 +39,7 @@ pub struct GpuState {
     /// sRGB format for render passes and pipelines. May differ from
     /// `surface_format` when the surface doesn't natively support sRGB
     /// (e.g. DX12 `DirectComposition`).
-    pub(crate) render_format: wgpu::TextureFormat,
+    render_format: wgpu::TextureFormat,
     /// Composite alpha mode negotiated with the compositor.
     surface_alpha_mode: wgpu::CompositeAlphaMode,
     /// Whether the backend supports `view_formats` for sRGB reinterpretation.
@@ -170,8 +170,7 @@ impl GpuState {
 
         let caps = surface.get_capabilities(&adapter);
         let downlevel = adapter.get_downlevel_capabilities();
-        let (surface_format, render_format, _) =
-            Self::select_formats(&caps, downlevel.flags)?;
+        let (surface_format, render_format) = Self::select_formats(&caps)?;
         let surface_alpha_mode = Self::select_alpha_mode(&caps);
         let supports_view_formats = downlevel
             .flags
@@ -283,25 +282,10 @@ impl GpuState {
     /// Returns `None` if `caps.formats` is empty (incompatible surface).
     fn select_formats(
         caps: &wgpu::SurfaceCapabilities,
-        downlevel_flags: wgpu::DownlevelFlags,
-    ) -> Option<(wgpu::TextureFormat, wgpu::TextureFormat, Vec<wgpu::TextureFormat>)> {
+    ) -> Option<(wgpu::TextureFormat, wgpu::TextureFormat)> {
         let surface_format = *caps.formats.first()?;
         let render_format = surface_format.add_srgb_suffix();
-
-        // Only set view_formats when the backend supports reinterpreting
-        // the surface format as sRGB. Without this flag, view_formats
-        // may be silently ignored or cause errors on limited backends.
-        let needs_view_format = render_format != surface_format;
-        let supports_view_formats = downlevel_flags
-            .contains(wgpu::DownlevelFlags::SURFACE_VIEW_FORMATS);
-
-        let view_formats = if needs_view_format && supports_view_formats {
-            vec![render_format]
-        } else {
-            vec![]
-        };
-
-        Some((surface_format, render_format, view_formats))
+        Some((surface_format, render_format))
     }
 
     /// Select the best composite alpha mode for transparency.
@@ -406,11 +390,15 @@ fn build_surface_config(
 
 /// Returns the platform-specific cache directory for oriterm.
 ///
-/// Uses `APPDATA/ori_term` on Windows, `XDG_CONFIG_HOME/ori_term` or
-/// `~/.config/ori_term` on Unix.
+/// Pipeline caches are non-essential cached data, so we use the cache
+/// directory (not config). On Windows: `LOCALAPPDATA` (preferred) or
+/// `APPDATA`. On Unix: `XDG_CACHE_HOME` or `~/.cache`.
 fn cache_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            return PathBuf::from(local).join("ori_term");
+        }
         if let Ok(appdata) = std::env::var("APPDATA") {
             return PathBuf::from(appdata).join("ori_term");
         }
@@ -418,11 +406,11 @@ fn cache_dir() -> PathBuf {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
             return PathBuf::from(xdg).join("ori_term");
         }
         if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(".config").join("ori_term");
+            return PathBuf::from(home).join(".cache").join("ori_term");
         }
         PathBuf::from(".").join("ori_term")
     }
