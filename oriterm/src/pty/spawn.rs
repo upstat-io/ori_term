@@ -115,8 +115,8 @@ pub struct PtyHandle {
 impl PtyHandle {
     /// Take the PTY output reader (child to parent).
     ///
-    /// Returns `None` if already taken. The reader is typically handed to a
-    /// [`PtyReader`](super::PtyReader) background thread.
+    /// Returns `None` if already taken. The reader is handed to the
+    /// [`PtyEventLoop`](super::event_loop::PtyEventLoop) background thread.
     pub fn take_reader(&mut self) -> Option<Box<dyn io::Read + Send>> {
         self.reader.take()
     }
@@ -140,6 +140,7 @@ impl PtyHandle {
     /// Resize the PTY to new dimensions.
     ///
     /// Returns an error if the control handle has been taken.
+    #[allow(dead_code, reason = "used for direct resize before Tab takes control")]
     pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
         let ctl = self
             .control
@@ -149,6 +150,7 @@ impl PtyHandle {
     }
 
     /// Get the child process ID, if available.
+    #[allow(dead_code, reason = "exposed via Tab in Section 5 window lifecycle")]
     pub fn process_id(&self) -> Option<u32> {
         self.child.process_id()
     }

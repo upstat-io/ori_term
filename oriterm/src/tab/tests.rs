@@ -1,10 +1,13 @@
 //! Tests for tab identity, event types, EventProxy, Notifier, and Tab.
 
 use std::sync::mpsc;
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use winit::event_loop::EventLoopProxy;
 
-use oriterm_core::{Event, EventListener};
+use oriterm_core::{Column, Event, EventListener, Line};
 
 use super::{EventProxy, Notifier, Tab, TabId, TermEvent};
 use crate::pty::Msg;
@@ -261,8 +264,174 @@ fn tab_drop_is_clean() {
 }
 
 // ---------------------------------------------------------------------------
+// End-to-end verification (Section 4.9)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn echo_appears_in_terminal_grid() {
+    let tab = make_tab(24, 80);
+
+    // Send "echo hello" to the shell. The shell will:
+    // 1. Echo the typed command (terminal echo mode).
+    // 2. Execute it, printing "hello".
+    tab.write_input(b"echo hello\r\n");
+
+    // Poll until "hello" appears in the grid.
+    let found = poll_grid_contains(&tab, "hello", Duration::from_secs(5));
+    assert!(found, "'hello' should appear in the terminal grid");
+}
+
+#[test]
+fn thread_lifecycle_spawn_and_drop() {
+    // Create multiple tabs in sequence to verify each one spawns and
+    // shuts down cleanly without leaking threads or panicking.
+    for _ in 0..3 {
+        let tab = make_tab(24, 80);
+
+        // Verify the reader thread is alive (terminal is being updated).
+        tab.write_input(b"echo alive\r\n");
+        thread::sleep(Duration::from_millis(100));
+
+        // Drop triggers: Shutdown → kill child → join reader thread.
+        drop(tab);
+    }
+}
+
+#[test]
+fn thread_lifecycle_drop_joins_reader() {
+    let tab = make_tab(24, 80);
+
+    // Feed some data so the reader thread is actively processing.
+    tab.write_input(b"echo working\r\n");
+    thread::sleep(Duration::from_millis(100));
+
+    // Measure drop time — should complete within the 2-second timeout.
+    let start = Instant::now();
+    drop(tab);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "tab drop should complete promptly, took {elapsed:?}",
+    );
+}
+
+#[test]
+fn fair_mutex_concurrent_access() {
+    let tab = make_tab(24, 80);
+    let terminal = Arc::clone(tab.terminal());
+
+    // Spawn a thread that simulates a renderer: repeatedly locks the
+    // terminal and reads grid state.
+    let render_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let render_done_clone = Arc::clone(&render_done);
+    let mut render_count = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let render_count_clone = Arc::clone(&render_count);
+
+    let render_thread = thread::spawn(move || {
+        while !render_done_clone.load(std::sync::atomic::Ordering::Relaxed) {
+            let term = terminal.lock();
+            let _lines = term.grid().lines();
+            drop(term);
+            render_count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            thread::sleep(Duration::from_millis(5));
+        }
+    });
+
+    // Main thread sends rapid input while the render thread is locking.
+    for i in 0..20 {
+        tab.write_input(format!("echo iter{i}\r\n").as_bytes());
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    // Wait for some output to be processed.
+    thread::sleep(Duration::from_millis(200));
+
+    // Stop the render thread.
+    render_done.store(true, std::sync::atomic::Ordering::Relaxed);
+    render_thread.join().expect("render thread should not panic");
+
+    // Both threads should have made progress.
+    let renders = Arc::get_mut(&mut render_count)
+        .expect("sole owner")
+        .get_mut();
+    assert!(
+        *renders > 0,
+        "render thread should have acquired the lock at least once",
+    );
+
+    // Verify the PTY reader thread also made progress: some output
+    // should have been parsed into the grid.
+    let term = tab.terminal().lock();
+    let grid = term.grid();
+    let mut has_content = false;
+    for line_idx in 0..grid.lines() {
+        let row = &grid[Line(line_idx as i32)];
+        let text: String = (0..grid.cols()).map(|c| row[Column(c)].ch).collect();
+        if text.contains("iter") {
+            has_content = true;
+            break;
+        }
+    }
+    assert!(has_content, "PTY reader should have parsed output into grid");
+}
+
+#[test]
+fn resize_updates_pty_dimensions() {
+    let tab = make_tab(24, 80);
+
+    // Initial dimensions.
+    {
+        let term = tab.terminal().lock();
+        assert_eq!(term.grid().lines(), 24);
+        assert_eq!(term.grid().cols(), 80);
+    }
+
+    // Resize the PTY to 120x40.
+    tab.resize(40, 120);
+
+    // Wait for the resize to propagate through the PTY event loop.
+    // The PTY reports the new size, but the terminal grid is NOT
+    // resized here — grid reflow is in Section 12. We verify the
+    // PTY accepted the resize without error.
+    thread::sleep(Duration::from_millis(200));
+
+    // Send a command after resize to verify the pipeline still works.
+    tab.write_input(b"echo after_resize\r\n");
+    let found = poll_grid_contains(&tab, "after_resize", Duration::from_secs(5));
+    assert!(found, "pipeline should still work after resize");
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Create a Tab with default settings and a live PTY.
+fn make_tab(rows: u16, cols: u16) -> Tab {
+    Tab::new(TabId::next(), rows, cols, 1000, test_proxy()).expect("tab creation should succeed")
+}
+
+/// Poll the terminal grid until `needle` appears in any visible row.
+fn poll_grid_contains(tab: &Tab, needle: &str, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+
+    while Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+
+        let term = tab.terminal().lock();
+        let grid = term.grid();
+
+        for line_idx in 0..grid.lines() {
+            let row = &grid[Line(line_idx as i32)];
+            let text: String = (0..grid.cols()).map(|c| row[Column(c)].ch).collect();
+            if text.contains(needle) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
 
 /// Get a cloned winit `EventLoopProxy` for tests.
 ///

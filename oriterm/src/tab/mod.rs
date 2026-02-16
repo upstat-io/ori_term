@@ -8,11 +8,6 @@
 //! event), `EventProxy` (terminal → winit bridge), `Notifier` (input →
 //! PTY bridge).
 
-// Tab is constructed in Section 4.9 (end-to-end verification). Until then,
-// tests exercise all public items, so `#[expect(dead_code)]` would produce
-// unfulfilled warnings.
-#![allow(dead_code, reason = "Tab wired into main in 4.9")]
-
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -54,6 +49,7 @@ pub enum TermEvent {
     ///
     /// Wraps `oriterm_core::Event` with the originating tab's identity
     /// so the event loop knows which tab to update.
+    #[allow(dead_code, reason = "fields read by winit event dispatch in Section 5")]
     Terminal {
         /// Which tab produced this event.
         tab_id: TabId,

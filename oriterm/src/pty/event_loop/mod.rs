@@ -9,9 +9,6 @@
 //! winit event loop → `Notifier` → `Msg::Input` → this thread's
 //! `process_commands` → PTY writer.
 
-// Event loop is wired into main in Section 4.9.
-#![allow(dead_code, reason = "PtyEventLoop used by Tab; Tab wired into main in 4.9")]
-
 use std::io::{self, Read, Write};
 use std::sync::mpsc;
 use std::sync::Arc;

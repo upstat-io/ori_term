@@ -1,4 +1,7 @@
 //! Binary entry point for the oriterm terminal emulator.
+//!
+//! Currently a verification harness: validates font discovery, GPU adapters,
+//! clipboard, and the full PTY → VTE → Term pipeline via [`Tab`].
 
 mod clipboard;
 mod font;
@@ -7,11 +10,12 @@ mod platform;
 mod pty;
 mod tab;
 
-use std::io::{self, Write};
-use std::sync::mpsc;
 use std::thread;
+use std::time::{Duration, Instant};
 
-use crate::pty::{PtyConfig, PtyEvent, PtyReader, spawn_pty};
+use oriterm_core::{Column, Line};
+
+use crate::tab::{Tab, TabId, TermEvent};
 
 fn main() {
     #[cfg(unix)]
@@ -63,56 +67,99 @@ fn main() {
     let clip = cb.load(oriterm_core::event::ClipboardType::Clipboard);
     log::info!("clipboard: loaded {} bytes", clip.len());
 
-    let config = PtyConfig::default();
-    let mut handle = spawn_pty(&config).expect("failed to spawn PTY");
+    // --- End-to-end Tab verification (Section 4.9) ---
 
-    if let Some(pid) = handle.process_id() {
-        log::debug!("spawned shell (PID {pid})");
+    // Create a winit EventLoop for the EventProxy (no window needed yet).
+    let event_loop = build_event_loop();
+    let proxy = event_loop.create_proxy();
+    // Leak the event loop so the proxy remains valid. The event loop isn't run
+    // (no window to dispatch to) — it only exists for EventLoopProxy.
+    std::mem::forget(event_loop);
+
+    // Spawn a Tab (PTY + reader thread + Term + VTE pipeline).
+    let mut tab = Tab::new(TabId::next(), 24, 80, 1000, proxy).expect("failed to create tab");
+    log::info!("tab {:?}: spawned 24x80", tab.id());
+
+    // Send an echo command to the shell.
+    tab.write_input(b"echo hello\r\n");
+
+    // Poll until "hello" appears in the terminal grid or timeout.
+    let found = poll_grid_for(&tab, "hello", Duration::from_secs(5));
+
+    if found {
+        log::info!("PASS: end-to-end PTY -> VTE -> Term pipeline verified");
+    } else {
+        log::error!("FAIL: 'hello' not found in terminal grid after 5s");
     }
 
-    // Verify PTY responds to resize.
-    let _ = handle.resize(config.rows, config.cols);
+    // Verify resize: change dimensions from 80x24 to 120x40.
+    tab.resize(40, 120);
+    log::info!("tab {:?}: resized to 40x120", tab.id());
 
-    let reader = handle.take_reader().expect("PTY reader unavailable");
-    let mut writer = handle.take_writer().expect("PTY writer unavailable");
+    // Exercise title and bell state (normally set by shell via events).
+    tab.set_title("verification".into());
+    log::info!("tab {:?}: title={:?}", tab.id(), tab.title());
 
-    let (tx, rx) = mpsc::channel();
-    let pty_reader = PtyReader::spawn(reader, tx).expect("failed to spawn pty-reader thread");
+    tab.set_bell();
+    log::info!("tab {:?}: bell={}", tab.id(), tab.has_bell());
+    tab.clear_bell();
 
-    // Relay stdin to PTY input.
-    let _input = thread::spawn(move || {
-        let mut stdin = io::stdin();
-        let mut buf = [0u8; 4096];
-        loop {
-            match io::Read::read(&mut stdin, &mut buf) {
-                Ok(0) | Err(_) => return,
-                Ok(n) => {
-                    if writer.write_all(&buf[..n]).is_err() {
-                        return;
-                    }
-                }
+    // Detect child exit via signal (complements PTY EOF detection in reader).
+    #[cfg(unix)]
+    if pty::signal::check() {
+        log::info!("SIGCHLD detected");
+    }
+
+    // Clean shutdown: drop sends Shutdown, kills child, joins reader thread.
+    drop(tab);
+
+    log::info!("verification complete");
+}
+
+/// Poll the terminal grid until `needle` appears in any visible row.
+///
+/// Returns `true` if found before `timeout`, `false` otherwise.
+fn poll_grid_for(tab: &Tab, needle: &str, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+
+    while Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+
+        let term = tab.terminal().lock();
+        let grid = term.grid();
+
+        for line_idx in 0..grid.lines() {
+            let row = &grid[Line(line_idx as i32)];
+            let text: String = (0..grid.cols()).map(|c| row[Column(c)].ch).collect();
+            if text.contains(needle) {
+                return true;
             }
-        }
-    });
-
-    // Print PTY output from the reader thread.
-    for event in rx {
-        match event {
-            PtyEvent::Data(data) => {
-                let _ = io::stdout().write_all(&data);
-                let _ = io::stdout().flush();
-            }
-            PtyEvent::Closed => break,
-        }
-
-        // Detect child exit via signal (complements PTY EOF detection).
-        #[cfg(unix)]
-        if pty::signal::check() {
-            break;
         }
     }
 
-    pty_reader.join();
-    let _ = handle.kill();
-    let _ = handle.wait();
+    false
+}
+
+/// Build a winit event loop usable from the main thread.
+fn build_event_loop() -> winit::event_loop::EventLoop<TermEvent> {
+    #[cfg(windows)]
+    {
+        winit::event_loop::EventLoop::<TermEvent>::with_user_event()
+            .build()
+            .expect("failed to create event loop")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        winit::event_loop::EventLoop::<TermEvent>::with_user_event()
+            .with_any_thread(true)
+            .build()
+            .expect("failed to create event loop")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        winit::event_loop::EventLoop::<TermEvent>::with_user_event()
+            .build()
+            .expect("failed to create event loop")
+    }
 }

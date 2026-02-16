@@ -6,14 +6,12 @@
 //! `openpty`/`forkpty` on Linux, POSIX PTY on macOS.
 
 mod event_loop;
-mod reader;
 mod spawn;
 
 #[cfg(unix)]
 pub mod signal;
 
 pub(crate) use event_loop::PtyEventLoop;
-pub use reader::{PtyEvent, PtyReader};
 #[allow(unused_imports, reason = "returned by PtyHandle::wait/try_wait; callers need access")]
 pub use spawn::ExitStatus;
 pub use spawn::{PtyConfig, PtyControl, PtyHandle, spawn_pty};

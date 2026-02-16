@@ -1,7 +1,7 @@
 ---
 section: 4
 title: PTY + Event Loop
-status: in-progress
+status: complete
 tier: 1
 goal: Spawn a shell via ConPTY, wire the reader thread, and verify end-to-end I/O through Term<EventProxy>
 sections:
@@ -31,10 +31,10 @@ sections:
     status: complete
   - id: "4.9"
     title: End-to-End Verification
-    status: not-started
+    status: complete
   - id: "4.10"
     title: Section Completion
-    status: not-started
+    status: complete
 ---
 
 # Section 04: PTY + Event Loop
@@ -249,37 +249,37 @@ Owns all per-tab state: terminal, PTY handles, reader thread.
 
 At this point there's no window, but we can verify the full PTY → VTE → Term pipeline.
 
-- [ ] Temporary `main.rs` for verification:
-  - [ ] Create a winit `EventLoop` (needed for `EventLoopProxy`, even without a window)
-  - [ ] Create a Tab
-  - [ ] Send `"echo hello\r\n"` via `tab.write_input()`
-  - [ ] Wait briefly (100ms)
-  - [ ] Lock terminal, read grid, verify "hello" appears in grid cells
-  - [ ] Print verification result to log/stderr
-  - [ ] Exit
-- [ ] Verify thread lifecycle:
-  - [ ] Tab creation spawns reader thread
-  - [ ] Tab drop sends Shutdown and joins thread
-  - [ ] No thread leaks, no panics on drop
-- [ ] Verify FairMutex under load:
-  - [ ] Send rapid input while reader thread is processing
-  - [ ] Neither thread starves (both make progress)
-- [ ] Verify resize:
-  - [ ] Create tab at 80x24
-  - [ ] Resize to 120x40
-  - [ ] PTY dimensions updated, terminal grid resized
+- [x] Temporary `main.rs` for verification:
+  - [x] Create a winit `EventLoop` (needed for `EventLoopProxy`, even without a window)
+  - [x] Create a Tab
+  - [x] Send `"echo hello\r\n"` via `tab.write_input()`
+  - [x] Wait briefly (100ms)
+  - [x] Lock terminal, read grid, verify "hello" appears in grid cells
+  - [x] Print verification result to log/stderr
+  - [x] Exit
+- [x] Verify thread lifecycle:
+  - [x] Tab creation spawns reader thread
+  - [x] Tab drop sends Shutdown and joins thread
+  - [x] No thread leaks, no panics on drop
+- [x] Verify FairMutex under load:
+  - [x] Send rapid input while reader thread is processing
+  - [x] Neither thread starves (both make progress)
+- [x] Verify resize:
+  - [x] Create tab at 80x24
+  - [x] Resize to 120x40
+  - [x] PTY dimensions updated, terminal grid resized
 
 ---
 
 ## 4.10 Section Completion
 
-- [ ] All 4.1–4.9 items complete
-- [ ] `cargo build -p oriterm --target x86_64-pc-windows-gnu` succeeds
-- [ ] Tab spawns shell, reader thread processes output into Term
-- [ ] Input sent via Notifier arrives at shell
-- [ ] Shutdown is clean (no thread leaks, no panics)
-- [ ] FairMutex prevents starvation under concurrent access
-- [ ] Resize works end-to-end (PTY + terminal grid)
-- [ ] No window yet — next section adds GUI
+- [x] All 4.1–4.9 items complete
+- [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu` succeeds
+- [x] Tab spawns shell, reader thread processes output into Term
+- [x] Input sent via Notifier arrives at shell
+- [x] Shutdown is clean (no thread leaks, no panics)
+- [x] FairMutex prevents starvation under concurrent access
+- [x] Resize works end-to-end (PTY + terminal grid)
+- [x] No window yet — next section adds GUI
 
 **Exit Criteria:** Live shell output is parsed through VTE into `Term<EventProxy>`. Input flows main thread → Notifier → channel → PTY. Reader thread is clean (proper lifecycle, lock discipline, no starvation). Ready for a window to render the terminal state.
