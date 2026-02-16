@@ -443,7 +443,7 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] Value 1 = dark, value 2 = light, value 0 = no preference
   - [x] D-Bus communication via `dbus-send` subprocess (avoids heavy `zbus` dependency)
   - [x] Fallback: check `GTK_THEME` environment variable for "dark" substring
-  - [ ] Fallback: check `$XDG_CURRENT_DESKTOP` and query DE-specific settings
+  - [x] Fallback: check `$XDG_CURRENT_DESKTOP` and query DE-specific settings
 - [ ] Unified API:
   - [x] `fn system_theme() -> Theme` where `Theme` is `Dark`, `Light`, or `Unknown`
   - [ ] Called at startup to select default color scheme <!-- blocked-by:4 -->

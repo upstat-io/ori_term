@@ -3,7 +3,8 @@
 //! Detects the operating system's dark/light mode preference:
 //! - **Windows**: Reads `AppsUseLightTheme` from the registry.
 //! - **Linux**: Queries `org.freedesktop.appearance.color-scheme` via D-Bus,
-//!   with fallback to `GTK_THEME` environment variable.
+//!   with fallback to DE-specific settings via `$XDG_CURRENT_DESKTOP`, then
+//!   `GTK_THEME` environment variable.
 //! - **macOS**: Queries `AppleInterfaceStyle` via `defaults read`.
 //!
 //! Reference: `WezTerm` appearance detection, Ghostty color scheme sync.
@@ -110,11 +111,15 @@ fn platform_theme() -> Theme {
 
 /// Linux: query the XDG Desktop Portal for color scheme preference.
 ///
-/// Primary: `org.freedesktop.portal.Settings` D-Bus interface.
-/// Fallback: `GTK_THEME` environment variable (substring match for "dark").
+/// Fallback chain:
+/// 1. `org.freedesktop.portal.Settings` D-Bus interface.
+/// 2. DE-specific queries via `$XDG_CURRENT_DESKTOP` (gsettings, kdeglobals).
+/// 3. `GTK_THEME` environment variable (substring match for "dark").
 #[cfg(target_os = "linux")]
 fn platform_theme() -> Theme {
-    dbus_color_scheme().unwrap_or_else(gtk_theme_fallback)
+    dbus_color_scheme()
+        .or_else(de_specific_theme)
+        .unwrap_or_else(gtk_theme_fallback)
 }
 
 /// Query `org.freedesktop.appearance.color-scheme` via `dbus-send`.
@@ -186,6 +191,199 @@ fn theme_from_gtk_name(name: Option<&str>) -> Theme {
         Some(_) => Theme::Light,
         None => Theme::Unknown,
     }
+}
+
+/// Detected desktop environment for DE-specific theme queries.
+///
+/// Used as a fallback when the XDG Desktop Portal is unavailable.
+#[cfg(target_os = "linux")]
+enum DesktopEnvironment {
+    /// GNOME, Unity, Budgie, Pantheon — uses `org.gnome.desktop.interface`.
+    Gnome,
+    /// KDE Plasma — reads `~/.config/kdeglobals`.
+    Kde,
+    /// Linux Mint Cinnamon — uses `org.cinnamon.desktop.interface`.
+    Cinnamon,
+    /// MATE — uses `org.mate.interface`.
+    Mate,
+    /// Xfce — uses `xfconf-query`.
+    Xfce,
+}
+
+/// Detect the desktop environment from `XDG_CURRENT_DESKTOP` or
+/// `XDG_SESSION_DESKTOP`.
+///
+/// `XDG_CURRENT_DESKTOP` is a colon-separated list (e.g., `"ubuntu:GNOME"`).
+/// Reference: Ghostty `src/os/desktop.zig`.
+#[cfg(target_os = "linux")]
+fn detect_desktop() -> Option<DesktopEnvironment> {
+    if let Ok(val) = std::env::var("XDG_CURRENT_DESKTOP") {
+        for segment in val.split(':') {
+            if let Some(de) = classify_desktop(segment.trim()) {
+                return Some(de);
+            }
+        }
+    }
+    std::env::var("XDG_SESSION_DESKTOP")
+        .ok()
+        .and_then(|val| classify_desktop(val.trim()))
+}
+
+/// Map a desktop environment name to a [`DesktopEnvironment`] variant.
+///
+/// Case-insensitive matching. Returns `None` for unrecognized names.
+#[cfg(target_os = "linux")]
+fn classify_desktop(name: &str) -> Option<DesktopEnvironment> {
+    match name.to_ascii_lowercase().as_str() {
+        "gnome" | "gnome-xorg" | "unity" | "budgie" | "pantheon" => {
+            Some(DesktopEnvironment::Gnome)
+        }
+        "kde" | "kde-plasma" => Some(DesktopEnvironment::Kde),
+        "x-cinnamon" | "cinnamon" => Some(DesktopEnvironment::Cinnamon),
+        "mate" => Some(DesktopEnvironment::Mate),
+        "xfce" => Some(DesktopEnvironment::Xfce),
+        _ => None,
+    }
+}
+
+/// Query DE-specific settings for theme preference.
+///
+/// Dispatches to per-DE detection logic based on `$XDG_CURRENT_DESKTOP`.
+#[cfg(target_os = "linux")]
+fn de_specific_theme() -> Option<Theme> {
+    let de = detect_desktop()?;
+    match de {
+        DesktopEnvironment::Gnome => gnome_theme(),
+        DesktopEnvironment::Kde => kde_theme(),
+        DesktopEnvironment::Cinnamon => {
+            gsettings_gtk_theme("org.cinnamon.desktop.interface", "gtk-theme")
+        }
+        DesktopEnvironment::Mate => {
+            gsettings_gtk_theme("org.mate.interface", "gtk-theme")
+        }
+        DesktopEnvironment::Xfce => xfce_theme(),
+    }
+}
+
+/// GNOME: query `color-scheme` first, then `gtk-theme` as fallback.
+///
+/// `color-scheme` was added in GNOME 42. Older GNOME uses the GTK theme name.
+#[cfg(target_os = "linux")]
+fn gnome_theme() -> Option<Theme> {
+    if let Some(theme) = gsettings_color_scheme() {
+        return Some(theme);
+    }
+    gsettings_gtk_theme("org.gnome.desktop.interface", "gtk-theme")
+}
+
+/// Query `org.gnome.desktop.interface color-scheme` via `gsettings`.
+#[cfg(target_os = "linux")]
+fn gsettings_color_scheme() -> Option<Theme> {
+    use std::process::Command;
+
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_gsettings_color_scheme(&stdout)
+}
+
+/// Parse `gsettings` color-scheme output.
+///
+/// Values: `'prefer-dark'`, `'prefer-light'`, `'default'` (no preference).
+/// `'default'` returns `None` to defer to the next fallback.
+#[cfg(target_os = "linux")]
+fn parse_gsettings_color_scheme(output: &str) -> Option<Theme> {
+    let val = output.trim().trim_matches('\'');
+    match val {
+        "prefer-dark" => Some(Theme::Dark),
+        "prefer-light" => Some(Theme::Light),
+        _ => None,
+    }
+}
+
+/// Query a GTK theme name from a `gsettings` schema and classify it.
+#[cfg(target_os = "linux")]
+fn gsettings_gtk_theme(schema: &str, key: &str) -> Option<Theme> {
+    use std::process::Command;
+
+    let output = Command::new("gsettings")
+        .args(["get", schema, key])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let name = stdout.trim().trim_matches('\'');
+    if name.is_empty() {
+        return None;
+    }
+    Some(theme_from_gtk_name(Some(name)))
+}
+
+/// KDE Plasma: read `~/.config/kdeglobals` for color scheme name.
+#[cfg(target_os = "linux")]
+fn kde_theme() -> Option<Theme> {
+    let home = std::env::var("HOME").ok()?;
+    let path = std::path::Path::new(&home).join(".config/kdeglobals");
+    let content = std::fs::read_to_string(path).ok()?;
+    parse_kdeglobals(&content)
+}
+
+/// Parse KDE's `kdeglobals` INI file for the `ColorScheme` value.
+///
+/// Looks for `ColorScheme=<name>` in the `[General]` section.
+#[cfg(target_os = "linux")]
+fn parse_kdeglobals(content: &str) -> Option<Theme> {
+    let mut in_general = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_general = trimmed.eq_ignore_ascii_case("[general]");
+            continue;
+        }
+        if in_general {
+            if let Some(val) = trimmed.strip_prefix("ColorScheme=") {
+                return if val.to_ascii_lowercase().contains("dark") {
+                    Some(Theme::Dark)
+                } else {
+                    Some(Theme::Light)
+                };
+            }
+        }
+    }
+    None
+}
+
+/// Xfce: query theme name via `xfconf-query`.
+#[cfg(target_os = "linux")]
+fn xfce_theme() -> Option<Theme> {
+    use std::process::Command;
+
+    let output = Command::new("xfconf-query")
+        .args(["-c", "xsettings", "-p", "/Net/ThemeName"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let name = stdout.trim();
+    if name.is_empty() {
+        return None;
+    }
+    Some(theme_from_gtk_name(Some(name)))
 }
 
 /// Fallback for unsupported platforms.
