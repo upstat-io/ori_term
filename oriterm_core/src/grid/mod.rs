@@ -17,7 +17,7 @@ use std::ops::{Index, IndexMut, Range};
 use crate::index::Line;
 
 pub use cursor::{Cursor, CursorShape};
-pub use dirty::DirtyTracker;
+pub use dirty::{DirtyIter, DirtyTracker};
 pub use editing::{DisplayEraseMode, LineEraseMode};
 pub use navigation::TabClearMode;
 pub use ring::ScrollbackBuffer;

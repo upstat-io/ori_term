@@ -7,10 +7,8 @@
 use vte::ansi::Color;
 
 use crate::cell::CellFlags;
-use crate::color::palette::dim_rgb;
-use crate::color::{Palette, Rgb};
-use crate::grid::cursor::CursorShape;
-use crate::grid::dirty::DirtyIter;
+use crate::color::{Palette, Rgb, dim_rgb};
+use crate::grid::{CursorShape, DirtyIter};
 use crate::index::Column;
 use crate::term::mode::TermMode;
 

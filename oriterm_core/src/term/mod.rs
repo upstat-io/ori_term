@@ -250,7 +250,7 @@ impl<T: EventListener> Term<T> {
 
         // Slow path: check individual bits (handles mark_range covering all lines).
         let mut all_dirty = true;
-        let mut damage = Vec::new();
+        let mut damage = Vec::with_capacity(lines);
         for line in 0..lines {
             if dirty.is_dirty(line) {
                 damage.push(DamageLine {
