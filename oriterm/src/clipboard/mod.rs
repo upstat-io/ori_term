@@ -1,7 +1,7 @@
 //! Platform clipboard access for copy/paste operations.
 //!
 //! Uses `clipboard-win` on Windows and `arboard` on Linux/macOS.
-//! The `ClipboardProvider` trait enables mock implementations for testing.
+//! The `ClipboardProvider` trait enables platform and mock implementations.
 
 #[cfg(not(windows))]
 mod unix;
@@ -12,12 +12,17 @@ use log::{debug, warn};
 
 use oriterm_core::event::ClipboardType;
 
+#[cfg(not(windows))]
+use unix::create as platform_create;
+#[cfg(windows)]
+use windows::create as platform_create;
+
 /// Platform-agnostic clipboard access.
 ///
 /// Implementations wrap a system clipboard API (or a test mock).
 /// Methods take `&mut self` because platform backends may hold mutable state
 /// (e.g. an `arboard::Clipboard` context).
-pub trait ClipboardProvider {
+trait ClipboardProvider {
     /// Read text from this clipboard. Returns `None` on error.
     fn get_text(&mut self) -> Option<String>;
 
@@ -41,14 +46,7 @@ impl Clipboard {
     /// Falls back to a no-op provider if the system clipboard is unavailable
     /// (e.g. headless environment without a display server).
     pub fn new() -> Self {
-        #[cfg(windows)]
-        {
-            windows::create()
-        }
-        #[cfg(not(windows))]
-        {
-            unix::create()
-        }
+        platform_create()
     }
 
     /// Create a no-op clipboard for testing and headless operation.
