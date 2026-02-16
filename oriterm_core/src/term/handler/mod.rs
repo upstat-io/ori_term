@@ -122,10 +122,11 @@ impl<T: EventListener> Handler for Term<T> {
     fn goto(&mut self, line: i32, col: usize) {
         let origin = self.mode.contains(TermMode::ORIGIN);
         let grid = self.grid_mut();
-        let region = grid.scroll_region().clone();
+        let region_start = grid.scroll_region().start;
+        let region_end = grid.scroll_region().end;
 
         let (offset, max_line) = if origin {
-            (region.start, region.end.saturating_sub(1))
+            (region_start, region_end.saturating_sub(1))
         } else {
             (0, grid.lines().saturating_sub(1))
         };
