@@ -85,6 +85,10 @@ struct SnapData {
     /// Interactive regions (buttons, tabs) in logical coordinates.
     interactive_rects: Mutex<Vec<Rect>>,
     /// DPI from the most recent `WM_DPICHANGED`. 0 means not yet received.
+    ///
+    /// Since we eat `WM_DPICHANGED` (return 0 without calling
+    /// `DefSubclassProc`), winit never fires `ScaleFactorChanged`. The app
+    /// must read this via [`get_current_dpi()`] in its resize handler.
     last_dpi: AtomicU32,
     /// Active OS drag session state.
     os_drag: Mutex<Option<OsDragState>>,
@@ -103,6 +107,7 @@ static SNAP_PTRS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
 /// this to initialize the cached size for hit testing.
 pub fn enable_snap(window: &Window, border_width: f32, caption_height: f32) {
     let Some(hwnd) = hwnd_from_window(window) else {
+        log::warn!("enable_snap: failed to extract HWND — snap support not installed");
         return;
     };
 
@@ -166,6 +171,10 @@ pub fn set_client_rects(window: &Window, rects: Vec<Rect>) {
 
 /// Returns the scale factor from the last `WM_DPICHANGED`, or `None` if
 /// no DPI change has been received yet.
+///
+/// When snap is enabled, this is the **only** source of DPI updates —
+/// the subclass consumes `WM_DPICHANGED` before winit sees it, so
+/// winit's `ScaleFactorChanged` event will not fire.
 pub fn get_current_dpi(window: &Window) -> Option<f64> {
     let data = snap_data_for_window(window)?;
     let dpi = data.last_dpi.load(Ordering::Relaxed);
@@ -364,25 +373,16 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
 
     let is_maximized = unsafe { IsZoomed(hwnd) != 0 };
 
-    let result = if let Ok(rects) = data.interactive_rects.lock() {
-        hit_test::hit_test(
-            point,
-            window_size,
-            data.border_width,
-            data.caption_height,
-            &rects,
-            is_maximized,
-        )
-    } else {
-        hit_test::hit_test(
-            point,
-            window_size,
-            data.border_width,
-            data.caption_height,
-            &[],
-            is_maximized,
-        )
-    };
+    let rects_lock = data.interactive_rects.lock();
+    let rects: &[Rect] = rects_lock.as_ref().map(|g| g.as_slice()).unwrap_or(&[]);
+    let result = hit_test::hit_test(
+        point,
+        window_size,
+        data.border_width,
+        data.caption_height,
+        rects,
+        is_maximized,
+    );
 
     map_hit_result(result)
 }
@@ -390,8 +390,8 @@ fn handle_nchittest(hwnd: HWND, lparam: isize, data: &SnapData) -> LRESULT {
 /// Handles `WM_MOVING`: position correction + cursor-based merge detection.
 ///
 /// Modifies the proposed rect via `lparam` for position correction.
-/// Returns `true` if a merge was detected (caller should still call
-/// `DefSubclassProc`).
+/// If a merge is detected, hides the window and releases capture.
+/// Caller always calls `DefSubclassProc` afterward.
 fn handle_moving(hwnd: HWND, lparam: isize, data: &SnapData) {
     let Ok(mut lock) = data.os_drag.lock() else {
         return;
