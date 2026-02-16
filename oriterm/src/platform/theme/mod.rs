@@ -166,6 +166,7 @@ fn parse_dbus_color_scheme(output: &str) -> Option<Theme> {
     match value {
         1 => Some(Theme::Dark),
         2 => Some(Theme::Light),
+        0 => None,
         _ => Some(Theme::Unknown),
     }
 }

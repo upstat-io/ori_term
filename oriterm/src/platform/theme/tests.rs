@@ -49,9 +49,9 @@ mod linux {
 
     #[test]
     fn parse_dbus_no_preference() {
-        // Value 0 = no preference.
+        // Value 0 = no preference — returns None to defer to fallback chain.
         let output = "   variant    variant       uint32 0\n";
-        assert_eq!(parse_dbus_color_scheme(output), Some(Theme::Unknown));
+        assert_eq!(parse_dbus_color_scheme(output), None);
     }
 
     #[test]

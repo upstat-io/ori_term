@@ -28,7 +28,7 @@ pub fn config_path() -> PathBuf {
 ///
 /// Returns the directory path on success, or an I/O error if creation fails.
 pub fn ensure_config_dir() -> io::Result<PathBuf> {
-    let dir = platform_config_dir();
+    let dir = config_dir();
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }

@@ -32,7 +32,7 @@ Review implementation hygiene against `.claude/rules/impl-hygiene.md` and genera
 2. Expand to include the full module(s) those files belong to (e.g., if `src/gpu/atlas.rs` was touched, include all of `src/gpu/`)
 3. Proceed with the standard review process using those modules as the target
 
-If no argument: ask the user what boundary to review.
+If no argument: default to `last commit` mode (review files touched by the most recent commit).
 
 ## Execution
 
