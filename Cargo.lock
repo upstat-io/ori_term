@@ -1698,6 +1698,11 @@ dependencies = [
 [[package]]
 name = "oriterm_ui"
 version = "0.1.0-alpha.3"
+dependencies = [
+ "image",
+ "log",
+ "winit",
+]
 
 [[package]]
 name = "owned_ttf_parser"

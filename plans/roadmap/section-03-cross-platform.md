@@ -297,16 +297,16 @@ Chrome's `WM_NCHITTEST` equivalent as a **platform-independent pure function**. 
 
 Config-driven window creation. All platforms use frameless windows (Chrome-style CSD) from day one.
 
-- [ ] `WindowConfig` struct — `title`, `inner_size: Size`, `transparent: bool`, `blur: bool`, `position: Option<Point>`, `scale_factor: ScaleFactor`
-- [ ] `WindowError` enum — `Creation(winit::error::OsError)`
-- [ ] `create_window(event_loop, config) -> Result<Arc<Window>, WindowError>`
-  - [ ] Window created invisible (render first frame, then `set_visible(true)` to avoid flash)
-- [ ] `load_icon() -> Option<Icon>` — embedded application icon (RGBA, decoded at build time)
-- [ ] `build_window_attributes(config) -> WindowAttributes` — per-platform `#[cfg]` dispatch:
-  - [ ] **All platforms:** `with_decorations(false)`, `with_visible(false)`, `with_transparent(config.transparent)`
-  - [ ] **Windows:** `with_no_redirection_bitmap(true)` when transparent
-  - [ ] **macOS:** `with_titlebar_transparent(true)`, `with_fullsize_content_view(true)`, `with_option_as_alt(Both)`
-  - [ ] **Linux:** `with_name("oriterm", "oriterm")` for X11 `WM_CLASS`
+- [x] `WindowConfig` struct — `title`, `inner_size: Size`, `transparent: bool`, `blur: bool`, `position: Option<Point>`, `scale_factor: ScaleFactor`
+- [x] `WindowError` enum — `Creation(winit::error::OsError)`
+- [x] `create_window(event_loop, config) -> Result<Arc<Window>, WindowError>`
+  - [x] Window created invisible (render first frame, then `set_visible(true)` to avoid flash)
+- [x] `load_icon() -> Option<Icon>` — embedded application icon (RGBA, decoded at build time)
+- [x] `build_window_attributes(config) -> WindowAttributes` — per-platform `#[cfg]` dispatch:
+  - [x] **All platforms:** `with_decorations(false)`, `with_visible(false)`, `with_transparent(config.transparent)`
+  - [x] **Windows:** `with_no_redirection_bitmap(true)` when transparent
+  - [x] **macOS:** `with_titlebar_transparent(true)`, `with_fullsize_content_view(true)`, `with_option_as_alt(Both)`
+  - [x] **Linux:** `with_name("oriterm", "oriterm")` for X11 `WM_CLASS`
 
 ### Per-Platform Glue (thin layers, `#[cfg]`-gated)
 
@@ -338,7 +338,7 @@ Each platform needs a thin adapter that translates between OS window events and 
 - [x] Add `oriterm_ui` to workspace `Cargo.toml` members
 - [x] `oriterm_ui/Cargo.toml` — edition 2024, `[lints] workspace = true`
 - [x] `oriterm/Cargo.toml` — add `oriterm_ui = { path = "../oriterm_ui" }` dependency
-- [ ] `oriterm_ui/src/lib.rs` — re-export modules:
+- [x] `oriterm_ui/src/lib.rs` — re-export modules:
   ```
   pub mod geometry;
   pub mod hit_test;

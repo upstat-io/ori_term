@@ -48,7 +48,7 @@ sections:
 **Status:** Not Started
 **Goal:** Build a lightweight, GPU-rendered 2D UI framework on top of wgpu. This is what makes ori_term fundamentally different from Alacritty, Ghostty, and WezTerm — those terminals have essentially no UI. ori_term has a rich, cross-platform UI with settings panels, controls, command palette, context menus, and more. All GPU-rendered, all consistent across Windows/Linux/macOS.
 
-**Crate:** `oriterm_ui` (new crate in workspace) — reusable, not coupled to terminal logic
+**Crate:** `oriterm_ui` (created in Section 03.5 with geometry, scale, hit_test, window foundation) — reusable, not coupled to terminal logic
 **Dependencies:** `wgpu`, `winit`, `oriterm_core` (for font pipeline)
 
 **Reference:**
@@ -96,11 +96,8 @@ The low-level 2D drawing API. Everything visible on screen is drawn through thes
 - [ ] `Color` — `[f32; 4]` RGBA, with helper constructors
   - [ ] `Color::hex(0xRRGGBB)`, `Color::rgba(r, g, b, a)`, `Color::WHITE`, `Color::TRANSPARENT`
 
-- [ ] `Rect` — `{ x: f32, y: f32, w: f32, h: f32 }` in logical pixels
-  - [ ] `contains(point: Point) -> bool`
-  - [ ] `intersects(other: Rect) -> bool`
-  - [ ] `inset(amount: f32) -> Rect`
-  - [ ] `offset(dx: f32, dy: f32) -> Rect`
+- [ ] `Point`, `Size`, `Rect`, `Insets` — already established in Section 03.5 (`oriterm_ui/src/geometry.rs`)
+  - [ ] Extend as needed for drawing (e.g., `Rect` already has `contains`, `intersects`, `inset`, `offset`, `union`)
 
 - [ ] Shader support:
   - [ ] Rounded rectangle SDF in fragment shader (same shader, branched on corner_radius > 0)

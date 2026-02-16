@@ -7,3 +7,4 @@
 pub mod geometry;
 pub mod hit_test;
 pub mod scale;
+pub mod window;

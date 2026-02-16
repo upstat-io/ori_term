@@ -6,6 +6,11 @@ description = "UI framework types: geometry, hit testing, scale factor, window m
 license = "MIT"
 
 [dependencies]
+log = "0.4"
+winit = "0.30"
+
+[build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [lints]
 workspace = true

@@ -78,6 +78,13 @@ DirectWrite, fontconfig, CoreText, font discovery, platform fonts
 clipboard-win, arboard, platform clipboard, ClipboardProvider trait
 Vulkan, DX12, Metal, wgpu backend, GPU backend selection
 frameless window, WndProc, WM_NCHITTEST, drag_window, CSD, SSD
+oriterm_ui, geometry, Point, Size, Rect, Insets, half-open interval
+ScaleFactor, DPI, scale, unscale, logical pixels, physical pixels
+hit_test, HitTestResult, ResizeDirection, Caption, Client, ResizeBorder
+WindowConfig, create_window, load_icon, WindowError
+platform_windows, platform_macos, platform_linux, platform glue
+Aero Snap, WndProc subclass, DWM, WM_NCCALCSIZE, WM_DPICHANGED
+Chromium ui/aura, ui/gfx/geometry, WindowDelegate, GetNonClientComponent
 DWM, Mica, acrylic, vibrancy, transparency, NSVisualEffectView
 X11, Wayland, NSWindow, WM integration, Sway, GNOME, KDE
 system theme, dark mode, light mode, AppsUseLightTheme, D-Bus
