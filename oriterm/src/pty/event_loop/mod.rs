@@ -75,7 +75,6 @@ impl<T: EventListener> PtyEventLoop<T> {
         thread::Builder::new()
             .name("pty-event-loop".into())
             .spawn(move || self.run())
-            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     /// Main event loop — runs until PTY closes or shutdown is received.
@@ -93,7 +92,10 @@ impl<T: EventListener> PtyEventLoop<T> {
                 Ok(0) => break,
                 Ok(n) => n,
                 Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Err(_) => break,
+                Err(e) => {
+                    log::debug!("PTY read error, closing reader: {e}");
+                    break;
+                }
             };
 
             // 3. Lock terminal and parse in bounded chunks.
@@ -132,7 +134,9 @@ impl<T: EventListener> PtyEventLoop<T> {
                     if let Err(e) = self.writer.write_all(&bytes) {
                         log::warn!("PTY write failed: {e}");
                     }
-                    let _ = self.writer.flush();
+                    if let Err(e) = self.writer.flush() {
+                        log::debug!("PTY flush failed: {e}");
+                    }
                 }
                 Msg::Resize { rows, cols } => {
                     self.resize_pty(rows, cols);

@@ -344,8 +344,26 @@ fn fair_mutex_concurrent_access() {
         thread::sleep(Duration::from_millis(10));
     }
 
-    // Wait for some output to be processed.
-    thread::sleep(Duration::from_millis(200));
+    // Poll until PTY output appears in the grid (up to 2 seconds).
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut has_content = false;
+    while Instant::now() < deadline {
+        let term = tab.terminal().lock();
+        let grid = term.grid();
+        for line_idx in 0..grid.lines() {
+            let row = &grid[Line(line_idx as i32)];
+            let text: String = (0..grid.cols()).map(|c| row[Column(c)].ch).collect();
+            if text.contains("iter") {
+                has_content = true;
+                break;
+            }
+        }
+        drop(term);
+        if has_content {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 
     // Stop the render thread.
     render_done.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -360,19 +378,6 @@ fn fair_mutex_concurrent_access() {
         "render thread should have acquired the lock at least once",
     );
 
-    // Verify the PTY reader thread also made progress: some output
-    // should have been parsed into the grid.
-    let term = tab.terminal().lock();
-    let grid = term.grid();
-    let mut has_content = false;
-    for line_idx in 0..grid.lines() {
-        let row = &grid[Line(line_idx as i32)];
-        let text: String = (0..grid.cols()).map(|c| row[Column(c)].ch).collect();
-        if text.contains("iter") {
-            has_content = true;
-            break;
-        }
-    }
     assert!(has_content, "PTY reader should have parsed output into grid");
 }
 
