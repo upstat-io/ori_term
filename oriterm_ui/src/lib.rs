@@ -8,3 +8,10 @@ pub mod geometry;
 pub mod hit_test;
 pub mod scale;
 pub mod window;
+
+#[cfg(target_os = "windows")]
+pub mod platform_windows;
+#[cfg(target_os = "macos")]
+pub mod platform_macos;
+#[cfg(target_os = "linux")]
+pub mod platform_linux;

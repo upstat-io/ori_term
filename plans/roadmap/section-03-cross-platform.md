@@ -19,7 +19,7 @@ sections:
     status: complete
   - id: "03.5"
     title: "Window Management — oriterm_ui Crate Foundation"
-    status: in-progress
+    status: complete
   - id: "03.6"
     title: Platform-Specific Code Paths
     status: not-started
@@ -238,7 +238,7 @@ Chrome-style frameless window management with client-side decorations (CSD) on a
 - Chromium `ui/gfx/geometry/` — Point, Size, Rect, Insets (reference repo: `~/projects/reference_repos/chromium_ui/`)
 - Chromium `ui/aura/window_targeter.h` — pluggable hit-test strategy
 - Chromium `ui/aura/window_delegate.h` — `GetNonClientComponent(point)` = our `hit_test()`
-- `_old/src/platform_windows.rs` — existing WndProc subclass to port
+- Chromium `chrome/browser/ui/views/frame/` — `BrowserFrameWin`, WndProc subclass for snap/shadow
 
 **Architecture:**
 
@@ -312,26 +312,26 @@ Config-driven window creation. All platforms use frameless windows (Chrome-style
 
 Each platform needs a thin adapter that translates between OS window events and the platform-independent `hit_test()` function. These are the only files with platform-specific code.
 
-- [ ] **Windows** (`platform_windows.rs`):
-  - [ ] WndProc subclass for Aero Snap integration (port from `_old/src/platform_windows.rs`)
-  - [ ] `WM_NCHITTEST` handler calls `hit_test::hit_test()`, maps result to Windows HT constants
-  - [ ] `WM_NCCALCSIZE` — all-client-area trick + DWM 1px margin for shadow/snap
-  - [ ] `WM_DPICHANGED` — stores DPI for app to query
-  - [ ] `WM_MOVING` — position correction + merge detection for tab drag
-  - [ ] Public API: `enable_snap()`, `set_client_rects()`, `get_current_dpi()`, `begin_os_drag()`, `take_os_drag_result()`
-- [ ] **macOS** (`platform_macos.rs`):
-  - [ ] Frameless with transparent title bar + full-size content view
-  - [ ] Traffic light buttons positioned within custom chrome
-  - [ ] `NSWindow` full screen support (green button, Mission Control)
-  - [ ] Drag via winit's `drag_window()` — triggered by `hit_test() == Caption`
-  - [ ] Resize via winit's `drag_resize_window()` — triggered by `hit_test() == ResizeBorder`
-  - [ ] Retina (HiDPI) via `ScaleFactorChanged`
-- [ ] **Linux** (`platform_linux.rs`):
-  - [ ] Frameless CSD — same `hit_test()` drives drag/resize
-  - [ ] X11: `drag_window()` uses `_NET_WM_MOVERESIZE` (winit handles this)
-  - [ ] Wayland: `drag_window()` uses `xdg_toplevel.move` (winit handles this)
-  - [ ] Resize via winit's `drag_resize_window()` — triggered by `hit_test() == ResizeBorder`
-  - [ ] Test with GNOME, KDE, Sway, i3, Hyprland
+- [x] **Windows** (`platform_windows.rs`):
+  - [x] WndProc subclass for Aero Snap integration (Chrome pattern: `BrowserFrameWin`)
+  - [x] `WM_NCHITTEST` handler calls `hit_test::hit_test()`, maps result to Windows HT constants
+  - [x] `WM_NCCALCSIZE` — all-client-area trick + DWM 1px margin for shadow/snap
+  - [x] `WM_DPICHANGED` — stores DPI for app to query
+  - [x] `WM_MOVING` — position correction + merge detection for tab drag
+  - [x] Public API: `enable_snap()`, `set_client_rects()`, `get_current_dpi()`, `begin_os_drag()`, `take_os_drag_result()`
+- [x] **macOS** (`platform_macos.rs`):
+  - [x] Frameless with transparent title bar + full-size content view
+  - [x] Traffic light buttons positioned within custom chrome
+  - [x] `NSWindow` full screen support (green button, Mission Control)
+  - [x] Drag via winit's `drag_window()` — triggered by `hit_test() == Caption`
+  - [x] Resize via winit's `drag_resize_window()` — triggered by `hit_test() == ResizeBorder`
+  - [x] Retina (HiDPI) via `ScaleFactorChanged`
+- [x] **Linux** (`platform_linux.rs`):
+  - [x] Frameless CSD — same `hit_test()` drives drag/resize
+  - [x] X11: `drag_window()` uses `_NET_WM_MOVERESIZE` (winit handles this)
+  - [x] Wayland: `drag_window()` uses `xdg_toplevel.move` (winit handles this)
+  - [x] Resize via winit's `drag_resize_window()` — triggered by `hit_test() == ResizeBorder`
+  - [x] Test with GNOME, KDE, Sway, i3, Hyprland
 
 ### Workspace Integration
 
@@ -381,7 +381,7 @@ Audit and implement all platform-conditional code paths. Every `#[cfg(target_os 
 
 **Files:** Various — `oriterm/src/app/event_loop.rs`, `oriterm/src/render/font_discovery.rs`, `oriterm/src/clipboard.rs`, `oriterm/src/config/io.rs`
 
-**Reference:** `_old/src/app/event_loop.rs`, `_old/src/render/font_discovery.rs`, `_old/src/clipboard.rs`, `_old/src/config/io.rs`
+**Reference:** Chromium platform abstractions, Alacritty cross-platform modules, WezTerm platform support
 
 ### URL Opening
 
