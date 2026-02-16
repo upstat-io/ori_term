@@ -10,7 +10,7 @@ sections:
     status: complete
   - id: "03.2"
     title: Platform Fonts
-    status: not-started
+    status: complete
   - id: "03.3"
     title: Platform Clipboard
     status: not-started
@@ -91,58 +91,66 @@ Cross-platform PTY via `portable-pty`. Each platform uses its native PTY impleme
 
 Font discovery and loading using platform-native mechanisms. Current approach scans known filesystem paths; the goal is to also support platform font APIs for robustness.
 
-**Files:** `oriterm/src/render/font_discovery.rs`, `oriterm/src/font/collection.rs`
+**Files:** `oriterm/src/font/mod.rs`, `oriterm/src/font/discovery/mod.rs`, `oriterm/src/font/discovery/families.rs`, `oriterm/src/font/discovery/{linux,windows,macos}.rs`
 
-**Reference:** `_old/src/render/font_discovery.rs`, `_old/src/font/collection.rs`, Alacritty `crossfont` crate, Ghostty `src/font/discovery.zig` + `src/font/face.zig`
+**Reference:** `_old/src/render/font_discovery.rs`, `_old/src/font/collection.rs`, WezTerm `FontLocator`, Ghostty compile-time backend selection
 
 ### Windows Font Discovery
 
-- [ ] Scan `C:\Windows\Fonts\` for font families in priority order:
-  - [ ] JetBrainsMono > JetBrainsMonoNerdFont > CascadiaMonoNF > CascadiaMono > Consolas > Courier
-- [ ] Fallback fonts: Segoe UI Symbol (symbols), MS Gothic (CJK), Segoe UI (general)
-- [ ] Future: DirectWrite `IDWriteFontCollection` for proper font enumeration
-  - [ ] More robust than path scanning (handles user-installed fonts, font variations)
-  - [ ] Can query by family name directly instead of guessing filenames
+- [x] DirectWrite primary: `dwrote` crate resolves family name → file paths
+  - [x] Weight-aware: Regular weight + CSS "bolder" (`min(weight+300, 900)`) for Bold
+  - [x] Duplicate path filtering: if Bold path == Regular path, variant unavailable
+- [x] Static path fallback: `C:\Windows\Fonts\` for known families
+  - [x] JetBrainsMono > JetBrainsMonoNerdFont > CascadiaMonoNF > CascadiaMono > Consolas > Courier
+- [x] Fallback fonts: Segoe UI Symbol (symbols), MS Gothic (CJK), Segoe UI (general)
+  - [x] DirectWrite fallback first, then static paths (deduplicated)
 
 ### Linux Font Discovery
 
-- [ ] Search directories in order: `~/.local/share/fonts`, `/usr/share/fonts`, `/usr/local/share/fonts`
-- [ ] Font family priority: JetBrainsMono > UbuntuMono > DejaVuSansMono > LiberationMono
-- [ ] Fallback fonts: NotoSansMono, NotoSansSymbols2, NotoSansCJK, DejaVuSans
-- [ ] Future: `fontconfig` crate or `fc-match` subprocess for proper font matching
-  - [ ] `fontconfig` respects user font configuration (`~/.config/fontconfig/`)
-  - [ ] Handles font aliasing, substitution, and hinting preferences
+- [x] Recursive directory scan: `~/.local/share/fonts` → `/usr/share/fonts` → `/usr/local/share/fonts`
+- [x] Build filename → path `HashMap` index (first-seen wins for priority)
+- [x] Font family priority: JetBrainsMono > UbuntuMono > DejaVuSansMono > LiberationMono
+- [x] Fallback fonts: NotoSansMono, NotoSansSymbols2, NotoSansCJK, DejaVuSans
 
 ### macOS Font Discovery
 
-- [ ] Scan `/Library/Fonts/`, `/System/Library/Fonts/`, `~/Library/Fonts/`
-- [ ] Font family priority: SF Mono > Menlo > Monaco > Courier
-- [ ] Fallback fonts: Apple Symbols, Hiragino Sans (CJK), Apple Color Emoji
-- [ ] Future: CoreText `CTFontCreateWithName` for proper font discovery
-  - [ ] Resolves font by family name without filesystem scanning
-  - [ ] Handles system font variations and optical sizes
+- [x] Same directory-scanning approach as Linux with macOS-specific paths
+- [x] Scan: `~/Library/Fonts` → `/Library/Fonts` → `/System/Library/Fonts` → `/System/Library/Fonts/Supplemental`
+- [x] Font family priority: JetBrainsMono > SF Mono > Menlo > Monaco > Courier
+- [x] Fallback fonts: Apple Symbols, Hiragino Sans (CJK), Apple Color Emoji
 
 ### Embedded Fallback Font
 
-- [ ] Bundle a basic monospace font via `include_bytes!`
-  - [ ] Candidate: JetBrains Mono (SIL Open Font License, embeddable)
-  - [ ] Prevents panic if no system fonts are found
-  - [ ] Load embedded font only as last resort after all platform paths fail
-  - [ ] Include Regular weight only (minimize binary size, ~100KB)
+- [x] Bundle JetBrains Mono Regular (~270KB) via `include_bytes!`
+  - [x] SIL Open Font License (OFL.txt included in `oriterm/fonts/`)
+  - [x] Prevents panic if no system fonts are found
+  - [x] Load embedded font only as last resort after all platform paths fail
+  - [x] Regular weight only — Bold/Italic/BoldItalic synthesized by renderer
 
 ### Config Font Override
 
-- [ ] `font.family` config option maps a family name to file paths on each platform
-  - [ ] Windows: search `C:\Windows\Fonts\` for files matching the family name
-  - [ ] Linux: use `fontconfig` or search standard directories
-  - [ ] macOS: use CoreText or search standard directories
-  - [ ] If the specified family is not found, fall back to default priority list and log a warning
+- [x] `discover_fonts(family_override, weight)` accepts user-specified family name
+  - [x] Windows: DirectWrite first, then static path
+  - [x] Linux/macOS: directory scan with naming convention matching
+  - [x] Absolute path support on all platforms
+  - [x] Falls back to default priority list if override not found (with log warning)
+- [x] `resolve_user_fallback(family)` resolves individual fallback font names
 
-- [ ] **Tests:**
-  - [ ] Font discovery finds at least one font on the current platform (integration test)
-  - [ ] Embedded fallback font loads and rasterizes correctly
-  - [ ] Unknown font family falls back gracefully (no panic)
-  - [ ] All four style variants (Regular, Bold, Italic, BoldItalic) are resolved or synthesized
+- [x] **Tests:** (12 tests total)
+  - [x] `embedded_font_is_valid` — swash parses the embedded bytes
+  - [x] `embedded_family_has_correct_origin` — origin/variants/paths correct
+  - [x] `family_spec_consistency` — all FamilySpec entries have non-empty regular
+  - [x] `fallback_spec_consistency` — all FallbackSpec entries have non-empty filenames
+  - [x] `discover_finds_at_least_one_font` — always succeeds (embedded guarantees)
+  - [x] `unknown_family_falls_back` — bogus name doesn't panic
+  - [x] `discovered_regular_path_exists` — if path is Some, file exists
+  - [x] `discovered_fallback_paths_exist` — all fallback paths exist
+  - [x] `resolve_user_fallback_nonexistent` — returns None for bogus name
+  - [x] `different_weights_succeed` — weights 100–900 all work
+  - [x] `embedded_font_size_reasonable` — > 50KB sanity check
+  - [x] `discovery_result_consistency` — has_variant matches paths, origin consistency
+  - [x] `font_index_finds_files` (Linux-only) — indexed paths exist
+  - [x] `linux_finds_dejavu` (Linux-only) — DejaVu found if installed
 
 ---
 

@@ -1,5 +1,6 @@
 //! Binary entry point for the oriterm terminal emulator.
 
+mod font;
 mod pty;
 
 use std::io::{self, Write};
@@ -13,6 +14,37 @@ fn main() {
     if let Err(e) = pty::signal::init() {
         log::warn!("failed to register SIGCHLD handler: {e}");
     }
+
+    // Discover fonts at startup (validates the discovery pipeline).
+    let fonts = font::discovery::discover_fonts(None, 400);
+    log::info!(
+        "font discovery: primary={:?} (origin={:?}, face_indices={:?}, \
+         variants=[{}, {}, {}, {}]), embedded={}B, {} fallback(s)",
+        fonts.primary.family_name,
+        fonts.primary.origin,
+        fonts.primary.face_indices,
+        fonts.primary.has_variant[0],
+        fonts.primary.has_variant[1],
+        fonts.primary.has_variant[2],
+        fonts.primary.has_variant[3],
+        font::discovery::EMBEDDED_FONT_DATA.len(),
+        fonts.fallbacks.len(),
+    );
+    for (i, path) in fonts.primary.paths.iter().enumerate() {
+        if let Some(p) = path {
+            log::info!("  slot[{i}]: {}", p.display());
+        }
+    }
+    for fb in &fonts.fallbacks {
+        log::info!(
+            "  fallback: {} (face={}, origin={:?})",
+            fb.path.display(),
+            fb.face_index,
+            fb.origin,
+        );
+    }
+    // Exercise user fallback resolution (no-op with None result).
+    let _ = font::discovery::resolve_user_fallback("__nonexistent__");
 
     let config = PtyConfig::default();
     let mut handle = spawn_pty(&config).expect("failed to spawn PTY");
