@@ -177,7 +177,6 @@ impl GpuRenderer {
     /// [`prepare`](Self::prepare) so every atlas lookup hits the cache.
     pub fn ensure_glyphs_cached(&mut self, input: &FrameInput, gpu: &GpuState) {
         let size_q6 = size_key(self.font_collection.size_px());
-        let mut atlas_grew = false;
         let prev_pages = self.atlas.page_count();
 
         for cell in &input.content.cells {
@@ -204,9 +203,6 @@ impl GpuRenderer {
 
         // Rebuild atlas bind group if new pages were allocated.
         if self.atlas.page_count() > prev_pages {
-            atlas_grew = true;
-        }
-        if atlas_grew {
             self.atlas_bind_group.rebuild(
                 &gpu.device,
                 &self.atlas_layout,
@@ -266,9 +262,12 @@ impl GpuRenderer {
             .write_screen_size(queue, vp.width as f32, vp.height as f32);
 
         // Upload instance data to GPU buffers.
-        let bg_buf = ensure_buffer(device, &mut self.bg_buffer, prepared.backgrounds.as_bytes());
-        let fg_buf = ensure_buffer(device, &mut self.fg_buffer, prepared.glyphs.as_bytes());
-        let cur_buf = ensure_buffer(device, &mut self.cursor_buffer, prepared.cursors.as_bytes());
+        let bg_buf =
+            ensure_buffer(device, &mut self.bg_buffer, prepared.backgrounds.as_bytes(), "bg_instance_buffer");
+        let fg_buf =
+            ensure_buffer(device, &mut self.fg_buffer, prepared.glyphs.as_bytes(), "fg_instance_buffer");
+        let cur_buf =
+            ensure_buffer(device, &mut self.cursor_buffer, prepared.cursors.as_bytes(), "cursor_instance_buffer");
 
         if let Some(buf) = bg_buf {
             queue.write_buffer(buf, 0, prepared.backgrounds.as_bytes());
@@ -383,6 +382,7 @@ fn ensure_buffer<'a>(
     device: &Device,
     slot: &'a mut Option<Buffer>,
     data: &[u8],
+    label: &'static str,
 ) -> Option<&'a Buffer> {
     if data.is_empty() {
         return None;
@@ -398,7 +398,7 @@ fn ensure_buffer<'a>(
         // Round up to next power of 2 for amortized growth.
         let size = needed.next_power_of_two().max(256);
         *slot = Some(device.create_buffer(&BufferDescriptor {
-            label: Some("instance_buffer"),
+            label: Some(label),
             size,
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
