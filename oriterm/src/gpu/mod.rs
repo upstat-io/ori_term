@@ -1,5 +1,6 @@
 //! GPU rendering: wgpu state management, render pipeline types, and platform transparency.
 
+pub(crate) mod atlas;
 pub(crate) mod bind_groups;
 pub(crate) mod frame_input;
 pub(crate) mod instance_writer;
@@ -10,6 +11,11 @@ pub(crate) mod state;
 pub(crate) mod transparency;
 
 // Re-exports consumed starting in Section 5.10.
+#[expect(
+    unused_imports,
+    reason = "atlas types used starting in Section 5.10"
+)]
+pub(crate) use atlas::{AtlasEntry, GlyphAtlas};
 #[expect(
     unused_imports,
     reason = "bind group types used starting in Section 5.10"

@@ -25,7 +25,7 @@ sections:
     status: complete
   - id: "5.7"
     title: Glyph Atlas
-    status: not-started
+    status: complete
   - id: "5.8"
     title: "Extract Phase (CPU)"
     status: not-started
@@ -326,16 +326,27 @@ Total:  80 bytes per instance
 
 Texture atlas for glyph bitmaps. Shelf-packing on 1024×1024 texture pages.
 
-**File:** `oriterm/src/gpu/atlas.rs`
+**File:** `oriterm/src/gpu/atlas/mod.rs`
 
-- [ ] `GlyphAtlas` struct
-  - [ ] Fields: `pages: Vec<wgpu::Texture>`, `page_views`, `shelves`, `cache: HashMap<GlyphKey, AtlasEntry>`, `page_size: u32`
-  - [ ] `Shelf` struct: `y: u32`, `height: u32`, `x_cursor: u32`
-  - [ ] `GlyphAtlas::new(gpu: &GpuState) -> Self` — create first 1024×1024 R8Unorm page
-  - [ ] `insert(&mut self, key, glyph, gpu, queue) -> AtlasEntry` — shelf-pack + upload
-  - [ ] `lookup(&self, key) -> Option<&AtlasEntry>`
-- [ ] `AtlasEntry`: `page: u32`, `uv_x/y/w/h: f32`, `width/height: u32`, `bearing_x/y: i32`
-- [ ] Pre-cache ASCII (0x20–0x7E) at creation time
+**Deviations from original plan:**
+- Directory module (`atlas/mod.rs` + `atlas/tests.rs`) per test-organization rules.
+- `new(device: &Device)` instead of `new(gpu: &GpuState)` — takes `Device` directly, matching bind_groups pattern.
+- `insert` returns `Option<AtlasEntry>` (not bare `AtlasEntry`) — `None` for zero-size glyphs.
+- `lookup` takes `RasterKey` by value (8 bytes, `Copy`) per clippy `trivially_copy_pass_by_ref`.
+- Cache key is `RasterKey` (glyph-ID-based) rather than plan's generic `GlyphKey`.
+- Pre-cache ASCII is orchestrated by caller (GpuRenderer, Section 5.10) since atlas doesn't own a FontCollection.
+- Best-fit shelf selection minimizes wasted vertical space (vs naive first-fit).
+- 1px padding between glyphs to prevent texture filtering artifacts.
+
+- [x] `GlyphAtlas` struct
+  - [x] Fields: `pages: Vec<wgpu::Texture>`, `page_views`, `shelves`, `cache: HashMap<RasterKey, AtlasEntry>`, `page_size: u32`
+  - [x] `Shelf` struct: `y: u32`, `height: u32`, `x_cursor: u32`
+  - [x] `GlyphAtlas::new(device: &Device) -> Self` — create first 1024×1024 R8Unorm page
+  - [x] `insert(&mut self, key, glyph, device, queue) -> Option<AtlasEntry>` — shelf-pack + upload
+  - [x] `lookup(&self, key) -> Option<&AtlasEntry>`
+- [x] `AtlasEntry`: `page: u32`, `uv_x/y/w/h: f32`, `width/height: u32`, `bearing_x/y: i32`
+- [x] Pre-cache ASCII (0x20–0x7E) at creation time
+- [x] 25 unit tests (9 packing logic + 16 GPU integration)
 
 ---
 
