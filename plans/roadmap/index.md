@@ -119,7 +119,7 @@ contention, starvation, fair lock, reader thread lock
 ---
 
 ### Section 05: Window + GPU Rendering
-**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** Not Started
+**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** In Progress (5.1–5.6 complete)
 
 ```
 render pipeline, staged pipeline, Extract, Prepare, Render, 3-phase
@@ -534,7 +534,7 @@ session serialization, workspace presets, broadcast input
 | 02 | Terminal State Machine + VTE | `section-02-term-vte.md` | 0 | Not Started |
 | 03 | Cross-Platform | `section-03-cross-platform.md` | 0 | Not Started |
 | 04 | PTY + Event Loop | `section-04-pty-eventloop.md` | 1 | Not Started |
-| 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | Not Started |
+| 05 | Window + GPU Rendering | `section-05-window-gpu.md` | 2 | In Progress |
 | 06 | Font Pipeline | `section-06-font-pipeline.md` | 2 | Not Started |
 | 07 | 2D UI Framework | `section-07-ui-framework.md` | 2 | Not Started |
 | 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Not Started |

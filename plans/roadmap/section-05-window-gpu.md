@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "5.6"
     title: Font Discovery + Rasterization
-    status: not-started
+    status: complete
   - id: "5.7"
     title: Glyph Atlas
     status: not-started
@@ -290,25 +290,35 @@ Total:  80 bytes per instance
 
 ## 5.6 Font Discovery + Rasterization
 
-**File:** `oriterm/src/font/discovery.rs`, `oriterm/src/font/collection.rs`
+**Files:** `oriterm/src/font/mod.rs`, `oriterm/src/font/collection/mod.rs`, `oriterm/src/font/collection/face.rs`, `oriterm/src/font/collection/tests.rs`
 
-- [ ] Font discovery (platform-specific, see Section 03 for full cross-platform):
-  - [ ] `find_font(family: &str, weight: Weight, style: Style) -> Option<FontData>`
-  - [ ] Load font file bytes from system font path or embedded fallback
-- [ ] `FontData` struct: `data: Vec<u8>`, `index: u32`
-- [ ] `FontSet` struct — 4 style variants + fallback chain:
-  - [ ] `regular`, `bold`, `italic`, `bold_italic`: `FontData`
-  - [ ] `fallback: Vec<FontData>` — fallback fonts for missing glyphs
-  - [ ] `FontSet::load(family: &str) -> Result<Self>`
-- [ ] `FontCollection` struct:
-  - [ ] Fields: `font_set`, `faces: Vec<swash::FontRef>`, `size_px`, `cell_width`, `cell_height`, `baseline`, `glyph_cache`
-  - [ ] `FontCollection::new(font_set: FontSet, size_pt: f32, dpi: f32) -> Self`
-  - [ ] `rasterize(&mut self, key: GlyphKey) -> &RasterizedGlyph`
-    - [ ] Check cache → select face → locate glyph → fallback chain → scale → render → store
-  - [ ] `cell_size(&self) -> (f32, f32)`, `baseline(&self) -> f32`
-- [ ] `GlyphKey`: `ch: char`, `style: GlyphStyle` — Derive Hash, Eq, Copy
-- [ ] `GlyphStyle` enum: `Regular`, `Bold`, `Italic`, `BoldItalic`
-- [ ] `RasterizedGlyph`: `width`, `height`, `bearing_x`, `bearing_y`, `advance`, `bitmap: Vec<u8>`
+**Deviations from original plan:**
+- Glyph-ID-based cache key (`RasterKey { glyph_id, face_idx, size_q6 }`) instead of char-based `GlyphKey`
+- Separate resolve/rasterize: `resolve(char, style) -> ResolvedGlyph`, `rasterize(RasterKey) -> RasterizedGlyph`
+- Subpixel rendering support via `GlyphFormat` enum (Alpha, SubpixelRgb, SubpixelBgr, Color)
+- Synthetic bold/italic flags (`SyntheticFlags`) instead of silent fallback
+- f32 metrics throughout (no integer truncation)
+- `Arc<Vec<u8>>` for font bytes (shared with rustybuzz in Section 6)
+
+- [x] Font discovery integration (via `discovery::discover_fonts()`):
+  - [x] Platform discovery → load font bytes from system paths or embedded fallback
+  - [x] `FontSet::load(family, weight) -> Result<Self, FontError>`
+- [x] `FontData` struct: `data: Arc<Vec<u8>>`, `index: u32`
+- [x] `FontSet` struct — 4 style variants + fallback chain:
+  - [x] `regular`, `bold`, `italic`, `bold_italic`: `Option<FontData>`
+  - [x] `fallbacks: Vec<FontData>` — fallback fonts for missing glyphs
+- [x] `FontCollection` struct:
+  - [x] Fields: `primary: [Option<FaceData>; 4]`, `fallbacks`, `size_px: f32`, `cell_width: f32`, `cell_height: f32`, `baseline: f32`, `glyph_cache`, `scale_context`
+  - [x] `FontCollection::new(font_set, size_pt, dpi, format, weight) -> Result<Self, FontError>`
+  - [x] `rasterize(&mut self, key: RasterKey) -> Option<&RasterizedGlyph>` — cache check → face lookup → swash render → store
+  - [x] `resolve(&self, ch, style) -> ResolvedGlyph` — style substitution with synthetic flags
+  - [x] `cell_metrics(&self) -> CellMetrics` — produces GPU-ready `CellMetrics`
+  - [x] `find_face_for_char(&self, ch, style) -> ResolvedGlyph`
+  - [x] Pre-cache ASCII (0x20–0x7E) at construction time
+- [x] Shared types in `font/mod.rs`: `GlyphFormat`, `GlyphStyle`, `RasterKey`, `SyntheticFlags`, `ResolvedGlyph`, `FontError`
+- [x] `RasterizedGlyph`: `width: u32`, `height: u32`, `bearing_x/y: i32`, `advance: f32`, `format: GlyphFormat`, `bitmap: Vec<u8>`
+- [x] Internal `FaceData` + helpers: `validate_font()`, `font_ref()`, `has_glyph()`, `glyph_id()`, `rasterize_from_face()`, `compute_metrics()`, `cap_height_px()`, `size_key()`
+- [x] 28 unit tests (embedded-only + system discovery)
 
 ---
 
