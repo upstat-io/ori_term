@@ -8,7 +8,7 @@
 //! packing rasterized glyph bitmaps into horizontal shelves. Glyphs are
 //! inserted once and looked up by [`RasterKey`] on subsequent frames.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use wgpu::{
     Device, Extent3d, Queue, Texture, TextureDescriptor, TextureDimension, TextureFormat,
@@ -70,6 +70,11 @@ pub struct GlyphAtlas {
     page_views: Vec<TextureView>,
     shelves: Vec<Vec<Shelf>>,
     cache: HashMap<RasterKey, AtlasEntry>,
+    /// Keys known to produce zero-size glyphs (spaces, non-printing chars).
+    ///
+    /// Prevents repeated rasterization attempts for glyphs that will never
+    /// produce atlas entries.
+    empty_keys: HashSet<RasterKey>,
     page_size: u32,
 }
 
@@ -83,6 +88,7 @@ impl GlyphAtlas {
             page_views: vec![view],
             shelves: vec![vec![]],
             cache: HashMap::new(),
+            empty_keys: HashSet::new(),
             page_size: PAGE_SIZE,
         }
     }
@@ -90,6 +96,14 @@ impl GlyphAtlas {
     /// Look up a previously inserted glyph.
     pub fn lookup(&self, key: RasterKey) -> Option<&AtlasEntry> {
         self.cache.get(&key)
+    }
+
+    /// Whether the key is known to produce a zero-size glyph.
+    ///
+    /// Callers should skip rasterization when this returns `true`, since
+    /// the glyph will never produce an atlas entry.
+    pub fn is_known_empty(&self, key: RasterKey) -> bool {
+        self.empty_keys.contains(&key)
     }
 
     /// Insert a rasterized glyph into the atlas.
@@ -115,6 +129,7 @@ impl GlyphAtlas {
         }
 
         if glyph.width == 0 || glyph.height == 0 {
+            self.empty_keys.insert(key);
             return None;
         }
 
@@ -181,6 +196,7 @@ impl GlyphAtlas {
     /// change when all cached glyphs become invalid.
     pub fn clear(&mut self) {
         self.cache.clear();
+        self.empty_keys.clear();
         for shelf_list in &mut self.shelves {
             shelf_list.clear();
         }
