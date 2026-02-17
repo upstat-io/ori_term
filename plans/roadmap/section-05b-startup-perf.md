@@ -120,10 +120,10 @@ GPU initialization (`GpuState::new`) and font loading (`FontSet::load` + `FontCo
 
 ASCII pre-caching (rasterize + atlas upload for `' '..='~'`) currently happens in `GpuRenderer::new()`, blocking startup. Since `ensure_glyphs_cached()` already handles cache misses at render time, the pre-cache is an optimization for first-frame latency, not a correctness requirement.
 
-- [ ] Move ASCII pre-cache out of `GpuRenderer::new()` constructor
-- [ ] Run it as a post-construction step: `renderer.pre_cache_ascii(&gpu)` called after the window is shown
+- [x] ~~Move ASCII pre-cache out of `GpuRenderer::new()` constructor~~ — kept inline (see below)
+- [x] ~~Run it as a post-construction step~~ — not needed, pre-cache is fast enough inline
 - [x] Or: keep it in the constructor but ensure it's fast enough that it's negligible after the parallelization gains from 5B.2
-- [ ] Profile: if pre-cache is < 5ms after 5B.1 and 5B.2, leave it inline. If > 5ms, defer it.
+- [x] Profile: if pre-cache is < 5ms after 5B.1 and 5B.2, leave it inline. If > 5ms, defer it.
 - [x] Either way, first frame correctness is guaranteed by `ensure_glyphs_cached()` in the render loop
 
 **Decision point:** This item may be unnecessary after 5B.1 and 5B.2 deliver sufficient speedup. Measure first, then decide.
