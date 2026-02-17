@@ -93,6 +93,8 @@ impl ApplicationHandler<TermEvent> for App {
             return;
         }
 
+        let t_start = std::time::Instant::now();
+
         // 1. Create window (invisible) for GPU surface capability probing.
         let window_arc = match oriterm_ui::window::create_window(
             event_loop,
@@ -105,8 +107,26 @@ impl ApplicationHandler<TermEvent> for App {
                 return;
             }
         };
+        let t_window = t_start.elapsed();
 
-        // 2. Init GPU with the window (probes adapter, format, alpha mode).
+        // 2. Spawn font discovery on a background thread (no GPU dependency).
+        let font_weight = DEFAULT_FONT_WEIGHT;
+        let font_size_pt = DEFAULT_FONT_SIZE_PT;
+        let font_dpi = DEFAULT_DPI;
+        let font_handle = std::thread::Builder::new()
+            .name("font-discovery".into())
+            .spawn(move || -> Result<(FontCollection, std::time::Duration), crate::font::FontError> {
+                let t0 = std::time::Instant::now();
+                let font_set = FontSet::load(None, font_weight)?;
+                let fc = FontCollection::new(
+                    font_set, font_size_pt, font_dpi, GlyphFormat::Alpha, font_weight,
+                )?;
+                Ok((fc, t0.elapsed()))
+            })
+            .expect("failed to spawn font discovery thread");
+
+        // 3. Init GPU on main thread (requires window Arc, runs concurrently with fonts).
+        let t_gpu_start = std::time::Instant::now();
         let gpu = match GpuState::new(&window_arc, self.window_config.transparent) {
             Ok(g) => g,
             Err(e) => {
@@ -115,8 +135,9 @@ impl ApplicationHandler<TermEvent> for App {
                 return;
             }
         };
+        let t_gpu = t_gpu_start.elapsed();
 
-        // 3. Wrap the same window into TermWindow (creates surface, applies effects).
+        // 4. Wrap the same window into TermWindow (creates surface, applies effects).
         let window = match TermWindow::from_window(
             window_arc,
             &self.window_config,
@@ -130,40 +151,34 @@ impl ApplicationHandler<TermEvent> for App {
             }
         };
 
-        // 4. Discover fonts and build the font collection.
-        let font_set = match FontSet::load(None, DEFAULT_FONT_WEIGHT) {
-            Ok(fs) => fs,
-            Err(e) => {
+        // 5. Join font thread (GPU init + surface setup ran concurrently).
+        let (font_collection, t_fonts) = match font_handle.join() {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
                 log::error!("failed to load fonts: {e}");
                 event_loop.exit();
                 return;
             }
-        };
-        let font_collection = match FontCollection::new(
-            font_set,
-            DEFAULT_FONT_SIZE_PT,
-            DEFAULT_DPI,
-            GlyphFormat::Alpha,
-            DEFAULT_FONT_WEIGHT,
-        ) {
-            Ok(fc) => fc,
-            Err(e) => {
-                log::error!("failed to create font collection: {e}");
+            Err(_) => {
+                log::error!("font discovery thread panicked");
                 event_loop.exit();
                 return;
             }
         };
 
-        // 5. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
+        // 6. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
+        let t_renderer_start = std::time::Instant::now();
         let renderer = GpuRenderer::new(&gpu, font_collection);
+        let t_renderer = t_renderer_start.elapsed();
 
-        // 6. Compute grid dimensions from viewport and cell metrics.
+        // 7. Compute grid dimensions from viewport and cell metrics.
         let (w, h) = window.size_px();
         let cell = renderer.font_collection().cell_metrics();
         let cols = cell.columns(w).max(1);
         let rows = cell.rows(h).max(1);
 
-        // 7. Spawn the terminal tab (PTY + VTE + Term).
+        // 8. Spawn the terminal tab (PTY + VTE + Term).
+        let t_tab_start = std::time::Instant::now();
         let tab_id = TabId::next();
         let tab = match Tab::new(
             tab_id,
@@ -179,7 +194,13 @@ impl ApplicationHandler<TermEvent> for App {
                 return;
             }
         };
+        let t_tab = t_tab_start.elapsed();
 
+        let t_total = t_start.elapsed();
+        log::info!(
+            "app: startup — window={:?} gpu={:?} fonts={:?} renderer={:?} tab={:?} total={:?}",
+            t_window, t_gpu, t_fonts, t_renderer, t_tab, t_total,
+        );
         log::info!(
             "app: initialized — {}x{} px, {cols} cols × {rows} rows, \
              font={} {:.1}pt",
