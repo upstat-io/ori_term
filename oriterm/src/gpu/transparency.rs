@@ -9,10 +9,6 @@
 //!   Requires a compositor (Picom, `KWin`, Mutter, Sway). Falls back to
 //!   opaque when no compositor is running.
 
-// Transparency helpers are fully implemented but not yet called from the event
-// loop (added in Section 05). Suppress dead-code warnings until then.
-#![expect(dead_code, reason = "transparency infrastructure used in Section 05")]
-
 use winit::window::Window;
 
 /// Apply platform-specific transparency effects to a window.

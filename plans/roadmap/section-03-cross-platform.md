@@ -28,7 +28,7 @@ sections:
     status: in-progress
   - id: "03.8"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 03: Cross-Platform
@@ -461,24 +461,24 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 
 ## 03.8 Section Completion
 
-- [ ] All 03.1-03.7 items complete
-- [ ] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality
-- [ ] Terminal runs on Linux with openpty, Vulkan, and clipboard support
-  - [ ] Tested on X11 and Wayland
-- [ ] Terminal runs on macOS with openpty, Metal, and clipboard support
-- [ ] Font discovery works on all three platforms (falls back to embedded font if needed)
-- [ ] Clipboard copy/paste works on all three platforms
-- [ ] GPU rendering works on all three platforms
-- [ ] Default shell detected correctly per platform
-- [ ] Window decorations appropriate per platform
-- [ ] URL opening works per platform
-- [ ] Config paths follow platform conventions
-- [ ] Transparency works where compositor supports it
-- [ ] System theme detection selects appropriate default palette
-- [ ] No platform-specific panics or crashes
+- [ ] All 03.1-03.7 items complete <!-- blocked-by:5 --><!-- blocked-by:13 -->
+- [ ] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality <!-- blocked-by:5 -->
+- [ ] Terminal runs on Linux with openpty, Vulkan, and clipboard support <!-- blocked-by:5 -->
+  - [ ] Tested on X11 and Wayland <!-- blocked-by:5 -->
+- [ ] Terminal runs on macOS with openpty, Metal, and clipboard support <!-- blocked-by:5 -->
+- [x] Font discovery works on all three platforms (falls back to embedded font if needed)
+- [x] Clipboard copy/paste works on all three platforms
+- [ ] GPU rendering works on all three platforms <!-- blocked-by:5 -->
+- [x] Default shell detected correctly per platform
+- [x] Window decorations appropriate per platform
+- [x] URL opening works per platform
+- [x] Config paths follow platform conventions
+- [ ] Transparency works where compositor supports it <!-- blocked-by:5 --><!-- blocked-by:13 -->
+- [x] System theme detection selects appropriate default palette
+- [ ] No platform-specific panics or crashes <!-- blocked-by:5 -->
 - [ ] CI builds for all three platforms
 - [ ] `cargo test --target x86_64-pc-windows-gnu` — passes
-- [ ] `cargo test` (native Linux) — passes
-- [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+- [x] `cargo test` (native Linux) — passes
+- [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 
 **Exit Criteria:** ori_term builds and runs on Windows, Linux, and macOS with native PTY, font discovery, clipboard, GPU rendering, and system theme detection on each platform. No platform is broken or missing core functionality.

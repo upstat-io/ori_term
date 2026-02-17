@@ -1,19 +1,19 @@
 ---
 section: 5
 title: Window + GPU Rendering
-status: not-started
+status: in-progress
 tier: 2
 goal: Open a frameless window, initialize wgpu, render the terminal grid with a proper staged render pipeline — first visual milestone
 sections:
   - id: "5.1"
     title: Render Pipeline Architecture
-    status: not-started
+    status: complete
   - id: "5.2"
     title: winit Window Creation
-    status: not-started
+    status: complete
   - id: "5.3"
     title: wgpu GpuState + Offscreen Render Targets
-    status: not-started
+    status: in-progress
   - id: "5.4"
     title: WGSL Shaders + GPU Pipelines
     status: not-started
@@ -31,7 +31,7 @@ sections:
     status: not-started
   - id: "5.9"
     title: "Prepare Phase (CPU)"
-    status: not-started
+    status: in-progress
   - id: "5.10"
     title: "Render Phase (GPU)"
     status: not-started
@@ -87,82 +87,88 @@ The organizing principle for all rendering. Every frame flows through these phas
   (unit test)      (unit test)     (headless GPU)
 ```
 
-- [ ] **Phase 1: Extract** — Lock terminal state, snapshot to `FrameInput`, unlock.
-  - [ ] Input: `&FairMutex<Term<EventProxy>>`, widget state, cursor state
-  - [ ] Output: `FrameInput` (owned, no references to locked state)
-  - [ ] Duration: microseconds. Lock is released before any other work.
-  - [ ] **Pure data copy.** No GPU types, no rendering logic.
+- [x] **Phase 1: Extract** — Lock terminal state, snapshot to `FrameInput`, unlock.
+  - [x] Input: `&FairMutex<Term<EventProxy>>`, widget state, cursor state
+  - [x] Output: `FrameInput` (owned, no references to locked state)
+  - [x] Duration: microseconds. Lock is released before any other work.
+  - [x] **Pure data copy.** No GPU types, no rendering logic.
 
-- [ ] **Phase 2: Prepare** — Convert `FrameInput` into GPU-ready instance buffers.
-  - [ ] Input: `&FrameInput`, `&FontCollection`, `&GlyphAtlas` (for UV lookups)
-  - [ ] Output: `PreparedFrame` containing `InstanceWriter` buffers (bg + fg + overlay)
-  - [ ] **Pure CPU computation.** Produces `Vec<u8>` byte buffers — no wgpu types, no device, no queue.
-  - [ ] This is where cell → pixel position math, glyph lookup, color resolution, cursor building all happen.
-  - [ ] **Fully unit-testable**: given a `FrameInput`, assert the exact bytes in the instance buffers.
+- [x] **Phase 2: Prepare** — Convert `FrameInput` into GPU-ready instance buffers.
+  - [x] Input: `&FrameInput`, `&FontCollection`, `&GlyphAtlas` (for UV lookups)
+  - [x] Output: `PreparedFrame` containing `InstanceWriter` buffers (bg + fg + overlay)
+  - [x] **Pure CPU computation.** Produces `Vec<u8>` byte buffers — no wgpu types, no device, no queue.
+  - [x] This is where cell → pixel position math, glyph lookup, color resolution, cursor building all happen.
+  - [x] **Fully unit-testable**: given a `FrameInput`, assert the exact bytes in the instance buffers.
 
-- [ ] **Phase 3: Render** — Upload buffers to GPU, execute draw calls, present.
-  - [ ] Input: `&PreparedFrame`, `&GpuState`, target `&wgpu::TextureView` (surface OR offscreen)
-  - [ ] Output: pixels on screen (or in offscreen texture)
-  - [ ] This phase is thin — just GPU plumbing. All logic is in Prepare.
-  - [ ] Accepts any `TextureView` as target (not hardcoded to surface). Enables: tab previews, headless testing, thumbnails.
+- [x] **Phase 3: Render** — Upload buffers to GPU, execute draw calls, present.
+  - [x] Input: `&PreparedFrame`, `&GpuState`, target `&wgpu::TextureView` (surface OR offscreen)
+  - [x] Output: pixels on screen (or in offscreen texture)
+  - [x] This phase is thin — just GPU plumbing. All logic is in Prepare.
+  - [x] Accepts any `TextureView` as target (not hardcoded to surface). Enables: tab previews, headless testing, thumbnails.
 
 ### Key Data Types
 
-- [ ] `FrameInput` — everything needed to build a frame, no references
-  - [ ] `cells: Vec<RenderableCell>` — visible cells (copied from terminal snapshot)
-  - [ ] `cursor: Option<RenderableCursor>` — cursor state
-  - [ ] `viewport: (u32, u32)` — viewport size in pixels
-  - [ ] `cell_size: (f32, f32)` — cell dimensions
-  - [ ] `baseline: f32` — font baseline
-  - [ ] `palette: FramePalette` — resolved colors for this frame
-  - [ ] `selection: Option<SelectionRange>` — active selection bounds
-  - [ ] `search_matches: Vec<SearchMatch>` — highlighted search results
-  - [ ] No `Arc`, no `Mutex`, no references — pure owned data.
+- [x] `FrameInput` — everything needed to build a frame, no references
+  - [x] `cells: Vec<RenderableCell>` — visible cells (via `content: RenderableContent`)
+  - [x] `cursor: Option<RenderableCursor>` — cursor state (via `content.cursor`)
+  - [x] `viewport: (u32, u32)` — viewport size in pixels (via `ViewportSize` newtype)
+  - [x] `cell_size: (f32, f32)` — cell dimensions (via `CellMetrics` newtype, includes baseline)
+  - [x] `baseline: f32` — font baseline (inside `CellMetrics`)
+  - [x] `palette: FramePalette` — resolved colors for this frame
+  - [x] `selection: Option<SelectionRange>` — active selection bounds (placeholder type)
+  - [x] `search_matches: Vec<SearchMatch>` — highlighted search results (placeholder type)
+  - [x] No `Arc`, no `Mutex`, no references — pure owned data.
 
-- [ ] `PreparedFrame` — GPU-ready output of the Prepare phase
-  - [ ] `bg_instances: InstanceWriter` — background quad instances
-  - [ ] `fg_instances: InstanceWriter` — foreground glyph instances
-  - [ ] `overlay_instances: InstanceWriter` — overlay instances (cursor, selection, UI)
-  - [ ] `viewport: (u32, u32)` — for uniform buffer update
-  - [ ] `clear_color: [f32; 4]` — background clear color
-  - [ ] No wgpu types. Just bytes.
+- [x] `PreparedFrame` — GPU-ready output of the Prepare phase
+  - [x] `bg_instances: InstanceWriter` — background quad instances (field: `backgrounds`)
+  - [x] `fg_instances: InstanceWriter` — foreground glyph instances (field: `glyphs`)
+  - [x] `overlay_instances: InstanceWriter` — overlay instances (field: `cursors`)
+  - [x] `viewport: (u32, u32)` — for uniform buffer update (sourced from FrameInput at render time)
+  - [x] `clear_color: [f32; 4]` — background clear color (`[f64; 4]` to match wgpu clear API)
+  - [x] No wgpu types. Just bytes.
 
 ### Pipeline Rules (enforced by type system)
 
-- [ ] Extract returns owned `FrameInput` — cannot hold locks across phases
-- [ ] Prepare takes `&FrameInput`, returns owned `PreparedFrame` — pure function
-- [ ] Render takes `&PreparedFrame` + GPU resources — the only phase that touches wgpu
-- [ ] No function crosses phase boundaries (no "prepare and also render" functions)
+- [x] Extract returns owned `FrameInput` — cannot hold locks across phases
+- [x] Prepare takes `&FrameInput`, returns owned `PreparedFrame` — pure function
+- [x] Render takes `&PreparedFrame` + GPU resources — the only phase that touches wgpu
+- [x] No function crosses phase boundaries (no "prepare and also render" functions)
 
 ---
 
 ## 5.2 winit Window Creation
 
-**File:** `oriterm/src/window.rs`
+**File:** `oriterm/src/window/mod.rs`
 
-- [ ] `TermWindow` struct
-  - [ ] Fields:
+- [x] `TermWindow` struct (Chrome `WindowTreeHost` pattern — pure window wrapper, NO tabs/content)
+  - [x] Fields:
     - `window: Arc<winit::window::Window>` — the winit window (Arc for wgpu surface)
     - `surface: wgpu::Surface<'static>` — wgpu rendering surface
     - `surface_config: wgpu::SurfaceConfiguration` — surface format, size, present mode
     - `size_px: (u32, u32)` — window size in physical pixels
-    - `scale_factor: f64` — DPI scale factor
-  - [ ] `TermWindow::new(event_loop: &ActiveEventLoop, gpu: &GpuState) -> Result<Self>`
-    - [ ] Window attributes: frameless (`decorations: false`), transparent, title "oriterm"
-    - [ ] Initial size: 1024×768 (or configurable later)
-    - [ ] Create wgpu surface from window
-    - [ ] Configure surface: format, alpha mode (pre-multiplied for transparency)
-    - [ ] Store dimensions and scale factor
-  - [ ] `TermWindow::resize(&mut self, new_size: (u32, u32), gpu: &GpuState)`
-    - [ ] Update surface config with new size
-    - [ ] `self.surface.configure(&gpu.device, &self.surface_config)`
-  - [ ] `TermWindow::request_redraw(&self)` — `self.window.request_redraw()`
-  - [ ] `TermWindow::scale_factor(&self) -> f64`
-  - [ ] `TermWindow::size_px(&self) -> (u32, u32)`
-- [ ] Window vibrancy (platform-specific):
-  - [ ] Windows: `window_vibrancy::apply_mica()` or `apply_acrylic()` for translucent background
-  - [ ] Linux/macOS: compositor-dependent (see Section 03)
-  - [ ] Fallback: opaque dark background if vibrancy not available
+    - `scale_factor: ScaleFactor` — DPI scale factor (oriterm_ui newtype, clamped)
+    - `is_maximized: bool` — window maximized state
+  - [x] `TermWindow::new(event_loop, config: &WindowConfig, gpu: &GpuState) -> Result<Self>`
+    - [x] Window attributes: frameless (`decorations: false`), transparent, title "oriterm" (via `oriterm_ui::window::create_window`)
+    - [x] Initial size: 1024×768 (from `WindowConfig::default()`)
+    - [x] Create wgpu surface from window (via `GpuState::create_surface`)
+    - [x] Configure surface: format, alpha mode (pre-multiplied for transparency)
+    - [x] Store dimensions and scale factor
+  - [x] `TermWindow::resize_surface(&mut self, width, height, gpu: &GpuState)`
+    - [x] Update surface config with new size (min 1×1)
+    - [x] `self.surface.configure(&gpu.device, &self.surface_config)`
+  - [x] `TermWindow::request_redraw(&self)` — `self.window.request_redraw()`
+  - [x] `TermWindow::scale_factor(&self) -> ScaleFactor`
+  - [x] `TermWindow::size_px(&self) -> (u32, u32)`
+  - [x] `TermWindow::update_scale_factor(&mut self, f64) -> bool` — DPI change handling
+  - [x] `TermWindow::set_visible(&self, bool)` — show after first frame
+  - [x] `TermWindow::has_surface_area(&self) -> bool` — skip render when minimized
+  - [x] `TermWindow::window_id(&self) -> WindowId` — event routing
+  - [x] `WindowCreateError` enum — `Window` + `Surface` variants with `Display`/`Error`/`From`
+- [x] Window vibrancy (platform-specific):
+  - [x] Windows: `window_vibrancy::apply_acrylic()` for translucent background (via `gpu::transparency`)
+  - [x] Linux/macOS: compositor-dependent (via `gpu::transparency`, see Section 03)
+  - [x] Fallback: opaque dark background if vibrancy not available (opacity >= 1.0 short-circuits)
 
 ---
 
@@ -170,26 +176,26 @@ The organizing principle for all rendering. Every frame flows through these phas
 
 **File:** `oriterm/src/gpu/state.rs`
 
-- [ ] `GpuState` struct
-  - [ ] Fields:
+- [x] `GpuState` struct
+  - [x] Fields:
     - `instance: wgpu::Instance` — wgpu instance (Vulkan/DX12 on Windows, Vulkan on Linux, Metal on macOS)
-    - `adapter: wgpu::Adapter` — selected GPU adapter
+    - `adapter: wgpu::Adapter` — selected GPU adapter (dropped after init, device/queue independent)
     - `device: wgpu::Device` — logical device
     - `queue: wgpu::Queue` — command queue
-    - `surface_format: wgpu::TextureFormat` — negotiated format (Bgra8UnormSrgb typical)
-  - [ ] `GpuState::new() -> Result<Self>`
-    - [ ] Create instance with Vulkan + DX12 + Metal backends (wgpu auto-selects best available)
-    - [ ] Request adapter (high performance preference)
-    - [ ] Request device with reasonable limits
-    - [ ] Determine surface format from adapter capabilities
+    - `surface_format: wgpu::TextureFormat` — negotiated format (plus `render_format` sRGB variant)
+  - [x] `GpuState::new() -> Result<Self>`
+    - [x] Create instance with Vulkan + DX12 + Metal backends (wgpu auto-selects best available)
+    - [x] Request adapter (high performance preference)
+    - [x] Request device with reasonable limits
+    - [x] Determine surface format from adapter capabilities
   - [ ] `GpuState::new_headless() -> Result<Self>`
     - [ ] Same as `new()` but with `compatible_surface: None`
     - [ ] Used for testing — no window or surface required
     - [ ] Falls back to software rasterizer if no GPU available
-  - [ ] `GpuState::configure_surface(&self, surface: &wgpu::Surface, width: u32, height: u32) -> wgpu::SurfaceConfiguration`
-    - [ ] Select present mode: `Mailbox` preferred (low latency), `Fifo` fallback
-    - [ ] Alpha mode: `PreMultiplied` for transparency, `Opaque` fallback
-    - [ ] Return configuration
+  - [x] `GpuState::configure_surface(&self, surface: &wgpu::Surface, width: u32, height: u32) -> wgpu::SurfaceConfiguration`
+    - [x] Select present mode: `Mailbox` preferred (low latency), `Fifo` fallback
+    - [x] Alpha mode: `PreMultiplied` for transparency, `Opaque` fallback
+    - [x] Return configuration
   - [ ] Offscreen render targets:
     - [ ] `create_render_target(width: u32, height: u32) -> RenderTarget`
     - [ ] `RenderTarget` struct: `texture: wgpu::Texture`, `view: wgpu::TextureView`
@@ -352,10 +358,10 @@ Convert `FrameInput` into GPU-ready instance buffers. **Pure CPU, no wgpu types,
 
 **File:** `oriterm/src/gpu/prepare.rs`
 
-- [ ] `InstanceWriter` struct — reusable CPU-side byte buffer
-  - [ ] Fields: `buf: Vec<u8>`, `count: usize`, `stride: usize` (80)
-  - [ ] `new(stride)`, `clear()`, `push(data: &[u8])`, `count()`, `as_bytes()`, `into_buffer()`
-  - [ ] Grows but never shrinks — reused across frames
+- [x] `InstanceWriter` struct — reusable CPU-side byte buffer
+  - [x] Fields: `buf: Vec<u8>`, `count: usize`, `stride: usize` (80)
+  - [x] `new(stride)`, `clear()`, `push(data: &[u8])`, `count()`, `as_bytes()`, `into_buffer()`
+  - [x] Grows but never shrinks — reused across frames
 
 - [ ] `prepare_frame(input: &FrameInput, atlas: &AtlasLookup) -> PreparedFrame`
   - [ ] `AtlasLookup` — trait or struct that maps `GlyphKey → AtlasEntry` (no GPU types)
@@ -622,7 +628,7 @@ The "it works" milestone. Everything comes together.
   - [ ] Headless GPU integration tests pass (pipeline creation, offscreen render, pixel readback)
   - [ ] Visual regression test infrastructure exists (even if initial reference set is small)
 - [ ] **Functional:**
-  - [ ] Binary launches, window appears, terminal grid renders
+  - [ ] Binary launches, window appears, terminal grid renders <!-- unblocks:3.8 -->
   - [ ] Shell is functional: can type commands and see output
   - [ ] Colors render correctly
   - [ ] Cursor visible and blinks

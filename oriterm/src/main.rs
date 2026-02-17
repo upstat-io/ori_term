@@ -9,6 +9,7 @@ mod gpu;
 mod platform;
 mod pty;
 mod tab;
+mod window;
 
 use std::thread;
 use std::time::{Duration, Instant};
