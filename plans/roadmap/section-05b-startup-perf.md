@@ -1,7 +1,7 @@
 ---
 section: 5B
 title: Startup Performance
-status: complete
+status: in-progress
 tier: 2
 blocks: [6]
 goal: Zero perceptible startup delay — window appears instantly, shell prompt is ready before the user can react
@@ -17,7 +17,7 @@ sections:
     status: complete
   - id: "5B.4"
     title: Startup Profiling and Validation
-    status: complete
+    status: in-progress
 ---
 
 # Section 05B: Startup Performance
@@ -146,20 +146,20 @@ Add timing instrumentation to validate the optimizations and prevent regression.
   app: startup — window=2ms gpu=150ms fonts=80ms renderer=30ms tab=5ms total=155ms
   ```
   (GPU and fonts overlap, so total < sum of parts)
-- [x] Target: total startup ≤ 200ms (imperceptible)
-- [x] Verify with pipeline cache present (warm start) and absent (cold start)
-- [x] Verify the window shows before any noticeable delay
+- [ ] Target: total startup ≤ 200ms (imperceptible)
+- [ ] Verify with pipeline cache present (warm start) and absent (cold start)
+- [ ] Verify the window shows before any noticeable delay
 - [x] Run `./clippy-all.sh` and `./test-all.sh` — all pass, no regressions
 
 ---
 
 ## Exit Criteria
 
-- [x] All 5B.1–5B.4 items complete
+- [ ] All 5B.1–5B.4 items complete
 - [x] `dwrote::FontCollection::system()` called exactly once per startup
 - [x] GPU init and font discovery run concurrently (overlapped wall-clock time)
-- [x] Startup timing logged — total ≤ 200ms on warm start
+- [ ] Startup timing logged — total ≤ 200ms on warm start
 - [x] No architectural changes: clean boundaries, phase separation, and testability preserved
 - [x] All existing tests pass (`./test-all.sh`)
 - [x] All clippy checks pass (`./clippy-all.sh`)
-- [x] Binary launches noticeably faster than before this section
+- [ ] Binary launches noticeably faster than before this section
