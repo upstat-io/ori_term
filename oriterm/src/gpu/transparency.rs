@@ -30,7 +30,7 @@ pub fn apply_transparency(window: &Window, opacity: f32, blur: bool, bg: (u8, u8
 /// Apply platform-specific blur effects.
 #[cfg(target_os = "windows")]
 fn apply_blur(window: &Window, opacity: f32, bg: (u8, u8, u8)) {
-    let alpha = (opacity * 255.0) as u8;
+    let alpha = (opacity.clamp(0.0, 1.0) * 255.0) as u8;
     let color = Some((bg.0, bg.1, bg.2, alpha));
     match window_vibrancy::apply_acrylic(window, color) {
         Ok(()) => log::info!("transparency: acrylic applied (alpha={alpha})"),

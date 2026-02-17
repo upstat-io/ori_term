@@ -25,6 +25,13 @@ use oriterm_ui::window::WindowConfig;
 use crate::gpu::state::GpuState;
 use crate::gpu::transparency;
 
+/// Default tint for the acrylic/blur layer (Catppuccin Mocha base).
+///
+/// The exact color is cosmetic — the terminal's background palette color
+/// paints over it each frame. This only shows through during the brief
+/// moment before the first frame renders.
+const DEFAULT_BLUR_TINT: (u8, u8, u8) = (30, 30, 46);
+
 /// A terminal window: native window + GPU surface.
 ///
 /// Pure window wrapper (Chrome's `WindowTreeHost` tier). Owns the platform
@@ -61,8 +68,7 @@ impl TermWindow {
     ) -> Result<Self, WindowCreateError> {
         let window = oriterm_ui::window::create_window(event_loop, config)?;
 
-        let (surface, surface_config) =
-            gpu.create_surface(&window).ok_or(WindowCreateError::Surface)?;
+        let (surface, surface_config) = gpu.create_surface(&window)?;
 
         let phys_size = window.inner_size();
         let size_px = (phys_size.width, phys_size.height);
@@ -70,9 +76,7 @@ impl TermWindow {
 
         // Apply vibrancy/blur when transparent background is requested.
         if config.transparent && config.blur {
-            // Default tint: dark background. The exact color doesn't matter much —
-            // the terminal's background palette color paints over it each frame.
-            transparency::apply_transparency(&window, 0.85, true, (30, 30, 46));
+            transparency::apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
         }
 
         Ok(Self {
@@ -183,15 +187,15 @@ impl TermWindow {
 pub(crate) enum WindowCreateError {
     /// The windowing system refused to create the window.
     Window(oriterm_ui::window::WindowError),
-    /// GPU surface creation failed (no compatible surface for this window).
-    Surface,
+    /// GPU surface creation failed.
+    Surface(wgpu::CreateSurfaceError),
 }
 
 impl fmt::Display for WindowCreateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Window(e) => write!(f, "{e}"),
-            Self::Surface => f.write_str("failed to create GPU surface for window"),
+            Self::Surface(e) => write!(f, "failed to create GPU surface for window: {e}"),
         }
     }
 }
@@ -200,7 +204,7 @@ impl std::error::Error for WindowCreateError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Window(e) => Some(e),
-            Self::Surface => None,
+            Self::Surface(e) => Some(e),
         }
     }
 }
@@ -208,5 +212,11 @@ impl std::error::Error for WindowCreateError {
 impl From<oriterm_ui::window::WindowError> for WindowCreateError {
     fn from(e: oriterm_ui::window::WindowError) -> Self {
         Self::Window(e)
+    }
+}
+
+impl From<wgpu::CreateSurfaceError> for WindowCreateError {
+    fn from(e: wgpu::CreateSurfaceError) -> Self {
+        Self::Surface(e)
     }
 }

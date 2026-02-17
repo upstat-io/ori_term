@@ -104,8 +104,9 @@ impl GpuState {
     pub fn create_surface(
         &self,
         window: &Arc<Window>,
-    ) -> Option<(wgpu::Surface<'static>, wgpu::SurfaceConfiguration)> {
-        let surface = self.instance.create_surface(window.clone()).ok()?;
+    ) -> Result<(wgpu::Surface<'static>, wgpu::SurfaceConfiguration), wgpu::CreateSurfaceError>
+    {
+        let surface = self.instance.create_surface(window.clone())?;
         let size = window.inner_size();
         let config = build_surface_config(
             self.surface_format,
@@ -116,7 +117,7 @@ impl GpuState {
             size.height,
         );
         surface.configure(&self.device, &config);
-        Some((surface, config))
+        Ok((surface, config))
     }
 
     /// Save the pipeline cache to disk. Call before exit.

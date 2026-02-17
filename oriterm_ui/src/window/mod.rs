@@ -26,6 +26,8 @@ pub struct WindowConfig {
     pub transparent: bool,
     /// Enable background blur (macOS vibrancy, Windows Acrylic/Mica).
     pub blur: bool,
+    /// Window opacity `[0.0, 1.0]`. Values >= 1.0 are fully opaque.
+    pub opacity: f32,
     /// Initial window position, or `None` for OS default.
     pub position: Option<Point>,
 }
@@ -37,6 +39,7 @@ impl Default for WindowConfig {
             inner_size: Size::new(1024.0, 768.0),
             transparent: false,
             blur: false,
+            opacity: 1.0,
             position: None,
         }
     }
