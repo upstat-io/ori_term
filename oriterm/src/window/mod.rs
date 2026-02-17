@@ -22,6 +22,8 @@ use winit::window::{Window, WindowId};
 use oriterm_ui::scale::ScaleFactor;
 use oriterm_ui::window::WindowConfig;
 
+use oriterm_core::Rgb;
+
 use crate::gpu::state::GpuState;
 use crate::gpu::transparency;
 
@@ -30,7 +32,11 @@ use crate::gpu::transparency;
 /// The exact color is cosmetic — the terminal's background palette color
 /// paints over it each frame. This only shows through during the brief
 /// moment before the first frame renders.
-const DEFAULT_BLUR_TINT: (u8, u8, u8) = (30, 30, 46);
+const DEFAULT_BLUR_TINT: Rgb = Rgb {
+    r: 30,
+    g: 30,
+    b: 46,
+};
 
 /// A terminal window: native window + GPU surface.
 ///

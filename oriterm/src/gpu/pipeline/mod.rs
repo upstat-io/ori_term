@@ -6,8 +6,9 @@
 //!
 //! Both use `TriangleStrip` topology with vertex pulling (`@builtin(vertex_index)`).
 
-// Pipelines are consumed starting in Section 5.10.
-#![expect(dead_code, reason = "pipelines consumed starting in Section 5.10")]
+// Pipelines are consumed starting in Section 5.10. `allow` (not `expect`)
+// because tests exercise these items, making the lint unfulfilled in test builds.
+#![allow(dead_code, reason = "pipelines consumed starting in Section 5.10")]
 
 use wgpu::{
     BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,

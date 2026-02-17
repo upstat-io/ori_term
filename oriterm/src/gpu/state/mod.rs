@@ -47,7 +47,7 @@ pub struct GpuState {
     /// Whether the backend supports `view_formats` for sRGB reinterpretation.
     supports_view_formats: bool,
     /// Vulkan pipeline cache (compiled shaders cached to disk across sessions).
-    pub(crate) pipeline_cache: Option<wgpu::PipelineCache>,
+    pub(super) pipeline_cache: Option<wgpu::PipelineCache>,
     pipeline_cache_path: Option<PathBuf>,
 }
 
@@ -402,9 +402,10 @@ pub fn validate_gpu() -> usize {
         ..Default::default()
     });
 
-    let adapters: Vec<_> = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()))
-        .into_iter()
-        .collect();
+    let adapters: Vec<_> =
+        pollster::block_on(instance.enumerate_adapters(wgpu::Backends::PRIMARY))
+            .into_iter()
+            .collect();
 
     for a in &adapters {
         let info = a.get_info();

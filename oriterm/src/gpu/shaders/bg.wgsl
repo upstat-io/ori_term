@@ -53,5 +53,7 @@ fn vs_main(
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return input.bg_color;
+    // Premultiply: blend state is src×1 + dst×(1−srcα).
+    let c = input.bg_color;
+    return vec4<f32>(c.rgb * c.a, c.a);
 }

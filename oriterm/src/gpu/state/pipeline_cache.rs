@@ -82,27 +82,29 @@ pub(super) fn save_pipeline_cache(
 /// Returns the platform-specific cache directory for oriterm.
 ///
 /// Pipeline caches are non-essential cached data, so we use the cache
-/// directory (not config). On Windows: `LOCALAPPDATA` (preferred) or
-/// `APPDATA`. On Unix: `XDG_CACHE_HOME` or `~/.cache`.
+/// directory (not config). Windows: `LOCALAPPDATA` (preferred) or `APPDATA`.
+#[cfg(target_os = "windows")]
 pub(super) fn cache_dir() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            return PathBuf::from(local).join("ori_term");
-        }
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join("ori_term");
-        }
-        PathBuf::from(".").join("ori_term")
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        return PathBuf::from(local).join("ori_term");
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
-            return PathBuf::from(xdg).join("ori_term");
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(".cache").join("ori_term");
-        }
-        PathBuf::from(".").join("ori_term")
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        return PathBuf::from(appdata).join("ori_term");
     }
+    PathBuf::from(".").join("ori_term")
+}
+
+/// Returns the platform-specific cache directory for oriterm.
+///
+/// Pipeline caches are non-essential cached data, so we use the cache
+/// directory (not config). Unix: `XDG_CACHE_HOME` or `~/.cache`.
+#[cfg(not(target_os = "windows"))]
+pub(super) fn cache_dir() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
+        return PathBuf::from(xdg).join("ori_term");
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(".cache").join("ori_term");
+    }
+    PathBuf::from(".").join("ori_term")
 }
