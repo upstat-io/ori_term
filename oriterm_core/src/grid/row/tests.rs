@@ -210,7 +210,11 @@ fn clear_range_bce_updates_occ() {
     let template = Cell::from(Color::Indexed(1));
     row.clear_range(Column(3)..Column(7), &template);
     // BCE clear must bump occ to cover the dirty cells.
-    assert!(row.occ() >= 7, "occ should cover BCE cells, got {}", row.occ());
+    assert!(
+        row.occ() >= 7,
+        "occ should cover BCE cells, got {}",
+        row.occ()
+    );
 }
 
 #[test]
@@ -222,7 +226,10 @@ fn clear_range_bce_survives_reset() {
     // Reset with default template must clear the BCE cells.
     row.reset(10, &Cell::default());
     for i in 0..10 {
-        assert!(row[Column(i)].is_empty(), "Column {i} not empty after reset");
+        assert!(
+            row[Column(i)].is_empty(),
+            "Column {i} not empty after reset"
+        );
     }
 }
 

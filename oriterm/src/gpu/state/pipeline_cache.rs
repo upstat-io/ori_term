@@ -12,7 +12,10 @@ use std::path::PathBuf;
 /// `create_pipeline_cache` is unsafe because it accepts arbitrary bytes.
 /// If the data is corrupt or from a different driver version, Vulkan
 /// silently ignores it and starts with an empty cache (`fallback: true`).
-#[allow(unsafe_code, reason = "wgpu pipeline cache API requires unsafe for raw byte loading")]
+#[allow(
+    unsafe_code,
+    reason = "wgpu pipeline cache API requires unsafe for raw byte loading"
+)]
 pub(super) fn load_pipeline_cache(
     device: &wgpu::Device,
     adapter_info: &wgpu::AdapterInfo,

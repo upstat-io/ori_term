@@ -96,12 +96,20 @@ impl<T: EventListener> Term<T> {
 
     /// Reference to the active grid.
     pub fn grid(&self) -> &Grid {
-        if self.mode.contains(TermMode::ALT_SCREEN) { &self.alt_grid } else { &self.grid }
+        if self.mode.contains(TermMode::ALT_SCREEN) {
+            &self.alt_grid
+        } else {
+            &self.grid
+        }
     }
 
     /// Mutable reference to the active grid.
     pub fn grid_mut(&mut self) -> &mut Grid {
-        if self.mode.contains(TermMode::ALT_SCREEN) { &mut self.alt_grid } else { &mut self.grid }
+        if self.mode.contains(TermMode::ALT_SCREEN) {
+            &mut self.alt_grid
+        } else {
+            &mut self.grid
+        }
     }
 
     /// Current terminal mode flags.
@@ -357,7 +365,10 @@ impl<T: EventListener> Term<T> {
         }
 
         self.mode.toggle(TermMode::ALT_SCREEN);
-        std::mem::swap(&mut self.keyboard_mode_stack, &mut self.inactive_keyboard_mode_stack);
+        std::mem::swap(
+            &mut self.keyboard_mode_stack,
+            &mut self.inactive_keyboard_mode_stack,
+        );
         self.grid_mut().dirty_mut().mark_all();
     }
 }

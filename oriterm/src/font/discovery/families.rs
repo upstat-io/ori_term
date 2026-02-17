@@ -89,8 +89,7 @@ pub(crate) const DWRITE_FAMILY_NAMES: &[&str] = &[
 
 /// DirectWrite fallback family names for missing-glyph coverage.
 #[cfg(target_os = "windows")]
-pub(crate) const DWRITE_FALLBACK_FAMILIES: &[&str] =
-    &["Segoe UI Symbol", "MS Gothic", "Segoe UI"];
+pub(crate) const DWRITE_FALLBACK_FAMILIES: &[&str] = &["Segoe UI Symbol", "MS Gothic", "Segoe UI"];
 
 #[cfg(target_os = "windows")]
 pub(crate) const FALLBACK_FONTS: &[FallbackSpec] = &[

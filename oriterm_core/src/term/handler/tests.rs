@@ -20,7 +20,9 @@ struct RecordingListener {
 
 impl RecordingListener {
     fn new() -> Self {
-        Self { events: Arc::new(Mutex::new(Vec::new())) }
+        Self {
+            events: Arc::new(Mutex::new(Vec::new())),
+        }
     }
 
     fn events(&self) -> Vec<String> {
@@ -30,7 +32,10 @@ impl RecordingListener {
 
 impl EventListener for RecordingListener {
     fn send_event(&self, event: Event) {
-        self.events.lock().expect("lock poisoned").push(format!("{event:?}"));
+        self.events
+            .lock()
+            .expect("lock poisoned")
+            .push(format!("{event:?}"));
     }
 }
 
@@ -231,7 +236,7 @@ fn cuu_moves_cursor_up_5() {
     let mut t = term();
     // Move cursor to line 10, then CUU 5.
     feed(&mut t, b"\x1b[11;1H"); // CUP to line 10 (1-based)
-    feed(&mut t, b"\x1b[5A");    // CUU 5
+    feed(&mut t, b"\x1b[5A"); // CUU 5
 
     assert_eq!(t.grid().cursor().line(), 5);
 }
@@ -267,7 +272,7 @@ fn el_clears_to_end_of_line() {
     feed(&mut t, b"ABCDE");
     // Move cursor to column 2, then EL 0 (clear to right).
     feed(&mut t, b"\x1b[3G"); // CHA column 3 (1-based) → col 2
-    feed(&mut t, b"\x1b[K");  // EL (default = right)
+    feed(&mut t, b"\x1b[K"); // EL (default = right)
 
     let grid = t.grid();
     assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
@@ -284,8 +289,8 @@ fn ich_inserts_5_blanks() {
     let mut t = term();
     feed(&mut t, b"ABCDE");
     // Move cursor to column 1, then ICH 5.
-    feed(&mut t, b"\x1b[2G");  // CHA column 2 (1-based) → col 1
-    feed(&mut t, b"\x1b[5@");  // ICH 5
+    feed(&mut t, b"\x1b[2G"); // CHA column 2 (1-based) → col 1
+    feed(&mut t, b"\x1b[5@"); // ICH 5
 
     let grid = t.grid();
     assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
@@ -301,8 +306,8 @@ fn dch_deletes_3_chars() {
     let mut t = term();
     feed(&mut t, b"ABCDEFGH");
     // Move cursor to column 2, then DCH 3.
-    feed(&mut t, b"\x1b[3G");  // CHA col 3 (1-based) → col 2
-    feed(&mut t, b"\x1b[3P");  // DCH 3
+    feed(&mut t, b"\x1b[3G"); // CHA col 3 (1-based) → col 2
+    feed(&mut t, b"\x1b[3P"); // DCH 3
 
     let grid = t.grid();
     assert_eq!(grid[crate::index::Line(0)][Column(0)].ch, 'A');
@@ -319,7 +324,7 @@ fn il_inserts_2_lines() {
     feed(&mut t, b"AAA\r\nBBB\r\nCCC\r\nDDD");
     // Move cursor to line 1 (0-based), then IL 2.
     feed(&mut t, b"\x1b[2;1H"); // CUP row 2 (1-based) → line 1
-    feed(&mut t, b"\x1b[2L");   // IL 2
+    feed(&mut t, b"\x1b[2L"); // IL 2
 
     let grid = t.grid();
     // Line 0: AAA (untouched).
@@ -337,7 +342,7 @@ fn dl_deletes_3_lines() {
     feed(&mut t, b"AAA\r\nBBB\r\nCCC\r\nDDD\r\nEEE");
     // Move cursor to line 1, then DL 3.
     feed(&mut t, b"\x1b[2;1H"); // CUP row 2 → line 1
-    feed(&mut t, b"\x1b[3M");   // DL 3
+    feed(&mut t, b"\x1b[3M"); // DL 3
 
     let grid = t.grid();
     // Line 0: AAA (untouched).
@@ -404,7 +409,7 @@ fn decstbm_sets_scroll_region() {
 
     let region = t.grid().scroll_region();
     assert_eq!(region.start, 2); // 3 - 1 = 2 (0-based).
-    assert_eq!(region.end, 20);  // 20 (half-open).
+    assert_eq!(region.end, 20); // 20 (half-open).
     // Cursor should be at origin after DECSTBM.
     assert_eq!(t.grid().cursor().line(), 0);
     assert_eq!(t.grid().cursor().col(), Column(0));
@@ -441,8 +446,8 @@ fn da1_produces_device_attributes() {
 fn origin_mode_cup_relative_to_scroll_region() {
     let mut t = term();
     // Set scroll region rows 5–15 (1-based), enable ORIGIN mode.
-    feed(&mut t, b"\x1b[5;15r");   // DECSTBM
-    feed(&mut t, b"\x1b[?6h");     // DECSET ORIGIN
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM
+    feed(&mut t, b"\x1b[?6h"); // DECSET ORIGIN
 
     // CUP(1,1) in ORIGIN mode → absolute line 4 (region.start), col 0.
     feed(&mut t, b"\x1b[1;1H");
@@ -470,9 +475,9 @@ fn origin_mode_cup_clamps_to_scroll_region() {
 #[test]
 fn origin_mode_vpa_relative_to_scroll_region() {
     let mut t = term();
-    feed(&mut t, b"\x1b[5;15r");   // DECSTBM 5–15
-    feed(&mut t, b"\x1b[?6h");     // ORIGIN mode
-    feed(&mut t, b"\x1b[1;10H");   // Start at col 9
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
+    feed(&mut t, b"\x1b[?6h"); // ORIGIN mode
+    feed(&mut t, b"\x1b[1;10H"); // Start at col 9
 
     // VPA(2) in ORIGIN mode → absolute line 5 (region.start + 1).
     feed(&mut t, b"\x1b[2d");
@@ -484,9 +489,9 @@ fn origin_mode_vpa_relative_to_scroll_region() {
 #[test]
 fn origin_mode_disabled_cup_uses_full_screen() {
     let mut t = term();
-    feed(&mut t, b"\x1b[5;15r");   // DECSTBM
-    feed(&mut t, b"\x1b[?6h");     // Enable ORIGIN
-    feed(&mut t, b"\x1b[?6l");     // Disable ORIGIN
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM
+    feed(&mut t, b"\x1b[?6h"); // Enable ORIGIN
+    feed(&mut t, b"\x1b[?6l"); // Disable ORIGIN
 
     // CUP(1,1) without ORIGIN → absolute line 0, col 0.
     feed(&mut t, b"\x1b[1;1H");
@@ -500,8 +505,8 @@ fn origin_mode_disabled_cup_uses_full_screen() {
 fn irm_insert_mode_shifts_content_right() {
     let mut t = term();
     feed(&mut t, b"foo");
-    feed(&mut t, b"\x1b[1;1H");  // CUP to origin
-    feed(&mut t, b"\x1b[4h");    // SM: set IRM (Insert mode)
+    feed(&mut t, b"\x1b[1;1H"); // CUP to origin
+    feed(&mut t, b"\x1b[4h"); // SM: set IRM (Insert mode)
     feed(&mut t, b"BAR");
 
     let grid = t.grid();
@@ -518,9 +523,9 @@ fn irm_insert_mode_shifts_content_right() {
 fn irm_replace_mode_overwrites() {
     let mut t = term();
     feed(&mut t, b"foo");
-    feed(&mut t, b"\x1b[1;1H");  // CUP to origin
-    feed(&mut t, b"\x1b[4h");    // SM: set IRM
-    feed(&mut t, b"\x1b[4l");    // RM: reset IRM (back to replace)
+    feed(&mut t, b"\x1b[1;1H"); // CUP to origin
+    feed(&mut t, b"\x1b[4h"); // SM: set IRM
+    feed(&mut t, b"\x1b[4l"); // RM: reset IRM (back to replace)
     feed(&mut t, b"BAR");
 
     let grid = t.grid();
@@ -536,8 +541,8 @@ fn irm_replace_mode_overwrites() {
 #[test]
 fn lnm_mode_lf_acts_as_crlf() {
     let mut t = term();
-    feed(&mut t, b"\x1b[20h");   // SM: set LNM
-    feed(&mut t, b"hello\n");    // LF should also perform CR
+    feed(&mut t, b"\x1b[20h"); // SM: set LNM
+    feed(&mut t, b"hello\n"); // LF should also perform CR
 
     assert_eq!(t.grid().cursor().line(), 1);
     assert_eq!(t.grid().cursor().col(), Column(0));
@@ -546,8 +551,8 @@ fn lnm_mode_lf_acts_as_crlf() {
 #[test]
 fn lnm_mode_off_lf_preserves_column() {
     let mut t = term();
-    feed(&mut t, b"\x1b[20h");   // Enable LNM
-    feed(&mut t, b"\x1b[20l");   // Disable LNM
+    feed(&mut t, b"\x1b[20h"); // Enable LNM
+    feed(&mut t, b"\x1b[20l"); // Disable LNM
     feed(&mut t, b"hello\n");
 
     assert_eq!(t.grid().cursor().line(), 1);
@@ -592,7 +597,7 @@ fn cnl_moves_down_and_to_column_0() {
 #[test]
 fn cpl_moves_up_and_to_column_0() {
     let mut t = term();
-    feed(&mut t, b"\x1b[10;15H");  // CUP to line 9, col 14
+    feed(&mut t, b"\x1b[10;15H"); // CUP to line 9, col 14
     // CSI 3 F — move up 3 lines, column 0.
     feed(&mut t, b"\x1b[3F");
 
@@ -620,7 +625,11 @@ fn da2_produces_secondary_device_attributes() {
 
     let events = listener.events();
     // DA2 response: ESC [ > 0 ; version ; 1 c
-    assert!(events.iter().any(|e| e.starts_with("PtyWrite(\x1b[>0;") && e.ends_with(";1c)")));
+    assert!(
+        events
+            .iter()
+            .any(|e| e.starts_with("PtyWrite(\x1b[>0;") && e.ends_with(";1c)"))
+    );
 }
 
 // --- DECRPM (mode report) tests ---
@@ -667,7 +676,7 @@ fn decrpm_reports_ansi_mode() {
 fn ech_overflow_clamps_to_line_end() {
     let mut t = term();
     feed(&mut t, b"ABCDE");
-    feed(&mut t, b"\x1b[2G");  // CHA col 2 → col 1
+    feed(&mut t, b"\x1b[2G"); // CHA col 2 → col 1
     // ECH 999 — should erase from col 1 to end of line.
     feed(&mut t, b"\x1b[999X");
 
@@ -713,7 +722,7 @@ fn sd_scrolls_content_down() {
 fn ri_at_top_of_scroll_region_scrolls_down() {
     let mut t = term();
     feed(&mut t, b"AAA\r\nBBB\r\nCCC");
-    feed(&mut t, b"\x1b[1;1H");   // CUP to origin (top of region)
+    feed(&mut t, b"\x1b[1;1H"); // CUP to origin (top of region)
     // ESC M — reverse index.
     feed(&mut t, b"\x1bM");
 
@@ -728,7 +737,7 @@ fn ri_at_top_of_scroll_region_scrolls_down() {
 #[test]
 fn ri_in_middle_moves_cursor_up() {
     let mut t = term();
-    feed(&mut t, b"\x1b[5;1H");  // CUP to line 4
+    feed(&mut t, b"\x1b[5;1H"); // CUP to line 4
     // ESC M — reverse index (not at region top → just moves up).
     feed(&mut t, b"\x1bM");
 
@@ -740,10 +749,10 @@ fn ri_in_middle_moves_cursor_up() {
 #[test]
 fn decsc_decrc_saves_and_restores_cursor_position() {
     let mut t = term();
-    feed(&mut t, b"\x1b[5;10H");  // CUP to line 4, col 9
-    feed(&mut t, b"\x1b7");       // DECSC: save cursor
-    feed(&mut t, b"\x1b[1;1H");   // Move somewhere else
-    feed(&mut t, b"\x1b8");       // DECRC: restore cursor
+    feed(&mut t, b"\x1b[5;10H"); // CUP to line 4, col 9
+    feed(&mut t, b"\x1b7"); // DECSC: save cursor
+    feed(&mut t, b"\x1b[1;1H"); // Move somewhere else
+    feed(&mut t, b"\x1b8"); // DECRC: restore cursor
 
     assert_eq!(t.grid().cursor().line(), 4);
     assert_eq!(t.grid().cursor().col(), Column(9));
@@ -754,10 +763,10 @@ fn decsc_decrc_saves_and_restores_cursor_position() {
 #[test]
 fn dsr_reports_absolute_position_even_in_origin_mode() {
     let (mut t, listener) = term_with_recorder();
-    feed(&mut t, b"\x1b[5;15r");   // DECSTBM 5–15
-    feed(&mut t, b"\x1b[?6h");     // ORIGIN mode
-    feed(&mut t, b"\x1b[1;1H");    // CUP(1,1) → absolute line 4, col 0
-    feed(&mut t, b"\x1b[6n");      // DSR
+    feed(&mut t, b"\x1b[5;15r"); // DECSTBM 5–15
+    feed(&mut t, b"\x1b[?6h"); // ORIGIN mode
+    feed(&mut t, b"\x1b[1;1H"); // CUP(1,1) → absolute line 4, col 0
+    feed(&mut t, b"\x1b[6n"); // DSR
 
     let events = listener.events();
     // CPR: absolute line 4 + 1 = 5, col 0 + 1 = 1.
@@ -791,7 +800,7 @@ fn deckpam_sets_application_keypad() {
 #[test]
 fn deckpnm_resets_application_keypad() {
     let mut t = term();
-    feed(&mut t, b"\x1b=");   // Enable
+    feed(&mut t, b"\x1b="); // Enable
     // ESC > — DECKPNM.
     feed(&mut t, b"\x1b>");
 
@@ -812,7 +821,7 @@ fn cht_forward_tab_by_count() {
 #[test]
 fn cbt_backward_tab_by_count() {
     let mut t = term();
-    feed(&mut t, b"\x1b[20G");  // CHA col 20 → col 19
+    feed(&mut t, b"\x1b[20G"); // CHA col 20 → col 19
     // CSI 2 Z — backward tab 2 times (col 19 → 16 → 8).
     feed(&mut t, b"\x1b[2Z");
 
@@ -882,7 +891,14 @@ fn sgr_truecolor_fg() {
     feed(&mut t, b"\x1b[38;2;255;128;0m");
 
     let fg = t.grid().cursor().template.fg;
-    assert_eq!(fg, vte::ansi::Color::Spec(vte::ansi::Rgb { r: 255, g: 128, b: 0 }));
+    assert_eq!(
+        fg,
+        vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 255,
+            g: 128,
+            b: 0
+        })
+    );
 }
 
 #[test]
@@ -894,8 +910,14 @@ fn sgr_reset_clears_all_attributes() {
 
     let template = &t.grid().cursor().template;
     assert_eq!(template.flags, crate::cell::CellFlags::empty());
-    assert_eq!(template.fg, vte::ansi::Color::Named(vte::ansi::NamedColor::Foreground));
-    assert_eq!(template.bg, vte::ansi::Color::Named(vte::ansi::NamedColor::Background));
+    assert_eq!(
+        template.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Foreground)
+    );
+    assert_eq!(
+        template.bg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Background)
+    );
 }
 
 #[test]
@@ -906,8 +928,14 @@ fn sgr_compound_bold_red_fg_green_bg() {
 
     let template = &t.grid().cursor().template;
     assert!(template.flags.contains(crate::cell::CellFlags::BOLD));
-    assert_eq!(template.fg, vte::ansi::Color::Named(vte::ansi::NamedColor::Red));
-    assert_eq!(template.bg, vte::ansi::Color::Named(vte::ansi::NamedColor::Green));
+    assert_eq!(
+        template.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red)
+    );
+    assert_eq!(
+        template.bg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Green)
+    );
 }
 
 #[test]
@@ -929,10 +957,17 @@ fn sgr_underline_color_truecolor() {
     feed(&mut t, b"\x1b[58;2;255;0;0m");
 
     let template = &t.grid().cursor().template;
-    let extra = template.extra.as_ref().expect("CellExtra should be allocated");
+    let extra = template
+        .extra
+        .as_ref()
+        .expect("CellExtra should be allocated");
     assert_eq!(
         extra.underline_color,
-        Some(vte::ansi::Color::Spec(vte::ansi::Rgb { r: 255, g: 0, b: 0 }))
+        Some(vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 255,
+            g: 0,
+            b: 0
+        }))
     );
 }
 
@@ -955,7 +990,13 @@ fn sgr_dim_sets_flag() {
     let mut t = term();
     feed(&mut t, b"\x1b[2m");
 
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::DIM));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::DIM)
+    );
 }
 
 #[test]
@@ -963,7 +1004,13 @@ fn sgr_italic_sets_flag() {
     let mut t = term();
     feed(&mut t, b"\x1b[3m");
 
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::ITALIC));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::ITALIC)
+    );
 }
 
 #[test]
@@ -971,7 +1018,13 @@ fn sgr_blink_sets_flag() {
     let mut t = term();
     feed(&mut t, b"\x1b[5m");
 
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::BLINK));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BLINK)
+    );
 }
 
 #[test]
@@ -979,7 +1032,13 @@ fn sgr_inverse_sets_flag() {
     let mut t = term();
     feed(&mut t, b"\x1b[7m");
 
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::INVERSE));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::INVERSE)
+    );
 }
 
 #[test]
@@ -987,7 +1046,13 @@ fn sgr_hidden_sets_flag() {
     let mut t = term();
     feed(&mut t, b"\x1b[8m");
 
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::HIDDEN));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::HIDDEN)
+    );
 }
 
 #[test]
@@ -995,7 +1060,13 @@ fn sgr_strikethrough_sets_flag() {
     let mut t = term();
     feed(&mut t, b"\x1b[9m");
 
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::STRIKETHROUGH));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::STRIKETHROUGH)
+    );
 }
 
 // --- SGR cancel attribute tests ---
@@ -1018,7 +1089,13 @@ fn sgr_23_cancels_italic() {
     feed(&mut t, b"\x1b[3m");
     feed(&mut t, b"\x1b[23m");
 
-    assert!(!t.grid().cursor().template.flags.contains(crate::cell::CellFlags::ITALIC));
+    assert!(
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::ITALIC)
+    );
 }
 
 #[test]
@@ -1039,7 +1116,13 @@ fn sgr_25_cancels_blink() {
     feed(&mut t, b"\x1b[5m");
     feed(&mut t, b"\x1b[25m");
 
-    assert!(!t.grid().cursor().template.flags.contains(crate::cell::CellFlags::BLINK));
+    assert!(
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BLINK)
+    );
 }
 
 #[test]
@@ -1048,7 +1131,13 @@ fn sgr_27_cancels_inverse() {
     feed(&mut t, b"\x1b[7m");
     feed(&mut t, b"\x1b[27m");
 
-    assert!(!t.grid().cursor().template.flags.contains(crate::cell::CellFlags::INVERSE));
+    assert!(
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::INVERSE)
+    );
 }
 
 #[test]
@@ -1057,7 +1146,13 @@ fn sgr_28_cancels_hidden() {
     feed(&mut t, b"\x1b[8m");
     feed(&mut t, b"\x1b[28m");
 
-    assert!(!t.grid().cursor().template.flags.contains(crate::cell::CellFlags::HIDDEN));
+    assert!(
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::HIDDEN)
+    );
 }
 
 #[test]
@@ -1066,7 +1161,13 @@ fn sgr_29_cancels_strikethrough() {
     feed(&mut t, b"\x1b[9m");
     feed(&mut t, b"\x1b[29m");
 
-    assert!(!t.grid().cursor().template.flags.contains(crate::cell::CellFlags::STRIKETHROUGH));
+    assert!(
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::STRIKETHROUGH)
+    );
 }
 
 // --- SGR underline mutual exclusion tests ---
@@ -1137,7 +1238,10 @@ fn sgr_cancel_bold_preserves_italic_and_color() {
     let template = &t.grid().cursor().template;
     assert!(!template.flags.contains(crate::cell::CellFlags::BOLD));
     assert!(template.flags.contains(crate::cell::CellFlags::ITALIC));
-    assert_eq!(template.fg, vte::ansi::Color::Named(vte::ansi::NamedColor::Red));
+    assert_eq!(
+        template.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red)
+    );
 }
 
 // --- SGR color tests ---
@@ -1157,7 +1261,11 @@ fn sgr_bg_truecolor() {
 
     assert_eq!(
         t.grid().cursor().template.bg,
-        vte::ansi::Color::Spec(vte::ansi::Rgb { r: 0, g: 128, b: 255 })
+        vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 0,
+            g: 128,
+            b: 255
+        })
     );
 }
 
@@ -1193,8 +1301,14 @@ fn sgr_39_resets_fg_only() {
     feed(&mut t, b"\x1b[39m");
 
     let template = &t.grid().cursor().template;
-    assert_eq!(template.fg, vte::ansi::Color::Named(vte::ansi::NamedColor::Foreground));
-    assert_eq!(template.bg, vte::ansi::Color::Named(vte::ansi::NamedColor::Green));
+    assert_eq!(
+        template.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Foreground)
+    );
+    assert_eq!(
+        template.bg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Green)
+    );
 }
 
 #[test]
@@ -1205,8 +1319,14 @@ fn sgr_49_resets_bg_only() {
     feed(&mut t, b"\x1b[49m");
 
     let template = &t.grid().cursor().template;
-    assert_eq!(template.fg, vte::ansi::Color::Named(vte::ansi::NamedColor::Red));
-    assert_eq!(template.bg, vte::ansi::Color::Named(vte::ansi::NamedColor::Background));
+    assert_eq!(
+        template.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red)
+    );
+    assert_eq!(
+        template.bg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Background)
+    );
 }
 
 // --- SGR character inheritance tests ---
@@ -1252,7 +1372,13 @@ fn sgr_persists_across_cursor_movement() {
     feed(&mut t, b"\x1b[1m");
     feed(&mut t, b"\x1b[5B");
 
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::BOLD));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD)
+    );
 }
 
 #[test]
@@ -1266,7 +1392,10 @@ fn sgr_stacks_across_separate_sequences() {
     let template = &t.grid().cursor().template;
     assert!(template.flags.contains(crate::cell::CellFlags::BOLD));
     assert!(template.flags.contains(crate::cell::CellFlags::UNDERLINE));
-    assert_eq!(template.fg, vte::ansi::Color::Named(vte::ansi::NamedColor::Red));
+    assert_eq!(
+        template.fg,
+        vte::ansi::Color::Named(vte::ansi::NamedColor::Red)
+    );
 }
 
 // --- SGR edge case tests ---
@@ -1278,7 +1407,10 @@ fn sgr_empty_params_resets() {
     feed(&mut t, b"\x1b[1m");
     feed(&mut t, b"\x1b[m");
 
-    assert_eq!(t.grid().cursor().template.flags, crate::cell::CellFlags::empty());
+    assert_eq!(
+        t.grid().cursor().template.flags,
+        crate::cell::CellFlags::empty()
+    );
 }
 
 #[test]
@@ -1299,7 +1431,13 @@ fn sgr_fast_blink_uses_blink_flag() {
     // SGR 6 (fast blink) — mapped to same BLINK flag as slow blink.
     feed(&mut t, b"\x1b[6m");
 
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::BLINK));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BLINK)
+    );
 }
 
 #[test]
@@ -1311,11 +1449,22 @@ fn sgr_underline_color_survives_underline_type_change() {
     feed(&mut t, b"\x1b[4:3m");
 
     let template = &t.grid().cursor().template;
-    assert!(template.flags.contains(crate::cell::CellFlags::CURLY_UNDERLINE));
-    let extra = template.extra.as_ref().expect("underline color should survive");
+    assert!(
+        template
+            .flags
+            .contains(crate::cell::CellFlags::CURLY_UNDERLINE)
+    );
+    let extra = template
+        .extra
+        .as_ref()
+        .expect("underline color should survive");
     assert_eq!(
         extra.underline_color,
-        Some(vte::ansi::Color::Spec(vte::ansi::Rgb { r: 255, g: 0, b: 0 }))
+        Some(vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 255,
+            g: 0,
+            b: 0
+        }))
     );
 }
 
@@ -1426,7 +1575,14 @@ fn osc4_sets_indexed_color() {
     feed(&mut t, b"\x1b]4;1;rgb:ff/00/00\x07");
 
     let color = t.palette().resolve(vte::ansi::Color::Indexed(1));
-    assert_eq!(color, vte::ansi::Rgb { r: 0xff, g: 0x00, b: 0x00 });
+    assert_eq!(
+        color,
+        vte::ansi::Rgb {
+            r: 0xff,
+            g: 0x00,
+            b: 0x00
+        }
+    );
 }
 
 #[test]
@@ -1445,7 +1601,14 @@ fn osc10_sets_foreground_color() {
     // ESC]10;rgb:aa/bb/cc\x07 — set foreground.
     feed(&mut t, b"\x1b]10;rgb:aa/bb/cc\x07");
 
-    assert_eq!(t.palette().foreground(), vte::ansi::Rgb { r: 0xaa, g: 0xbb, b: 0xcc });
+    assert_eq!(
+        t.palette().foreground(),
+        vte::ansi::Rgb {
+            r: 0xaa,
+            g: 0xbb,
+            b: 0xcc
+        }
+    );
 }
 
 #[test]
@@ -1453,7 +1616,14 @@ fn osc11_sets_background_color() {
     let mut t = term();
     feed(&mut t, b"\x1b]11;rgb:11/22/33\x07");
 
-    assert_eq!(t.palette().background(), vte::ansi::Rgb { r: 0x11, g: 0x22, b: 0x33 });
+    assert_eq!(
+        t.palette().background(),
+        vte::ansi::Rgb {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33
+        }
+    );
 }
 
 #[test]
@@ -1461,7 +1631,14 @@ fn osc12_sets_cursor_color() {
     let mut t = term();
     feed(&mut t, b"\x1b]12;rgb:ff/ff/00\x07");
 
-    assert_eq!(t.palette().cursor_color(), vte::ansi::Rgb { r: 0xff, g: 0xff, b: 0x00 });
+    assert_eq!(
+        t.palette().cursor_color(),
+        vte::ansi::Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0x00
+        }
+    );
 }
 
 #[test]
@@ -1521,7 +1698,9 @@ fn osc52_clipboard_store() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardStore(Clipboard, hello)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardStore(Clipboard, hello)")),
         "Expected ClipboardStore event with 'hello', got: {events:?}",
     );
 }
@@ -1534,7 +1713,9 @@ fn osc52_clipboard_load() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardLoad(Clipboard)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardLoad(Clipboard)")),
         "Expected ClipboardLoad event, got: {events:?}",
     );
 }
@@ -1546,7 +1727,9 @@ fn osc52_primary_selection() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardStore(Selection, test)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardStore(Selection, test)")),
         "Expected Selection store, got: {events:?}",
     );
 }
@@ -1678,8 +1861,22 @@ fn osc4_multiple_colors_in_one_sequence() {
 
     let c1 = t.palette().resolve(vte::ansi::Color::Indexed(1));
     let c2 = t.palette().resolve(vte::ansi::Color::Indexed(2));
-    assert_eq!(c1, vte::ansi::Rgb { r: 0xff, g: 0x00, b: 0x00 });
-    assert_eq!(c2, vte::ansi::Rgb { r: 0x00, g: 0xff, b: 0x00 });
+    assert_eq!(
+        c1,
+        vte::ansi::Rgb {
+            r: 0xff,
+            g: 0x00,
+            b: 0x00
+        }
+    );
+    assert_eq!(
+        c2,
+        vte::ansi::Rgb {
+            r: 0x00,
+            g: 0xff,
+            b: 0x00
+        }
+    );
 }
 
 #[test]
@@ -1700,13 +1897,25 @@ fn osc104_no_params_resets_all_indexed() {
     // Set colors 0 and 1.
     feed(&mut t, b"\x1b]4;0;rgb:ff/ff/ff\x07");
     feed(&mut t, b"\x1b]4;1;rgb:ff/ff/ff\x07");
-    assert_ne!(t.palette().resolve(vte::ansi::Color::Indexed(0)), original_0);
-    assert_ne!(t.palette().resolve(vte::ansi::Color::Indexed(1)), original_1);
+    assert_ne!(
+        t.palette().resolve(vte::ansi::Color::Indexed(0)),
+        original_0
+    );
+    assert_ne!(
+        t.palette().resolve(vte::ansi::Color::Indexed(1)),
+        original_1
+    );
 
     // OSC 104 with no params resets all 256 indexed colors.
     feed(&mut t, b"\x1b]104\x07");
-    assert_eq!(t.palette().resolve(vte::ansi::Color::Indexed(0)), original_0);
-    assert_eq!(t.palette().resolve(vte::ansi::Color::Indexed(1)), original_1);
+    assert_eq!(
+        t.palette().resolve(vte::ansi::Color::Indexed(0)),
+        original_0
+    );
+    assert_eq!(
+        t.palette().resolve(vte::ansi::Color::Indexed(1)),
+        original_1
+    );
 }
 
 #[test]
@@ -1787,7 +1996,9 @@ fn osc52_selection_type_s() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardStore(Selection, test)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardStore(Selection, test)")),
         "Expected Selection store for 's', got: {events:?}",
     );
 }
@@ -1812,7 +2023,9 @@ fn osc52_load_sends_clipboard_type() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardLoad(Clipboard)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardLoad(Clipboard)")),
         "OSC 52 load with 'c' should send Clipboard type, got: {events:?}",
     );
 }
@@ -1874,7 +2087,9 @@ fn osc52_load_selection_p() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardLoad(Selection)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardLoad(Selection)")),
         "OSC 52 load with 'p' should send Selection type, got: {events:?}",
     );
 }
@@ -1886,7 +2101,9 @@ fn osc52_load_selection_s() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardLoad(Selection)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardLoad(Selection)")),
         "OSC 52 load with 's' should send Selection type, got: {events:?}",
     );
 }
@@ -1926,7 +2143,9 @@ fn osc52_store_with_st_terminator() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardStore(Clipboard, hello)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardStore(Clipboard, hello)")),
         "ST-terminated store should work, got: {events:?}",
     );
 }
@@ -1994,11 +2213,16 @@ fn osc52_store_large_payload() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardStore(Clipboard,")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardStore(Clipboard,")),
         "Large payload should produce store event, got: {events:?}",
     );
     // Verify full content survived by checking length in the event string.
-    let store = events.iter().find(|e| e.contains("ClipboardStore")).unwrap();
+    let store = events
+        .iter()
+        .find(|e| e.contains("ClipboardStore"))
+        .unwrap();
     assert!(
         store.contains(&text),
         "Full 10KB text should be preserved in event",
@@ -2015,7 +2239,9 @@ fn osc52_store_base64_no_padding() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardStore(Clipboard, hi)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardStore(Clipboard, hi)")),
         "Padded base64 should decode, got: {events:?}",
     );
 }
@@ -2028,7 +2254,9 @@ fn osc52_store_base64_double_padding() {
 
     let events = listener.events();
     assert!(
-        events.iter().any(|e| e.contains("ClipboardStore(Clipboard, h)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardStore(Clipboard, h)")),
         "Double-padded base64 should decode, got: {events:?}",
     );
 }
@@ -2075,7 +2303,9 @@ fn osc52_multi_selector_uses_first() {
     let events = listener.events();
     // VTE takes first byte 'c' → Clipboard.
     assert!(
-        events.iter().any(|e| e.contains("ClipboardStore(Clipboard, hello)")),
+        events
+            .iter()
+            .any(|e| e.contains("ClipboardStore(Clipboard, hello)")),
         "Multi-selector 'cp' should use first byte 'c' → Clipboard, got: {events:?}",
     );
     // Should NOT also produce a Selection store (VTE doesn't iterate selectors).
@@ -2131,14 +2361,26 @@ fn osc8_hyperlink_written_to_cells() {
 
     // Cells A and B should have the hyperlink.
     let row = &t.grid()[crate::index::Line(0)];
-    let a_extra = row[Column(0)].extra.as_ref().expect("cell A should have extra");
+    let a_extra = row[Column(0)]
+        .extra
+        .as_ref()
+        .expect("cell A should have extra");
     assert!(a_extra.hyperlink.is_some(), "cell A should have hyperlink");
-    let b_extra = row[Column(1)].extra.as_ref().expect("cell B should have extra");
+    let b_extra = row[Column(1)]
+        .extra
+        .as_ref()
+        .expect("cell B should have extra");
     assert!(b_extra.hyperlink.is_some(), "cell B should have hyperlink");
 
     // Cells C and D should NOT have the hyperlink.
-    assert!(row[Column(2)].extra.is_none(), "cell C should not have hyperlink");
-    assert!(row[Column(3)].extra.is_none(), "cell D should not have hyperlink");
+    assert!(
+        row[Column(2)].extra.is_none(),
+        "cell C should not have hyperlink"
+    );
+    assert!(
+        row[Column(3)].extra.is_none(),
+        "cell D should not have hyperlink"
+    );
 }
 
 #[test]
@@ -2317,11 +2559,21 @@ fn esc7_esc8_preserves_sgr_attributes() {
     feed(&mut t, b"\x1b7"); // DECSC
     // Clear bold.
     feed(&mut t, b"\x1b[0m"); // SGR reset
-    assert!(!t.grid().cursor().template.flags.contains(crate::cell::CellFlags::BOLD));
+    assert!(
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD)
+    );
     // Restore — should bring back bold.
     feed(&mut t, b"\x1b8"); // DECRC
     assert!(
-        t.grid().cursor().template.flags.contains(crate::cell::CellFlags::BOLD),
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD),
         "DECRC should restore bold attribute",
     );
 }
@@ -2341,7 +2593,8 @@ fn esc7_esc8_preserves_wrap_pending() {
     assert_eq!(t.grid().cursor().col().0, 0);
     feed(&mut t, b"\x1b8"); // Restore
     assert_eq!(
-        t.grid().cursor().col().0, 5,
+        t.grid().cursor().col().0,
+        5,
         "DECRC should restore wrap-pending state (col == cols)",
     );
     // Next character should wrap to line 1.
@@ -2427,12 +2680,22 @@ fn esc_c_ris_resets_pen_attributes() {
     let mut t = term();
     // Set bold + foreground color.
     feed(&mut t, b"\x1b[1;31m"); // Bold + red FG
-    assert!(t.grid().cursor().template.flags.contains(crate::cell::CellFlags::BOLD));
+    assert!(
+        t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD)
+    );
     // RIS.
     feed(&mut t, b"\x1bc");
     // Attributes should be default.
     assert!(
-        !t.grid().cursor().template.flags.contains(crate::cell::CellFlags::BOLD),
+        !t.grid()
+            .cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD),
         "RIS should reset bold",
     );
     assert_eq!(
@@ -2454,7 +2717,11 @@ fn esc_c_ris_clears_saved_cursor() {
     // Restore should NOT go to (4, 9) — saved cursor was cleared.
     feed(&mut t, b"\x1b8"); // DECRC
     assert_eq!(t.grid().cursor().line(), 0, "RIS should clear saved cursor");
-    assert_eq!(t.grid().cursor().col().0, 0, "RIS should clear saved cursor");
+    assert_eq!(
+        t.grid().cursor().col().0,
+        0,
+        "RIS should clear saved cursor"
+    );
 }
 
 /// Ghostty: fullReset from alt screen returns to primary.
@@ -2531,7 +2798,10 @@ fn reverse_index_top_of_scroll_region() {
     feed(&mut t, b"X");
     // Line 1 (0-based) should now have "X" (new blank line with our char).
     let ch = t.grid()[crate::index::Line(1)][Column(0)].ch;
-    assert_eq!(ch, 'X', "RI at top of scroll region should scroll within region");
+    assert_eq!(
+        ch, 'X',
+        "RI at top of scroll region should scroll within region"
+    );
     // "A" should have shifted to line 2.
     let ch2 = t.grid()[crate::index::Line(2)][Column(0)].ch;
     assert_eq!(ch2, 'A', "Content should shift down within scroll region");
@@ -2565,13 +2835,25 @@ fn esc_c_ris_clears_hyperlink() {
     let mut t = term();
     // Set a hyperlink.
     feed(&mut t, b"\x1b]8;;https://example.com\x07");
-    let has_link = t.grid().cursor().template.extra.as_ref()
-        .and_then(|e| e.hyperlink.as_ref()).is_some();
+    let has_link = t
+        .grid()
+        .cursor()
+        .template
+        .extra
+        .as_ref()
+        .and_then(|e| e.hyperlink.as_ref())
+        .is_some();
     assert!(has_link, "Hyperlink should be set before RIS");
     // RIS.
     feed(&mut t, b"\x1bc");
-    let has_link = t.grid().cursor().template.extra.as_ref()
-        .and_then(|e| e.hyperlink.as_ref()).is_some();
+    let has_link = t
+        .grid()
+        .cursor()
+        .template
+        .extra
+        .as_ref()
+        .and_then(|e| e.hyperlink.as_ref())
+        .is_some();
     assert!(!has_link, "RIS should clear hyperlink on cursor template");
 }
 
@@ -2590,7 +2872,11 @@ fn esc_c_ris_resets_origin_mode() {
         !t.mode().contains(super::super::TermMode::ORIGIN),
         "RIS should reset origin mode",
     );
-    assert_eq!(t.grid().cursor().line(), 0, "RIS should reset cursor to origin");
+    assert_eq!(
+        t.grid().cursor().line(),
+        0,
+        "RIS should reset cursor to origin"
+    );
     assert_eq!(t.grid().cursor().col().0, 0);
 }
 
@@ -2601,7 +2887,11 @@ fn esc7_esc8_preserves_hyperlink() {
     // Set a hyperlink.
     feed(&mut t, b"\x1b]8;;https://example.com\x07");
     let get_link = |t: &Term<crate::event::VoidListener>| {
-        t.grid().cursor().template.extra.as_ref()
+        t.grid()
+            .cursor()
+            .template
+            .extra
+            .as_ref()
             .and_then(|e| e.hyperlink.clone())
     };
     let before = get_link(&t);
@@ -2612,7 +2902,8 @@ fn esc7_esc8_preserves_hyperlink() {
     // Restore.
     feed(&mut t, b"\x1b8");
     assert_eq!(
-        get_link(&t), before,
+        get_link(&t),
+        before,
         "DECSC/DECRC should not modify hyperlink state",
     );
 }
@@ -2632,7 +2923,10 @@ fn dec_special_charset_ignores_non_ascii() {
     // Multi-byte UTF-8 chars won't match the DEC mapping table.
     feed(&mut t, b"\xc3\xa9"); // 'é' (U+00E9)
     let ch1 = t.grid()[crate::index::Line(0)][Column(1)].ch;
-    assert_eq!(ch1, 'é', "Non-ASCII should not be affected by DEC special charset");
+    assert_eq!(
+        ch1, 'é',
+        "Non-ASCII should not be affected by DEC special charset"
+    );
 }
 
 // --- DECSCUSR (cursor shape) tests ---
@@ -2737,7 +3031,8 @@ fn push_keyboard_mode_1() {
 
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     assert!(
-        t.mode().contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES),
+        t.mode()
+            .contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES),
         "push_keyboard_mode(1) should set DISAMBIGUATE_ESC_CODES"
     );
 }
@@ -2749,7 +3044,10 @@ fn push_keyboard_mode_3() {
     feed(&mut t, b"\x1b[>3u");
 
     assert_eq!(t.keyboard_mode_stack().len(), 1);
-    assert!(t.mode().contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES));
+    assert!(
+        t.mode()
+            .contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES)
+    );
     assert!(t.mode().contains(crate::term::TermMode::REPORT_EVENT_TYPES));
 }
 
@@ -2765,7 +3063,10 @@ fn pop_keyboard_mode() {
     feed(&mut t, b"\x1b[<u");
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     // Active mode should be the remaining mode (1 = DISAMBIGUATE_ESC_CODES).
-    assert!(t.mode().contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES));
+    assert!(
+        t.mode()
+            .contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES)
+    );
     assert!(
         !t.mode().contains(crate::term::TermMode::REPORT_EVENT_TYPES),
         "after pop, only first pushed mode should remain active"
@@ -2782,7 +3083,8 @@ fn pop_all_keyboard_modes() {
     feed(&mut t, b"\x1b[<2u");
     assert!(t.keyboard_mode_stack().is_empty());
     assert!(
-        !t.mode().intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL),
+        !t.mode()
+            .intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL),
         "all kitty flags should be cleared after popping all modes"
     );
 }
@@ -2849,7 +3151,10 @@ fn ris_clears_keyboard_mode_stack_and_flags() {
     // RIS.
     feed(&mut t, b"\x1bc");
     assert!(t.keyboard_mode_stack().is_empty());
-    assert!(!t.mode().intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL));
+    assert!(
+        !t.mode()
+            .intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL)
+    );
 }
 
 #[test]
@@ -2899,7 +3204,10 @@ fn pop_more_than_stack_depth_clamps() {
     // Pop 999 from a stack of 2 — should clamp to empty.
     feed(&mut t, b"\x1b[<999u");
     assert!(t.keyboard_mode_stack().is_empty());
-    assert!(!t.mode().intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL));
+    assert!(
+        !t.mode()
+            .intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL)
+    );
 }
 
 #[test]
@@ -2924,7 +3232,8 @@ fn keyboard_mode_stack_survives_alt_screen_swap() {
     feed(&mut t, b"\x1b[?1049l");
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     assert!(
-        t.mode().contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES),
+        t.mode()
+            .contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES),
         "primary stack mode should be restored after alt screen exit"
     );
 }
@@ -2966,7 +3275,12 @@ fn combining_mark_appends_to_previous_cell() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'e');
-    let zw = cell.extra.as_ref().expect("should have extra").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("should have extra")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0301}']);
     // Cursor stays at col 1 (zero-width doesn't advance).
     assert_eq!(grid.cursor().col(), Column(1));
@@ -2981,7 +3295,12 @@ fn multiple_combining_marks_append_to_same_cell() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'a');
-    let zw = cell.extra.as_ref().expect("should have extra").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("should have extra")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0300}', '\u{0301}', '\u{0302}']);
     assert_eq!(grid.cursor().col(), Column(1));
 }
@@ -3012,7 +3331,12 @@ fn combining_mark_on_wide_char() {
     let base = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(base.ch, '漢');
     assert!(base.flags.contains(CellFlags::WIDE_CHAR));
-    let zw = base.extra.as_ref().expect("combining mark on base cell").zerowidth.as_slice();
+    let zw = base
+        .extra
+        .as_ref()
+        .expect("combining mark on base cell")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0301}']);
 
     // Spacer at col 1 must NOT have the combining mark.
@@ -3035,7 +3359,12 @@ fn combining_mark_at_wrap_pending() {
     let grid = t.grid();
     let cell_e = &grid[crate::index::Line(0)][Column(4)];
     assert_eq!(cell_e.ch, 'e');
-    let zw = cell_e.extra.as_ref().expect("combining mark on wrap-pending cell").zerowidth.as_slice();
+    let zw = cell_e
+        .extra
+        .as_ref()
+        .expect("combining mark on wrap-pending cell")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0300}']);
 
     // Cursor stays wrap-pending at col 5 — combining mark didn't advance it.
@@ -3068,7 +3397,12 @@ fn zerowidth_space_appends_to_previous_cell() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'a');
-    let zw = cell.extra.as_ref().expect("should have extra").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("should have extra")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{200B}']);
     // Cursor stays at col 1.
     assert_eq!(grid.cursor().col(), Column(1));
@@ -3083,7 +3417,12 @@ fn word_joiner_appends_to_previous_cell() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'b');
-    let zw = cell.extra.as_ref().expect("should have extra").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("should have extra")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{2060}']);
     assert_eq!(grid.cursor().col(), Column(1));
 }
@@ -3098,7 +3437,12 @@ fn variation_selector_15_appends_to_previous_cell() {
     let grid = t.grid();
     let base = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(base.ch, '\u{2614}');
-    let zw = base.extra.as_ref().expect("VS15 stored").zerowidth.as_slice();
+    let zw = base
+        .extra
+        .as_ref()
+        .expect("VS15 stored")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{FE0E}']);
     // Without mode 2027, width stays at 2.
     assert_eq!(grid.cursor().col(), Column(2));
@@ -3114,7 +3458,12 @@ fn variation_selector_16_appends_to_previous_cell() {
     let grid = t.grid();
     let base = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(base.ch, '\u{2764}');
-    let zw = base.extra.as_ref().expect("VS16 stored").zerowidth.as_slice();
+    let zw = base
+        .extra
+        .as_ref()
+        .expect("VS16 stored")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{FE0F}']);
 }
 
@@ -3127,7 +3476,12 @@ fn vs16_on_ascii_stored_as_zerowidth() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'x');
-    let zw = cell.extra.as_ref().expect("VS16 stored on ASCII").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("VS16 stored on ASCII")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{FE0F}']);
     assert_eq!(grid.cursor().col(), Column(1));
 }
@@ -3141,7 +3495,12 @@ fn zjw_appends_to_previous_cell() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'a');
-    let zw = cell.extra.as_ref().expect("ZWJ stored").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("ZWJ stored")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{200D}']);
     assert_eq!(grid.cursor().col(), Column(1));
 }
@@ -3154,7 +3513,10 @@ fn zjw_emoji_sequence_stores_each_emoji_separately() {
     // 👨‍👩‍👧 = U+1F468 + U+200D + U+1F469 + U+200D + U+1F467
     // Without mode 2027, each emoji is placed as a separate wide char.
     // ZWJ chars get appended as zerowidth to the preceding emoji.
-    feed(&mut t, "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}".as_bytes());
+    feed(
+        &mut t,
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}".as_bytes(),
+    );
 
     let grid = t.grid();
     // 👨 at col 0-1 (wide).
@@ -3166,16 +3528,23 @@ fn zjw_emoji_sequence_stores_each_emoji_separately() {
     assert_eq!(zw, &['\u{200D}']);
 
     // Spacer at col 1.
-    assert!(grid[crate::index::Line(0)][Column(1)]
-        .flags
-        .contains(CellFlags::WIDE_CHAR_SPACER));
+    assert!(
+        grid[crate::index::Line(0)][Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
 
     // 👩 at col 2-3 (wide).
     let woman = &grid[crate::index::Line(0)][Column(2)];
     assert_eq!(woman.ch, '\u{1F469}');
     assert!(woman.flags.contains(CellFlags::WIDE_CHAR));
     // ZWJ appended to 👩.
-    let zw = woman.extra.as_ref().expect("ZWJ on woman").zerowidth.as_slice();
+    let zw = woman
+        .extra
+        .as_ref()
+        .expect("ZWJ on woman")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{200D}']);
 
     // 👧 at col 4-5 (wide).
@@ -3197,7 +3566,12 @@ fn vs16_then_combining_mark_both_stored() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'n');
-    let zw = cell.extra.as_ref().expect("both stored").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("both stored")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{FE0F}', '\u{0303}']);
     assert_eq!(grid.cursor().col(), Column(1));
 }
@@ -3206,15 +3580,17 @@ fn vs16_then_combining_mark_both_stored() {
 fn four_combining_marks_all_stored() {
     let mut t = term();
     // 'o' + 4 combining marks (grave, acute, circumflex, tilde).
-    feed(
-        &mut t,
-        "o\u{0300}\u{0301}\u{0302}\u{0303}".as_bytes(),
-    );
+    feed(&mut t, "o\u{0300}\u{0301}\u{0302}\u{0303}".as_bytes());
 
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'o');
-    let zw = cell.extra.as_ref().expect("4 marks stored").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("4 marks stored")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0300}', '\u{0301}', '\u{0302}', '\u{0303}']);
     assert_eq!(grid.cursor().col(), Column(1));
 }
@@ -3228,7 +3604,12 @@ fn mixed_zerowidth_types_on_same_cell() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, 'a');
-    let zw = cell.extra.as_ref().expect("mixed zw types").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("mixed zw types")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0301}', '\u{200D}', '\u{FE0F}']);
     assert_eq!(grid.cursor().col(), Column(1));
 }
@@ -3244,7 +3625,12 @@ fn combining_mark_after_line_wrap() {
     // 'F' is on line 1, col 0. Combining mark attaches to it.
     let cell = &grid[crate::index::Line(1)][Column(0)];
     assert_eq!(cell.ch, 'F');
-    let zw = cell.extra.as_ref().expect("combining on wrapped cell").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("combining on wrapped cell")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0301}']);
     assert_eq!(grid.cursor().col(), Column(1));
     assert_eq!(grid.cursor().line(), 1);
@@ -3265,7 +3651,12 @@ fn combining_mark_on_wide_char_after_wrap() {
     let base = &grid[crate::index::Line(1)][Column(0)];
     assert_eq!(base.ch, '漢');
     assert!(base.flags.contains(CellFlags::WIDE_CHAR));
-    let zw = base.extra.as_ref().expect("combining on wide after wrap").zerowidth.as_slice();
+    let zw = base
+        .extra
+        .as_ref()
+        .expect("combining on wide after wrap")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0301}']);
 
     // Spacer must not have the combining mark.
@@ -3305,15 +3696,17 @@ fn combining_mark_does_not_trigger_wrap() {
     // 5-column terminal, fill line with "abcde" (wrap pending at col 5).
     // Multiple combining marks should attach to 'e' without wrapping.
     let mut t = Term::new(5, 5, 0, Theme::default(), crate::event::VoidListener);
-    feed(
-        &mut t,
-        "abcde\u{0300}\u{0301}\u{0302}".as_bytes(),
-    );
+    feed(&mut t, "abcde\u{0300}\u{0301}\u{0302}".as_bytes());
 
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(4)];
     assert_eq!(cell.ch, 'e');
-    let zw = cell.extra.as_ref().expect("3 marks on wrap-pending").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("3 marks on wrap-pending")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{0300}', '\u{0301}', '\u{0302}']);
     // Still on line 0, cursor at col 5 (wrap pending). No wrap occurred.
     assert_eq!(grid.cursor().line(), 0);
@@ -3333,7 +3726,12 @@ fn zjw_between_wide_chars_stored_correctly() {
     let c1 = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(c1.ch, '漢');
     assert!(c1.flags.contains(CellFlags::WIDE_CHAR));
-    let zw = c1.extra.as_ref().expect("ZWJ between wide chars").zerowidth.as_slice();
+    let zw = c1
+        .extra
+        .as_ref()
+        .expect("ZWJ between wide chars")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{200D}']);
 
     // 字 at col 2.
@@ -3354,7 +3752,12 @@ fn emoji_with_vs16_and_combining() {
     let grid = t.grid();
     let cell = &grid[crate::index::Line(0)][Column(0)];
     assert_eq!(cell.ch, '\u{2764}');
-    let zw = cell.extra.as_ref().expect("VS16 + combining").zerowidth.as_slice();
+    let zw = cell
+        .extra
+        .as_ref()
+        .expect("VS16 + combining")
+        .zerowidth
+        .as_slice();
     assert_eq!(zw, &['\u{FE0F}', '\u{20E3}']);
 }
 
@@ -3369,7 +3772,10 @@ fn dirty_tracked_for_combining_mark() {
     feed(&mut t, "\u{0301}".as_bytes());
 
     let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
-    assert!(dirty.contains(&0), "combining mark should mark line dirty: {dirty:?}");
+    assert!(
+        dirty.contains(&0),
+        "combining mark should mark line dirty: {dirty:?}"
+    );
 }
 
 #[test]
@@ -3382,5 +3788,8 @@ fn dirty_tracked_for_zerowidth_space() {
     feed(&mut t, "\u{200B}".as_bytes());
 
     let dirty: Vec<usize> = t.grid_mut().dirty_mut().drain().collect();
-    assert!(dirty.contains(&0), "zero-width space should mark line dirty: {dirty:?}");
+    assert!(
+        dirty.contains(&0),
+        "zero-width space should mark line dirty: {dirty:?}"
+    );
 }

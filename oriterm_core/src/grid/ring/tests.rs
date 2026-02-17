@@ -1,6 +1,6 @@
 use crate::cell::Cell;
-use crate::grid::row::Row;
 use crate::grid::Grid;
+use crate::grid::row::Row;
 use crate::index::{Column, Line};
 
 use super::ScrollbackBuffer;
@@ -203,7 +203,11 @@ fn wide_char_flags_preserved_in_scrollback() {
     assert_eq!(retrieved[Column(0)].ch, '\u{4e16}');
     assert!(retrieved[Column(0)].flags.contains(CellFlags::WIDE_CHAR));
     assert_eq!(retrieved[Column(1)].ch, ' ');
-    assert!(retrieved[Column(1)].flags.contains(CellFlags::WIDE_CHAR_SPACER));
+    assert!(
+        retrieved[Column(1)]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
     assert_eq!(retrieved[Column(2)].ch, 'A');
 }
 

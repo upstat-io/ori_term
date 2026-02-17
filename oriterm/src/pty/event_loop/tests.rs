@@ -4,12 +4,12 @@
 //! avoiding platform-specific ConPTY issues with blocking reads.
 
 use std::io::{Read, Write};
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 
 use oriterm_core::{FairMutex, Term, Theme, VoidListener};
 
-use super::{PtyEventLoop, MAX_LOCKED_PARSE, READ_BUFFER_SIZE};
+use super::{MAX_LOCKED_PARSE, PtyEventLoop, READ_BUFFER_SIZE};
 use crate::pty::{Msg, PtyControl};
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,13 @@ fn build_event_loop(
     Arc<FairMutex<Term<VoidListener>>>,
     mpsc::Sender<Msg>,
 ) {
-    let terminal = Arc::new(FairMutex::new(Term::new(24, 80, 1000, Theme::default(), VoidListener)));
+    let terminal = Arc::new(FairMutex::new(Term::new(
+        24,
+        80,
+        1000,
+        Theme::default(),
+        VoidListener,
+    )));
     let (tx, rx) = mpsc::channel();
 
     let event_loop = PtyEventLoop::new(
@@ -93,10 +99,8 @@ fn shutdown_on_reader_eof() {
     // Anonymous pipe where we control the write end — dropping it produces EOF.
     let (pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, _terminal, _tx) = build_event_loop(
-        Box::new(pipe_reader),
-        Box::new(Vec::<u8>::new()),
-    );
+    let (event_loop, _terminal, _tx) =
+        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -110,10 +114,8 @@ fn shutdown_on_reader_eof() {
 fn processes_pty_output_into_terminal() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, _tx) = build_event_loop(
-        Box::new(pipe_reader),
-        Box::new(Vec::<u8>::new()),
-    );
+    let (event_loop, terminal, _tx) =
+        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -143,10 +145,8 @@ fn processes_channel_input() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
     let (capture_reader, capture_writer) = std::io::pipe().expect("capture pipe");
 
-    let (event_loop, _terminal, tx) = build_event_loop(
-        Box::new(pipe_reader),
-        Box::new(capture_writer),
-    );
+    let (event_loop, _terminal, tx) =
+        build_event_loop(Box::new(pipe_reader), Box::new(capture_writer));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -168,7 +168,10 @@ fn processes_channel_input() {
     let mut captured = Vec::new();
     let mut reader = capture_reader;
     reader.read_to_end(&mut captured).expect("read captured");
-    assert_eq!(captured, b"typed text", "input should be forwarded to writer");
+    assert_eq!(
+        captured, b"typed text",
+        "input should be forwarded to writer"
+    );
 }
 
 #[test]

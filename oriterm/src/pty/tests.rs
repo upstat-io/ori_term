@@ -4,8 +4,8 @@
 //! live PTY either. The event loop is tested with mock pipes in
 //! `event_loop/tests.rs`.
 
-use super::spawn::{build_command, default_shell};
 use super::PtyConfig;
+use super::spawn::{build_command, default_shell};
 
 // ---------------------------------------------------------------------------
 // Shell detection

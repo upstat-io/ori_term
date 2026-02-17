@@ -84,11 +84,7 @@ pub fn hit_test(
 
 /// Returns the resize direction if the point is within `border_width` of
 /// any window edge. Corners take priority over edges.
-fn resize_direction(
-    point: Point,
-    window_size: Size,
-    border_width: f32,
-) -> Option<ResizeDirection> {
+fn resize_direction(point: Point, window_size: Size, border_width: f32) -> Option<ResizeDirection> {
     let w = window_size.width();
     let h = window_size.height();
 

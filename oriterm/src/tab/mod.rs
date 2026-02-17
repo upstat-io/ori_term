@@ -9,9 +9,9 @@
 //! PTY bridge).
 
 use std::io;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -182,7 +182,13 @@ impl Tab {
         // 3. Create the terminal state machine with an event proxy.
         let theme = crate::platform::theme::system_theme();
         let event_proxy = EventProxy::new(proxy, id);
-        let term = Term::new(usize::from(rows), usize::from(cols), scrollback, theme, event_proxy);
+        let term = Term::new(
+            usize::from(rows),
+            usize::from(cols),
+            scrollback,
+            theme,
+            event_proxy,
+        );
         let terminal = Arc::new(FairMutex::new(term));
 
         // 4. Wire the message channel.
@@ -190,8 +196,7 @@ impl Tab {
         let notifier = Notifier::new(tx);
 
         // 5. Build and spawn the reader thread.
-        let event_loop =
-            PtyEventLoop::new(Arc::clone(&terminal), reader, writer, rx, control);
+        let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, writer, rx, control);
         let reader_thread = event_loop.spawn()?;
 
         Ok(Self {

@@ -130,7 +130,10 @@ fn load_icon() -> Option<Icon> {
 
     let expected_len = (w as usize) * (h as usize) * 4;
     if rgba.len() != expected_len {
-        log::warn!("icon RGBA data length mismatch: expected {expected_len}, got {}", rgba.len());
+        log::warn!(
+            "icon RGBA data length mismatch: expected {expected_len}, got {}",
+            rgba.len()
+        );
         return None;
     }
 

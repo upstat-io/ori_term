@@ -47,7 +47,10 @@ pub struct FairMutexLease<'a> {
 impl<T> FairMutex<T> {
     /// Creates a new `FairMutex` protecting `data`.
     pub fn new(data: T) -> Self {
-        Self { data: Mutex::new(data), next: Mutex::new(()) }
+        Self {
+            data: Mutex::new(data),
+            next: Mutex::new(()),
+        }
     }
 
     /// Acquires the mutex fairly.
@@ -85,7 +88,9 @@ impl<T> FairMutex<T> {
     /// is useful when the PTY reader thread needs to perform multiple
     /// operations and wants to ensure it isn't starved between them.
     pub fn lease(&self) -> FairMutexLease<'_> {
-        FairMutexLease { _next: self.next.lock() }
+        FairMutexLease {
+            _next: self.next.lock(),
+        }
     }
 }
 

@@ -560,7 +560,12 @@ fn save_cursor_preserves_template() {
     assert_eq!(grid.cursor().line(), 3);
     assert_eq!(grid.cursor().col(), Column(7));
     assert_eq!(grid.cursor().template.fg, Color::Indexed(1));
-    assert!(grid.cursor().template.flags.contains(crate::cell::CellFlags::BOLD));
+    assert!(
+        grid.cursor()
+            .template
+            .flags
+            .contains(crate::cell::CellFlags::BOLD)
+    );
 }
 
 // Reference repo gap analysis edge cases

@@ -12,7 +12,10 @@ mod spawn;
 pub mod signal;
 
 pub(crate) use event_loop::PtyEventLoop;
-#[allow(unused_imports, reason = "returned by PtyHandle::wait/try_wait; callers need access")]
+#[allow(
+    unused_imports,
+    reason = "returned by PtyHandle::wait/try_wait; callers need access"
+)]
 pub use spawn::ExitStatus;
 pub use spawn::{PtyConfig, PtyControl, PtyHandle, spawn_pty};
 

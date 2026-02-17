@@ -28,16 +28,13 @@ fn platform_theme() -> Theme {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
 
-    use windows_sys::Win32::System::Registry::{
-        HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW,
-    };
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 
-    let subkey: Vec<u16> = OsStr::new(
-        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-    )
-    .encode_wide()
-    .chain(Some(0))
-    .collect();
+    let subkey: Vec<u16> =
+        OsStr::new("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize")
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
 
     let value_name: Vec<u16> = OsStr::new("AppsUseLightTheme")
         .encode_wide()
@@ -230,9 +227,7 @@ fn detect_desktop() -> Option<DesktopEnvironment> {
 #[cfg(target_os = "linux")]
 fn classify_desktop(name: &str) -> Option<DesktopEnvironment> {
     match name.to_ascii_lowercase().as_str() {
-        "gnome" | "gnome-xorg" | "unity" | "budgie" | "pantheon" => {
-            Some(DesktopEnvironment::Gnome)
-        }
+        "gnome" | "gnome-xorg" | "unity" | "budgie" | "pantheon" => Some(DesktopEnvironment::Gnome),
         "kde" | "kde-plasma" => Some(DesktopEnvironment::Kde),
         "x-cinnamon" | "cinnamon" => Some(DesktopEnvironment::Cinnamon),
         "mate" => Some(DesktopEnvironment::Mate),
@@ -253,9 +248,7 @@ fn de_specific_theme() -> Option<Theme> {
         DesktopEnvironment::Cinnamon => {
             gsettings_gtk_theme("org.cinnamon.desktop.interface", "gtk-theme")
         }
-        DesktopEnvironment::Mate => {
-            gsettings_gtk_theme("org.mate.interface", "gtk-theme")
-        }
+        DesktopEnvironment::Mate => gsettings_gtk_theme("org.mate.interface", "gtk-theme"),
         DesktopEnvironment::Xfce => xfce_theme(),
     }
 }

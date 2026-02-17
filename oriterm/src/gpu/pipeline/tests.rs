@@ -2,7 +2,7 @@
 
 use wgpu::VertexStepMode;
 
-use super::{instance_buffer_layout, INSTANCE_ATTRS, INSTANCE_STRIDE};
+use super::{INSTANCE_ATTRS, INSTANCE_STRIDE, instance_buffer_layout};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
 
 // --- Unit tests (no GPU) ---

@@ -8,9 +8,9 @@
 //! whether any child process has exited since the last check.
 
 use std::io;
+use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use signal_hook::consts::SIGCHLD;
 

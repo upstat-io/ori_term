@@ -145,15 +145,7 @@ impl InstanceWriter {
     }
 
     /// Push a cursor rectangle instance.
-    pub fn push_cursor(
-        &mut self,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        color: Rgb,
-        alpha: f32,
-    ) {
+    pub fn push_cursor(&mut self, x: f32, y: f32, w: f32, h: f32, color: Rgb, alpha: f32) {
         self.push_instance(
             x,
             y,

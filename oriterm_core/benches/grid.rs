@@ -8,7 +8,7 @@
 //! - **120x50**: Modern half-screen split.
 //! - **240x80**: Full-screen 4K terminal.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use oriterm_core::grid::Grid;
 use oriterm_core::index::Column;
@@ -16,9 +16,9 @@ use oriterm_core::{Cell, DisplayEraseMode, LineEraseMode};
 
 /// Terminal sizes that represent real usage.
 const SIZES: [(usize, usize); 3] = [
-    (80, 24),   // Classic VT100.
-    (120, 50),  // Modern split pane.
-    (240, 80),  // Full-screen 4K.
+    (80, 24),  // Classic VT100.
+    (120, 50), // Modern split pane.
+    (240, 80), // Full-screen 4K.
 ];
 
 // ---------------------------------------------------------------------------
@@ -186,8 +186,7 @@ fn bench_scroll_bce(c: &mut Criterion) {
             &(cols, lines),
             |b, &(cols, lines)| {
                 let mut grid = filled_grid(lines, cols);
-                grid.cursor_mut().template_mut().bg =
-                    vte::ansi::Color::Indexed(4);
+                grid.cursor_mut().template_mut().bg = vte::ansi::Color::Indexed(4);
                 b.iter(|| {
                     grid.cursor_mut().set_line(lines - 1);
                     grid.linefeed();
@@ -401,21 +400,17 @@ fn bench_row_reset(c: &mut Criterion) {
             },
         );
         // Reset a dirty row with BCE template (forces full repaint).
-        group.bench_with_input(
-            BenchmarkId::new("dirty_bce", cols),
-            &cols,
-            |b, &cols| {
-                let tmpl = Cell::from(vte::ansi::Color::Indexed(4));
-                let chars = ascii_heavy_line(cols);
-                let mut row = oriterm_core::grid::Row::new(cols);
-                for (i, &ch) in chars.iter().enumerate().take(cols) {
-                    row[Column(i)].ch = ch;
-                }
-                b.iter(|| {
-                    row.reset(black_box(cols), black_box(&tmpl));
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("dirty_bce", cols), &cols, |b, &cols| {
+            let tmpl = Cell::from(vte::ansi::Color::Indexed(4));
+            let chars = ascii_heavy_line(cols);
+            let mut row = oriterm_core::grid::Row::new(cols);
+            for (i, &ch) in chars.iter().enumerate().take(cols) {
+                row[Column(i)].ch = ch;
+            }
+            b.iter(|| {
+                row.reset(black_box(cols), black_box(&tmpl));
+            });
+        });
         // Reset a clean row (occ = 0) — the fast path.
         group.bench_with_input(
             BenchmarkId::new("clean_default", cols),

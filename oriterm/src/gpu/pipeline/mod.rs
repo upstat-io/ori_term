@@ -11,13 +11,13 @@
 #![allow(dead_code, reason = "pipelines consumed starting in Section 5.10")]
 
 use wgpu::{
-    BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
-    BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType,
-    ColorTargetState, ColorWrites, Device, FragmentState, FrontFace, MultisampleState,
-    PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, ShaderModuleDescriptor, ShaderStages,
-    TextureSampleType, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat,
-    VertexState, VertexStepMode,
+    BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendComponent,
+    BlendFactor, BlendOperation, BlendState, BufferBindingType, ColorTargetState, ColorWrites,
+    Device, FragmentState, FrontFace, MultisampleState, PipelineLayoutDescriptor, PolygonMode,
+    PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor,
+    SamplerBindingType, ShaderModuleDescriptor, ShaderStages, TextureSampleType,
+    TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState,
+    VertexStepMode,
 };
 
 use super::instance_writer::INSTANCE_SIZE;
@@ -162,16 +162,11 @@ pub fn create_atlas_bind_group_layout(device: &Device) -> BindGroupLayout {
 ///
 /// Uses only bind group 0 (uniforms). Renders solid-color quads — no texture
 /// sampling. Premultiplied alpha blend for transparent window support.
-pub fn create_bg_pipeline(
-    gpu: &GpuState,
-    uniform_layout: &BindGroupLayout,
-) -> RenderPipeline {
-    let shader = gpu
-        .device
-        .create_shader_module(ShaderModuleDescriptor {
-            label: Some("bg_shader"),
-            source: wgpu::ShaderSource::Wgsl(BG_SHADER_SRC.into()),
-        });
+pub fn create_bg_pipeline(gpu: &GpuState, uniform_layout: &BindGroupLayout) -> RenderPipeline {
+    let shader = gpu.device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("bg_shader"),
+        source: wgpu::ShaderSource::Wgsl(BG_SHADER_SRC.into()),
+    });
 
     let pipeline_layout = gpu
         .device
@@ -219,12 +214,10 @@ pub fn create_fg_pipeline(
     uniform_layout: &BindGroupLayout,
     atlas_layout: &BindGroupLayout,
 ) -> RenderPipeline {
-    let shader = gpu
-        .device
-        .create_shader_module(ShaderModuleDescriptor {
-            label: Some("fg_shader"),
-            source: wgpu::ShaderSource::Wgsl(FG_SHADER_SRC.into()),
-        });
+    let shader = gpu.device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("fg_shader"),
+        source: wgpu::ShaderSource::Wgsl(FG_SHADER_SRC.into()),
+    });
 
     let pipeline_layout = gpu
         .device

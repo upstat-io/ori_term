@@ -15,7 +15,7 @@ use crate::cell::Hyperlink;
 use crate::color::Rgb;
 use crate::event::{ClipboardType, Event, EventListener};
 
-use super::super::{Term, TITLE_STACK_MAX_DEPTH};
+use super::super::{TITLE_STACK_MAX_DEPTH, Term};
 
 impl<T: EventListener> Term<T> {
     /// OSC 0/2: set window title.

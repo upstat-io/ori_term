@@ -5,7 +5,10 @@ use super::{config_dir, config_path};
 #[test]
 fn config_dir_returns_non_empty_path() {
     let dir = config_dir();
-    assert!(!dir.as_os_str().is_empty(), "config_dir should not be empty");
+    assert!(
+        !dir.as_os_str().is_empty(),
+        "config_dir should not be empty"
+    );
 }
 
 #[test]

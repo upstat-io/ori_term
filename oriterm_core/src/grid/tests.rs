@@ -12,7 +12,7 @@ fn new_grid_has_correct_dimensions() {
 fn tab_stops_every_8_columns() {
     let grid = Grid::new(24, 80);
     let stops = grid.tab_stops();
-    assert!(stops[0]);  // Column 0.
+    assert!(stops[0]); // Column 0.
     assert!(!stops[1]);
     assert!(stops[8]);
     assert!(stops[16]);

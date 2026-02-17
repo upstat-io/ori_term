@@ -145,7 +145,6 @@ impl Row {
         );
         self.occ = occ;
     }
-
 }
 
 impl Index<Column> for Row {

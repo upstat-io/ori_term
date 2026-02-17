@@ -93,7 +93,7 @@ fn platform_init() -> io::Result<()> {
 #[cfg(windows)]
 #[allow(unsafe_code)]
 unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> i32 {
-    use windows_sys::Win32::System::Console::{CTRL_CLOSE_EVENT, CTRL_C_EVENT};
+    use windows_sys::Win32::System::Console::{CTRL_C_EVENT, CTRL_CLOSE_EVENT};
 
     if ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_CLOSE_EVENT {
         SHUTDOWN.store(true, Ordering::Relaxed);

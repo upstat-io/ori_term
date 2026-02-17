@@ -444,7 +444,7 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] D-Bus communication via `dbus-send` subprocess (avoids heavy `zbus` dependency)
   - [x] Fallback: check `GTK_THEME` environment variable for "dark" substring
   - [x] Fallback: check `$XDG_CURRENT_DESKTOP` and query DE-specific settings
-- [ ] Unified API:
+- [ ] Unified API: <!-- blocked-by:13 -->
   - [x] `fn system_theme() -> Theme` where `Theme` is `Dark`, `Light`, or `Unknown`
   - [x] Called at startup to select default color scheme
   - [ ] Config override: `appearance.theme = "dark" | "light" | "auto"` — `auto` uses system detection <!-- blocked-by:13 -->
@@ -452,7 +452,7 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] Dark mode: dark background, light text (current default)
   - [x] Light mode: light background, dark text
   - [x] User-configured palette always takes priority over system theme
-- [ ] **Tests:**
+- [ ] **Tests:** <!-- blocked-by:13 -->
   - [x] `system_theme()` returns a valid `Theme` variant on the current platform
   - [ ] Config override `"dark"` / `"light"` ignores system detection <!-- blocked-by:13 -->
   - [ ] `"auto"` uses system detection result <!-- blocked-by:13 -->
@@ -476,8 +476,8 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 - [ ] Transparency works where compositor supports it <!-- blocked-by:5 --><!-- blocked-by:13 -->
 - [x] System theme detection selects appropriate default palette
 - [ ] No platform-specific panics or crashes <!-- blocked-by:5 -->
-- [ ] CI builds for all three platforms
-- [ ] `cargo test --target x86_64-pc-windows-gnu` — passes
+- [x] CI builds for all three platforms
+- [x] `cargo test --target x86_64-pc-windows-gnu` — passes
 - [x] `cargo test` (native Linux) — passes
 - [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 

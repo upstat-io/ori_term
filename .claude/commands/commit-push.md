@@ -5,8 +5,11 @@ Stage, commit, and push all changes to the remote repository using conventional 
 ## Usage
 
 ```
-/commit-push
+/commit-push            # Auto-commit and push (no confirmation)
+/commit-push preview    # Show changes and ask for confirmation before committing
 ```
+
+**Argument:** `$ARGUMENTS`
 
 ---
 
@@ -50,19 +53,16 @@ Review the changes and create a commit message following conventional commit for
 
 **Scope** is optional. Use the primary module affected (e.g., `grid`, `render`, `pty`, `selection`).
 
-### Step 3: Present to User and Get Confirmation
+### Step 3: Confirm (preview mode only)
 
-Show the user:
-1. Summary of files changed
-2. The proposed commit message
+**If `$ARGUMENTS` contains "preview":**
+1. Show the user a summary of files changed and the proposed commit message
+2. Ask: "Shall I proceed with this commit?"
+3. **Do NOT commit until user confirms.**
 
-Ask: "Shall I proceed with this commit?"
-
-**Do NOT commit until user confirms.**
+**Otherwise (default):** Skip this step — proceed directly to committing.
 
 ### Step 4: Commit Main Changes
-
-After user confirms:
 
 ```bash
 git add -A
@@ -88,7 +88,7 @@ Before completing, verify:
 
 - [ ] `git status` was checked (Step 1)
 - [ ] Commit message follows conventional format (Step 2)
-- [ ] User confirmed before committing (Step 3)
+- [ ] User confirmed before committing (only if preview mode) (Step 3)
 - [ ] Main changes committed (Step 4)
 - [ ] Changes pushed (Step 5)
 

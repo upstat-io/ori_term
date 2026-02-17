@@ -49,8 +49,8 @@ fn validate_scheme(url: &str) -> io::Result<()> {
 /// `cmd /c start` (no shell injection) and handles URL encoding correctly.
 #[cfg(windows)]
 fn platform_open(url: &str) -> io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
     use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
 
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
 

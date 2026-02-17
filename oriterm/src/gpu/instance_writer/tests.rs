@@ -2,7 +2,7 @@
 
 use oriterm_core::Rgb;
 
-use super::{InstanceKind, InstanceWriter, INSTANCE_SIZE};
+use super::{INSTANCE_SIZE, InstanceKind, InstanceWriter};
 
 /// Read a little-endian `f32` from the given byte offset.
 fn read_f32(buf: &[u8], offset: usize) -> f32 {
@@ -14,7 +14,11 @@ fn read_u32(buf: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap())
 }
 
-const WHITE: Rgb = Rgb { r: 255, g: 255, b: 255 };
+const WHITE: Rgb = Rgb {
+    r: 255,
+    g: 255,
+    b: 255,
+};
 const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
 const RED: Rgb = Rgb { r: 255, g: 0, b: 0 };
 
@@ -152,7 +156,11 @@ fn rgb_conversion_boundary_values() {
 
 #[test]
 fn rgb_mid_value_conversion() {
-    let mid = Rgb { r: 128, g: 64, b: 192 };
+    let mid = Rgb {
+        r: 128,
+        g: 64,
+        b: 192,
+    };
     let mut w = InstanceWriter::new();
     w.push_rect(0.0, 0.0, 1.0, 1.0, mid, 1.0);
 

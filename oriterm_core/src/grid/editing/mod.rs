@@ -242,10 +242,14 @@ impl Grid {
         self.clear_wide_char_at(line, col);
         // Spacer at first shifted position: its base is in the delete zone.
         if col + count < cols
-            && self.rows[line][Column(col + count)].flags.contains(CellFlags::WIDE_CHAR_SPACER)
+            && self.rows[line][Column(col + count)]
+                .flags
+                .contains(CellFlags::WIDE_CHAR_SPACER)
         {
             self.rows[line][Column(col + count)].ch = ' ';
-            self.rows[line][Column(col + count)].flags.remove(CellFlags::WIDE_CHAR_SPACER);
+            self.rows[line][Column(col + count)]
+                .flags
+                .remove(CellFlags::WIDE_CHAR_SPACER);
         }
 
         let row = &mut self.rows[line];
@@ -410,17 +414,27 @@ impl Grid {
     /// Clears orphaned halves OUTSIDE the range. Call BEFORE resetting.
     fn fix_wide_boundaries(&mut self, line: usize, start: usize, end: usize) {
         let cols = self.cols;
-        if start > 0 && start < cols
-            && self.rows[line][Column(start)].flags.contains(CellFlags::WIDE_CHAR_SPACER)
+        if start > 0
+            && start < cols
+            && self.rows[line][Column(start)]
+                .flags
+                .contains(CellFlags::WIDE_CHAR_SPACER)
         {
             self.rows[line][Column(start - 1)].ch = ' ';
-            self.rows[line][Column(start - 1)].flags.remove(CellFlags::WIDE_CHAR);
+            self.rows[line][Column(start - 1)]
+                .flags
+                .remove(CellFlags::WIDE_CHAR);
         }
-        if end > 0 && end < cols
-            && self.rows[line][Column(end - 1)].flags.contains(CellFlags::WIDE_CHAR)
+        if end > 0
+            && end < cols
+            && self.rows[line][Column(end - 1)]
+                .flags
+                .contains(CellFlags::WIDE_CHAR)
         {
             self.rows[line][Column(end)].ch = ' ';
-            self.rows[line][Column(end)].flags.remove(CellFlags::WIDE_CHAR_SPACER);
+            self.rows[line][Column(end)]
+                .flags
+                .remove(CellFlags::WIDE_CHAR_SPACER);
         }
     }
 

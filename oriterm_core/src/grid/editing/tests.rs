@@ -25,12 +25,16 @@ fn put_char_wide_writes_pair() {
     grid.put_char('\u{597d}');
     let line = crate::index::Line(0);
     assert_eq!(grid[line][Column(0)].ch, '\u{597d}');
-    assert!(grid[line][Column(0)]
-        .flags
-        .contains(crate::cell::CellFlags::WIDE_CHAR));
-    assert!(grid[line][Column(1)]
-        .flags
-        .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER));
+    assert!(
+        grid[line][Column(0)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[line][Column(1)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
     assert_eq!(grid.cursor().col(), Column(2));
 }
 
@@ -59,9 +63,11 @@ fn overwrite_spacer_clears_wide_char() {
     let line = crate::index::Line(0);
     // The wide char at col 0 should be cleared.
     assert_eq!(grid[line][Column(0)].ch, ' ');
-    assert!(!grid[line][Column(0)]
-        .flags
-        .contains(crate::cell::CellFlags::WIDE_CHAR));
+    assert!(
+        !grid[line][Column(0)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
     assert_eq!(grid[line][Column(1)].ch, 'X');
 }
 
@@ -76,9 +82,11 @@ fn overwrite_wide_char_clears_spacer() {
     assert_eq!(grid[line][Column(0)].ch, 'Y');
     // The spacer at col 1 should be cleared.
     assert_eq!(grid[line][Column(1)].ch, ' ');
-    assert!(!grid[line][Column(1)]
-        .flags
-        .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER));
+    assert!(
+        !grid[line][Column(1)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
 }
 
 #[test]
@@ -468,9 +476,11 @@ fn wrap_flag_set_on_wrapped_line() {
     }
     // The last cell of line 0 should have the WRAP flag.
     let line0 = crate::index::Line(0);
-    assert!(grid[line0][Column(4)]
-        .flags
-        .contains(crate::cell::CellFlags::WRAP));
+    assert!(
+        grid[line0][Column(4)]
+            .flags
+            .contains(crate::cell::CellFlags::WRAP)
+    );
 }
 
 #[test]

@@ -5,7 +5,11 @@ use oriterm_core::Rgb;
 use super::PreparedFrame;
 
 const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
-const WHITE: Rgb = Rgb { r: 255, g: 255, b: 255 };
+const WHITE: Rgb = Rgb {
+    r: 255,
+    g: 255,
+    b: 255,
+};
 
 // --- Construction ---
 
@@ -65,7 +69,9 @@ fn populate_and_count() {
 
     frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
     frame.backgrounds.push_rect(8.0, 0.0, 8.0, 16.0, BLACK, 1.0);
-    frame.glyphs.push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+    frame
+        .glyphs
+        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
     frame.cursors.push_cursor(0.0, 0.0, 8.0, 16.0, WHITE, 1.0);
 
     assert!(!frame.is_empty());
@@ -79,7 +85,9 @@ fn populate_and_count() {
 fn clear_resets_all_buffers() {
     let mut frame = PreparedFrame::new(BLACK, 1.0);
     frame.backgrounds.push_rect(0.0, 0.0, 8.0, 16.0, BLACK, 1.0);
-    frame.glyphs.push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+    frame
+        .glyphs
+        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
     frame.cursors.push_cursor(0.0, 0.0, 8.0, 16.0, WHITE, 1.0);
 
     frame.clear();
@@ -101,7 +109,11 @@ fn clear_and_reuse() {
     assert!(frame.is_empty());
 
     // Second frame.
-    frame.glyphs.push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
-    frame.glyphs.push_glyph(8.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+    frame
+        .glyphs
+        .push_glyph(0.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
+    frame
+        .glyphs
+        .push_glyph(8.0, 0.0, 8.0, 16.0, [0.0; 4], WHITE, 1.0);
     assert_eq!(frame.total_instances(), 2);
 }

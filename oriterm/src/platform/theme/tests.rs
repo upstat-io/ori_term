@@ -29,8 +29,8 @@ mod linux {
     use oriterm_core::Theme;
 
     use super::super::{
-        classify_desktop, parse_dbus_color_scheme, parse_gsettings_color_scheme,
-        parse_kdeglobals, theme_from_gtk_name, DesktopEnvironment,
+        DesktopEnvironment, classify_desktop, parse_dbus_color_scheme,
+        parse_gsettings_color_scheme, parse_kdeglobals, theme_from_gtk_name,
     };
 
     #[test]
@@ -268,8 +268,7 @@ mod linux {
 
     #[test]
     fn kdeglobals_general_after_other_sections() {
-        let content =
-            "[Colors:Window]\nBg=0,0,0\n\n[General]\nColorScheme=BreezeDark\n";
+        let content = "[Colors:Window]\nBg=0,0,0\n\n[General]\nColorScheme=BreezeDark\n";
         assert_eq!(parse_kdeglobals(content), Some(Theme::Dark));
     }
 

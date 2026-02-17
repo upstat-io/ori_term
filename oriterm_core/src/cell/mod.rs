@@ -95,7 +95,10 @@ impl fmt::Display for Hyperlink {
 
 impl From<vte::ansi::Hyperlink> for Hyperlink {
     fn from(h: vte::ansi::Hyperlink) -> Self {
-        Self { id: h.id, uri: h.uri }
+        Self {
+            id: h.id,
+            uri: h.uri,
+        }
     }
 }
 
@@ -138,7 +141,10 @@ impl Default for Cell {
 impl From<Color> for Cell {
     /// BCE (Background Color Erase) cell: default cell with a custom background.
     fn from(bg: Color) -> Self {
-        Self { bg, ..Self::default() }
+        Self {
+            bg,
+            ..Self::default()
+        }
     }
 }
 

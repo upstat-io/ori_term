@@ -7,9 +7,9 @@
 use log::debug;
 use unicode_width::UnicodeWidthChar;
 use vte::ansi::{
-    Attr, CharsetIndex, ClearMode, CursorStyle, Handler, Hyperlink as VteHyperlink,
-    KeyboardModes, KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, NamedMode,
-    PrivateMode, Rgb, StandardCharset, TabulationClearMode,
+    Attr, CharsetIndex, ClearMode, CursorStyle, Handler, Hyperlink as VteHyperlink, KeyboardModes,
+    KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, NamedMode, PrivateMode, Rgb,
+    StandardCharset, TabulationClearMode,
 };
 
 use crate::event::{Event, EventListener};

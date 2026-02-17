@@ -89,7 +89,10 @@ fn all_flags_are_distinct() {
 
     // Each individual flag has exactly one bit set (excluding composite ANY_MOUSE).
     for flag in &flags {
-        assert!(flag.bits().is_power_of_two(), "{flag:?} is not a single bit");
+        assert!(
+            flag.bits().is_power_of_two(),
+            "{flag:?} is not a single bit"
+        );
     }
 }
 

@@ -354,8 +354,14 @@ fn rect_center() {
 #[test]
 fn rect_center_from_chrome() {
     // From RectTest.CenterPoint — various cases.
-    assert_eq!(Rect::new(0.0, 0.0, 20.0, 20.0).center(), Point::new(10.0, 10.0));
-    assert_eq!(Rect::new(10.0, 10.0, 20.0, 20.0).center(), Point::new(20.0, 20.0));
+    assert_eq!(
+        Rect::new(0.0, 0.0, 20.0, 20.0).center(),
+        Point::new(10.0, 10.0)
+    );
+    assert_eq!(
+        Rect::new(10.0, 10.0, 20.0, 20.0).center(),
+        Point::new(20.0, 20.0)
+    );
 
     // From RectFTest.CenterPoint — odd dimensions yield exact midpoint.
     assert_eq!(
@@ -364,7 +370,10 @@ fn rect_center_from_chrome() {
     );
 
     // Zero-width rect: center.x is at origin.x.
-    assert_eq!(Rect::new(10.0, 10.0, 0.0, 20.0).center(), Point::new(10.0, 20.0));
+    assert_eq!(
+        Rect::new(10.0, 10.0, 0.0, 20.0).center(),
+        Point::new(10.0, 20.0)
+    );
 }
 
 #[test]
@@ -386,22 +395,22 @@ fn rect_is_empty_from_chrome() {
 fn rect_contains_from_chrome() {
     // From RectTest.Contains — comprehensive containment.
     let r = Rect::new(0.0, 0.0, 10.0, 10.0);
-    assert!(r.contains(Point::new(0.0, 0.0)));   // Top-left corner.
-    assert!(r.contains(Point::new(5.0, 5.0)));   // Interior.
-    assert!(r.contains(Point::new(9.0, 9.0)));   // Near bottom-right (inside).
+    assert!(r.contains(Point::new(0.0, 0.0))); // Top-left corner.
+    assert!(r.contains(Point::new(5.0, 5.0))); // Interior.
+    assert!(r.contains(Point::new(9.0, 9.0))); // Near bottom-right (inside).
     assert!(!r.contains(Point::new(5.0, 10.0))); // Bottom edge excluded.
     assert!(!r.contains(Point::new(10.0, 5.0))); // Right edge excluded.
-    assert!(!r.contains(Point::new(-1.0, -1.0)));// Outside.
-    assert!(!r.contains(Point::new(50.0, 50.0)));// Far outside.
+    assert!(!r.contains(Point::new(-1.0, -1.0))); // Outside.
+    assert!(!r.contains(Point::new(50.0, 50.0))); // Far outside.
 }
 
 #[test]
 fn rect_contains_float_precision() {
     // From RectFTest.ContainsPointF — near boundary.
     let r = Rect::new(10.0, 20.0, 30.0, 40.0);
-    assert!(r.contains(Point::new(10.0, 20.0)));     // Top-left inclusive.
-    assert!(r.contains(Point::new(39.9999, 59.9999)));// Near bottom-right.
-    assert!(!r.contains(Point::new(40.0, 60.0)));     // Bottom-right exclusive.
+    assert!(r.contains(Point::new(10.0, 20.0))); // Top-left inclusive.
+    assert!(r.contains(Point::new(39.9999, 59.9999))); // Near bottom-right.
+    assert!(!r.contains(Point::new(40.0, 60.0))); // Bottom-right exclusive.
 }
 
 #[test]
@@ -628,8 +637,7 @@ fn rect_inset_vh_from_chrome() {
 #[test]
 fn rect_inset_per_edge_from_chrome() {
     // From RectFTest.Inset — per-edge inset.
-    let r = Rect::new(10.0, 20.0, 30.0, 40.0)
-        .inset(Insets::tlbr(2.25, 1.5, 4.0, 3.75));
+    let r = Rect::new(10.0, 20.0, 30.0, 40.0).inset(Insets::tlbr(2.25, 1.5, 4.0, 3.75));
     assert_eq!(r, Rect::new(11.5, 22.25, 24.75, 33.75));
 }
 
@@ -830,11 +838,26 @@ fn insets_neg_double_is_identity() {
 #[test]
 fn insets_equality_from_chrome() {
     // From InsetsFTest.Equality.
-    assert_eq!(Insets::tlbr(1.0, 2.0, 3.0, 4.0), Insets::tlbr(1.0, 2.0, 3.0, 4.0));
-    assert_ne!(Insets::tlbr(1.0, 2.0, 3.0, 4.0), Insets::tlbr(0.0, 2.0, 3.0, 4.0));
-    assert_ne!(Insets::tlbr(1.0, 2.0, 3.0, 4.0), Insets::tlbr(1.0, 0.0, 3.0, 4.0));
-    assert_ne!(Insets::tlbr(1.0, 2.0, 3.0, 4.0), Insets::tlbr(1.0, 2.0, 0.0, 4.0));
-    assert_ne!(Insets::tlbr(1.0, 2.0, 3.0, 4.0), Insets::tlbr(1.0, 2.0, 3.0, 0.0));
+    assert_eq!(
+        Insets::tlbr(1.0, 2.0, 3.0, 4.0),
+        Insets::tlbr(1.0, 2.0, 3.0, 4.0)
+    );
+    assert_ne!(
+        Insets::tlbr(1.0, 2.0, 3.0, 4.0),
+        Insets::tlbr(0.0, 2.0, 3.0, 4.0)
+    );
+    assert_ne!(
+        Insets::tlbr(1.0, 2.0, 3.0, 4.0),
+        Insets::tlbr(1.0, 0.0, 3.0, 4.0)
+    );
+    assert_ne!(
+        Insets::tlbr(1.0, 2.0, 3.0, 4.0),
+        Insets::tlbr(1.0, 2.0, 0.0, 4.0)
+    );
+    assert_ne!(
+        Insets::tlbr(1.0, 2.0, 3.0, 4.0),
+        Insets::tlbr(1.0, 2.0, 3.0, 0.0)
+    );
 }
 
 #[test]

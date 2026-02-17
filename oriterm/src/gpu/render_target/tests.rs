@@ -95,7 +95,9 @@ fn read_render_target_returns_correct_size() {
     };
 
     let target = gpu.create_render_target(16, 16);
-    let pixels = gpu.read_render_target(&target).expect("readback should succeed");
+    let pixels = gpu
+        .read_render_target(&target)
+        .expect("readback should succeed");
 
     // 16 * 16 * 4 (RGBA) = 1024 bytes.
     assert_eq!(pixels.len(), 16 * 16 * 4);
@@ -110,7 +112,9 @@ fn read_render_target_non_aligned_width() {
 
     // 10px wide = 40 bytes per row, not aligned to 256.
     let target = gpu.create_render_target(10, 8);
-    let pixels = gpu.read_render_target(&target).expect("readback should succeed");
+    let pixels = gpu
+        .read_render_target(&target)
+        .expect("readback should succeed");
 
     assert_eq!(pixels.len(), 10 * 8 * 4);
 }
@@ -123,7 +127,9 @@ fn read_render_target_single_pixel() {
     };
 
     let target = gpu.create_render_target(1, 1);
-    let pixels = gpu.read_render_target(&target).expect("readback should succeed");
+    let pixels = gpu
+        .read_render_target(&target)
+        .expect("readback should succeed");
 
     // 1 pixel = 4 bytes (RGBA).
     assert_eq!(pixels.len(), 4);

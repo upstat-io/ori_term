@@ -402,10 +402,9 @@ pub fn validate_gpu() -> usize {
         ..Default::default()
     });
 
-    let adapters: Vec<_> =
-        pollster::block_on(instance.enumerate_adapters(wgpu::Backends::PRIMARY))
-            .into_iter()
-            .collect();
+    let adapters: Vec<_> = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::PRIMARY))
+        .into_iter()
+        .collect();
 
     for a in &adapters {
         let info = a.get_info();

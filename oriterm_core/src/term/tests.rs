@@ -106,7 +106,10 @@ fn swap_alt_preserves_keyboard_mode_stacks() {
     // After swap, the active stack should be the (empty) inactive stack.
     term.swap_alt();
     assert!(term.keyboard_mode_stack.is_empty());
-    assert_eq!(term.inactive_keyboard_mode_stack, VecDeque::from(vec![mode1, mode3]));
+    assert_eq!(
+        term.inactive_keyboard_mode_stack,
+        VecDeque::from(vec![mode1, mode3])
+    );
 
     // Swap back: stacks return.
     term.swap_alt();
@@ -313,7 +316,10 @@ fn damage_reverse_index_scrolls() {
     let lines = damaged_lines(&mut t);
     // Scroll region damage covers the region (lines 0..3).
     for l in 0..4 {
-        assert!(lines.contains(&l), "line {l} in scroll region should be damaged");
+        assert!(
+            lines.contains(&l),
+            "line {l} in scroll region should be damaged"
+        );
     }
 }
 
@@ -373,7 +379,10 @@ fn damage_save_restore_cursor() {
 
     let lines = damaged_lines(&mut t);
     assert!(lines.contains(&5), "old cursor line 5 should be damaged");
-    assert!(lines.contains(&2), "restored cursor line 2 should be damaged");
+    assert!(
+        lines.contains(&2),
+        "restored cursor line 2 should be damaged"
+    );
 }
 
 // Erase operation damage
@@ -531,11 +540,20 @@ fn damage_scroll_up_in_region() {
     let lines = damaged_lines(&mut t);
     // Lines 1..4 (0-based) in the scroll region should be damaged.
     for l in 1..5 {
-        assert!(lines.contains(&l), "line {l} in scroll region should be damaged");
+        assert!(
+            lines.contains(&l),
+            "line {l} in scroll region should be damaged"
+        );
     }
     // Lines outside the region should not be damaged.
-    assert!(!lines.contains(&0), "line 0 above region should not be damaged");
-    assert!(!lines.contains(&5), "line 5 below region should not be damaged");
+    assert!(
+        !lines.contains(&0),
+        "line 0 above region should not be damaged"
+    );
+    assert!(
+        !lines.contains(&5),
+        "line 5 below region should not be damaged"
+    );
 }
 
 #[test]
@@ -550,7 +568,10 @@ fn damage_insert_lines() {
     let lines = damaged_lines(&mut t);
     // Lines from cursor (2) through bottom of scroll region should be damaged.
     for l in 2..6 {
-        assert!(lines.contains(&l), "line {l} should be damaged by insert_lines");
+        assert!(
+            lines.contains(&l),
+            "line {l} should be damaged by insert_lines"
+        );
     }
 }
 
@@ -566,7 +587,10 @@ fn damage_delete_lines() {
     let lines = damaged_lines(&mut t);
     // Lines from cursor (1) through bottom should be damaged.
     for l in 1..6 {
-        assert!(lines.contains(&l), "line {l} should be damaged by delete_lines");
+        assert!(
+            lines.contains(&l),
+            "line {l} should be damaged by delete_lines"
+        );
     }
 }
 
@@ -745,16 +769,44 @@ fn damage_set_scroll_region_damages_via_goto() {
 #[test]
 fn new_with_dark_theme_uses_dark_palette() {
     let t = Term::new(4, 10, 0, Theme::Dark, VoidListener);
-    assert_eq!(t.palette().foreground(), Rgb { r: 0xd3, g: 0xd7, b: 0xcf });
-    assert_eq!(t.palette().background(), Rgb { r: 0x00, g: 0x00, b: 0x00 });
+    assert_eq!(
+        t.palette().foreground(),
+        Rgb {
+            r: 0xd3,
+            g: 0xd7,
+            b: 0xcf
+        }
+    );
+    assert_eq!(
+        t.palette().background(),
+        Rgb {
+            r: 0x00,
+            g: 0x00,
+            b: 0x00
+        }
+    );
     assert_eq!(t.theme(), Theme::Dark);
 }
 
 #[test]
 fn new_with_light_theme_uses_light_palette() {
     let t = Term::new(4, 10, 0, Theme::Light, VoidListener);
-    assert_eq!(t.palette().foreground(), Rgb { r: 0x2e, g: 0x34, b: 0x36 });
-    assert_eq!(t.palette().background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+    assert_eq!(
+        t.palette().foreground(),
+        Rgb {
+            r: 0x2e,
+            g: 0x34,
+            b: 0x36
+        }
+    );
+    assert_eq!(
+        t.palette().background(),
+        Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff
+        }
+    );
     assert_eq!(t.theme(), Theme::Light);
 }
 
@@ -766,8 +818,22 @@ fn set_theme_switches_palette() {
     t.set_theme(Theme::Light);
 
     assert_eq!(t.theme(), Theme::Light);
-    assert_eq!(t.palette().foreground(), Rgb { r: 0x2e, g: 0x34, b: 0x36 });
-    assert_eq!(t.palette().background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+    assert_eq!(
+        t.palette().foreground(),
+        Rgb {
+            r: 0x2e,
+            g: 0x34,
+            b: 0x36
+        }
+    );
+    assert_eq!(
+        t.palette().background(),
+        Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff
+        }
+    );
 
     let dmg = t.damage();
     assert!(dmg.is_all_dirty(), "set_theme should mark all dirty");
@@ -790,12 +856,33 @@ fn set_theme_same_theme_is_noop() {
 fn ris_resets_to_current_theme() {
     let mut t = Term::new(4, 10, 0, Theme::Light, VoidListener);
     // Verify light palette is active.
-    assert_eq!(t.palette().background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
+    assert_eq!(
+        t.palette().background(),
+        Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff
+        }
+    );
 
     // RIS (ESC c) should reset to the stored theme (Light), not Dark.
     feed(&mut t, b"\x1bc");
 
     assert_eq!(t.theme(), Theme::Light);
-    assert_eq!(t.palette().background(), Rgb { r: 0xff, g: 0xff, b: 0xff });
-    assert_eq!(t.palette().foreground(), Rgb { r: 0x2e, g: 0x34, b: 0x36 });
+    assert_eq!(
+        t.palette().background(),
+        Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff
+        }
+    );
+    assert_eq!(
+        t.palette().foreground(),
+        Rgb {
+            r: 0x2e,
+            g: 0x34,
+            b: 0x36
+        }
+    );
 }

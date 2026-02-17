@@ -8,8 +8,8 @@ use crate::color::{Palette, Rgb};
 use crate::event::VoidListener;
 use crate::grid::CursorShape;
 use crate::index::Column;
-use crate::term::mode::TermMode;
 use crate::term::Term;
+use crate::term::mode::TermMode;
 use crate::theme::Theme;
 
 /// Create a 4x10 terminal for compact tests.
@@ -180,7 +180,14 @@ fn sgr_truecolor_resolves() {
 
     let content = t.renderable_content();
     let cell = &content.cells[0];
-    assert_eq!(cell.fg, Rgb { r: 255, g: 128, b: 0 });
+    assert_eq!(
+        cell.fg,
+        Rgb {
+            r: 255,
+            g: 128,
+            b: 0
+        }
+    );
 }
 
 #[test]
@@ -193,7 +200,10 @@ fn bold_as_bright_promotes_ansi_colors() {
     let palette = Palette::default();
 
     let cell = &content.cells[0];
-    assert_eq!(cell.fg, palette.resolve(Color::Named(NamedColor::BrightRed)));
+    assert_eq!(
+        cell.fg,
+        palette.resolve(Color::Named(NamedColor::BrightRed))
+    );
 }
 
 #[test]
@@ -207,7 +217,10 @@ fn bold_as_bright_does_not_affect_bright_colors() {
 
     let cell = &content.cells[0];
     // BrightRed.to_bright() returns BrightRed (no change).
-    assert_eq!(cell.fg, palette.resolve(Color::Named(NamedColor::BrightRed)));
+    assert_eq!(
+        cell.fg,
+        palette.resolve(Color::Named(NamedColor::BrightRed))
+    );
 }
 
 #[test]
@@ -220,7 +233,14 @@ fn bold_as_bright_does_not_affect_truecolor() {
 
     let cell = &content.cells[0];
     // Truecolor is not promoted by bold.
-    assert_eq!(cell.fg, Rgb { r: 100, g: 200, b: 50 });
+    assert_eq!(
+        cell.fg,
+        Rgb {
+            r: 100,
+            g: 200,
+            b: 50
+        }
+    );
 }
 
 #[test]
@@ -272,8 +292,15 @@ fn dim_reduces_brightness() {
 #[test]
 fn resolve_fg_spec_passthrough() {
     let palette = Palette::default();
-    let rgb = Rgb { r: 42, g: 84, b: 126 };
-    assert_eq!(resolve_fg(Color::Spec(rgb), CellFlags::empty(), &palette), rgb);
+    let rgb = Rgb {
+        r: 42,
+        g: 84,
+        b: 126,
+    };
+    assert_eq!(
+        resolve_fg(Color::Spec(rgb), CellFlags::empty(), &palette),
+        rgb
+    );
 }
 
 #[test]
@@ -295,15 +322,30 @@ fn resolve_fg_bold_indexed_no_promotion_above_7() {
 #[test]
 fn resolve_fg_dim_spec_reduces() {
     let palette = Palette::default();
-    let rgb = Rgb { r: 90, g: 150, b: 210 };
+    let rgb = Rgb {
+        r: 90,
+        g: 150,
+        b: 210,
+    };
     let result = resolve_fg(Color::Spec(rgb), CellFlags::DIM, &palette);
-    assert_eq!(result, Rgb { r: 60, g: 100, b: 140 });
+    assert_eq!(
+        result,
+        Rgb {
+            r: 60,
+            g: 100,
+            b: 140
+        }
+    );
 }
 
 #[test]
 fn resolve_bg_passthrough() {
     let palette = Palette::default();
-    let rgb = Rgb { r: 10, g: 20, b: 30 };
+    let rgb = Rgb {
+        r: 10,
+        g: 20,
+        b: 30,
+    };
     assert_eq!(resolve_bg(Color::Spec(rgb), &palette), rgb);
 }
 
@@ -518,7 +560,10 @@ fn combining_marks_propagate_to_renderable() {
     assert!(cell.zerowidth.is_empty());
 
     // Directly test that zerowidth propagates via CellExtra.
-    t.grid_mut().cursor_mut().template.push_zerowidth('\u{0301}');
+    t.grid_mut()
+        .cursor_mut()
+        .template
+        .push_zerowidth('\u{0301}');
     t.grid_mut().put_char('a');
 
     let content = t.renderable_content();
@@ -595,11 +640,22 @@ fn bold_plus_dim_truecolor() {
     let palette = Palette::default();
     // Bold does not promote truecolor. Dim reduces brightness.
     let result = resolve_fg(
-        Color::Spec(Rgb { r: 150, g: 120, b: 90 }),
+        Color::Spec(Rgb {
+            r: 150,
+            g: 120,
+            b: 90,
+        }),
         CellFlags::BOLD | CellFlags::DIM,
         &palette,
     );
-    assert_eq!(result, Rgb { r: 100, g: 80, b: 60 });
+    assert_eq!(
+        result,
+        Rgb {
+            r: 100,
+            g: 80,
+            b: 60
+        }
+    );
 }
 
 #[test]
@@ -659,7 +715,14 @@ fn underline_color_truecolor_in_snapshot() {
     let content = t.renderable_content();
     let cell = &content.cells[0];
     assert!(cell.flags.contains(CellFlags::UNDERLINE));
-    assert_eq!(cell.underline_color, Some(Rgb { r: 255, g: 0, b: 128 }));
+    assert_eq!(
+        cell.underline_color,
+        Some(Rgb {
+            r: 255,
+            g: 0,
+            b: 128
+        })
+    );
 }
 
 #[test]
@@ -672,7 +735,10 @@ fn underline_color_indexed_in_snapshot() {
     let palette = Palette::default();
     let cell = &content.cells[0];
     assert!(cell.flags.contains(CellFlags::UNDERLINE));
-    assert_eq!(cell.underline_color, Some(palette.resolve(Color::Indexed(196))));
+    assert_eq!(
+        cell.underline_color,
+        Some(palette.resolve(Color::Indexed(196)))
+    );
 }
 
 #[test]
@@ -855,7 +921,14 @@ fn dim_reduces_truecolor_brightness() {
 
     let content = t.renderable_content();
     let cell = &content.cells[0];
-    assert_eq!(cell.fg, Rgb { r: 100, g: 80, b: 60 });
+    assert_eq!(
+        cell.fg,
+        Rgb {
+            r: 100,
+            g: 80,
+            b: 60
+        }
+    );
 }
 
 #[test]
@@ -895,7 +968,12 @@ fn bold_promotes_all_ansi_0_through_7() {
     for idx in 0..8u8 {
         let result = resolve_fg(Color::Indexed(idx), CellFlags::BOLD, &palette);
         let expected = palette.resolve(Color::Indexed(idx + 8));
-        assert_eq!(result, expected, "Bold should promote indexed {idx} to {}", idx + 8);
+        assert_eq!(
+            result,
+            expected,
+            "Bold should promote indexed {idx} to {}",
+            idx + 8
+        );
     }
 }
 
@@ -1203,10 +1281,24 @@ fn indexed_truecolor_mixed_in_one_line() {
 
     let a = &content.cells[0];
     assert_eq!(a.fg, palette.resolve(Color::Indexed(100)));
-    assert_eq!(a.bg, Rgb { r: 10, g: 20, b: 30 });
+    assert_eq!(
+        a.bg,
+        Rgb {
+            r: 10,
+            g: 20,
+            b: 30
+        }
+    );
 
     let b = &content.cells[1];
-    assert_eq!(b.fg, Rgb { r: 200, g: 150, b: 100 });
+    assert_eq!(
+        b.fg,
+        Rgb {
+            r: 200,
+            g: 150,
+            b: 100
+        }
+    );
     assert_eq!(b.bg, palette.resolve(Color::Named(NamedColor::Blue)));
 }
 
@@ -1336,10 +1428,7 @@ fn multiple_zerowidth_types_propagate_to_renderable() {
 fn four_combining_marks_propagate_to_renderable() {
     let mut t = term();
     // 'o' + 4 combining marks.
-    feed(
-        &mut t,
-        "o\u{0300}\u{0301}\u{0302}\u{0303}".as_bytes(),
-    );
+    feed(&mut t, "o\u{0300}\u{0301}\u{0302}\u{0303}".as_bytes());
 
     let content = t.renderable_content();
     let cell = &content.cells[0];

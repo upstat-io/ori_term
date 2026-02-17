@@ -15,7 +15,10 @@ fn pty_err(e: impl std::fmt::Display) -> io::Error {
 /// Wraps the underlying PTY library's exit status so callers don't depend
 /// on `portable_pty` types directly.
 #[derive(Debug, Clone)]
-#[allow(dead_code, reason = "fields read by methods; methods used when UI reports exit status")]
+#[allow(
+    dead_code,
+    reason = "fields read by methods; methods used when UI reports exit status"
+)]
 pub struct ExitStatus {
     /// Process exit code.
     code: u32,
@@ -198,23 +201,14 @@ pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
 
     let cmd = build_command(config);
 
-    let child = pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(pty_err)?;
+    let child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
 
     // Drop the slave side so the reader detects EOF when child exits.
     drop(pair.slave);
 
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(pty_err)?;
+    let reader = pair.master.try_clone_reader().map_err(pty_err)?;
 
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(pty_err)?;
+    let writer = pair.master.take_writer().map_err(pty_err)?;
 
     Ok(PtyHandle {
         reader: Some(reader),
@@ -226,10 +220,7 @@ pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
 
 /// Build a `CommandBuilder` with shell detection and environment variables.
 pub(crate) fn build_command(config: &PtyConfig) -> CommandBuilder {
-    let shell = config
-        .shell
-        .as_deref()
-        .unwrap_or_else(|| default_shell());
+    let shell = config.shell.as_deref().unwrap_or_else(|| default_shell());
 
     let mut cmd = CommandBuilder::new(shell);
 

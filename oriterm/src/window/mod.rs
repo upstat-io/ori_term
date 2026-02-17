@@ -11,7 +11,10 @@
 
 // TermWindow is fully implemented but not yet called from the event loop
 // (added later in Section 05). Suppress dead-code warnings until then.
-#![expect(dead_code, reason = "TermWindow used once event loop is wired in Section 05")]
+#![expect(
+    dead_code,
+    reason = "TermWindow used once event loop is wired in Section 05"
+)]
 
 use std::fmt;
 use std::sync::Arc;

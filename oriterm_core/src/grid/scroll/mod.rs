@@ -9,8 +9,8 @@ use std::ops::Range;
 
 use crate::cell::Cell;
 
-use super::row::Row;
 use super::Grid;
+use super::row::Row;
 
 impl Grid {
     /// DECSTBM: set the scroll region.

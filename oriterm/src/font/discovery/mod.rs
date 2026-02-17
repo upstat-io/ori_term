@@ -21,7 +21,7 @@ mod windows;
 
 use std::path::PathBuf;
 
-use families::{FamilySpec, FALLBACK_FONTS};
+use families::{FALLBACK_FONTS, FamilySpec};
 
 /// Embedded `JetBrains` Mono regular — guaranteed fallback that ships with the binary.
 pub(crate) const EMBEDDED_FONT_DATA: &[u8] =
@@ -210,7 +210,11 @@ fn resolve_fallback_chain(
     for spec in FALLBACK_FONTS {
         for filename in spec.filenames {
             if let Some(path) = lookup(filename) {
-                log::debug!("font discovery: fallback {:?} → {}", spec.name, path.display());
+                log::debug!(
+                    "font discovery: fallback {:?} → {}",
+                    spec.name,
+                    path.display()
+                );
                 fallbacks.push(FallbackDiscovery {
                     path,
                     face_index: 0,

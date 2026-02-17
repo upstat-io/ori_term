@@ -55,10 +55,20 @@ impl CellMetrics {
     ///
     /// Panics in debug mode if any dimension is non-positive or non-finite.
     pub fn new(width: f32, height: f32, baseline: f32) -> Self {
-        debug_assert!(width > 0.0 && width.is_finite(), "cell width must be positive");
-        debug_assert!(height > 0.0 && height.is_finite(), "cell height must be positive");
+        debug_assert!(
+            width > 0.0 && width.is_finite(),
+            "cell width must be positive"
+        );
+        debug_assert!(
+            height > 0.0 && height.is_finite(),
+            "cell height must be positive"
+        );
         debug_assert!(baseline.is_finite(), "baseline must be finite");
-        Self { width, height, baseline }
+        Self {
+            width,
+            height,
+            baseline,
+        }
     }
 
     /// Number of columns that fit in the viewport width.

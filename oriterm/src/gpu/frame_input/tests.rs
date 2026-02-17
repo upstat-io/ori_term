@@ -5,8 +5,16 @@ use oriterm_core::{Column, CursorShape, RenderableContent, RenderableCursor, Rgb
 use super::{CellMetrics, FrameInput, FramePalette, ViewportSize};
 
 const BG: Rgb = Rgb { r: 0, g: 0, b: 0 };
-const FG: Rgb = Rgb { r: 211, g: 215, b: 207 };
-const CURSOR: Rgb = Rgb { r: 255, g: 255, b: 255 };
+const FG: Rgb = Rgb {
+    r: 211,
+    g: 215,
+    b: 207,
+};
+const CURSOR: Rgb = Rgb {
+    r: 255,
+    g: 255,
+    b: 255,
+};
 
 /// Build a minimal `RenderableContent` for testing.
 fn empty_content() -> RenderableContent {

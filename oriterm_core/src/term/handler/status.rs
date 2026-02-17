@@ -13,20 +13,26 @@ use vte::ansi::{Mode, NamedMode, PrivateMode};
 use crate::event::{Event, EventListener};
 use crate::term::{Term, TermMode};
 
-use super::helpers::{crate_version_number, mode_report_value, named_private_mode_flag,
-    named_private_mode_number};
+use super::helpers::{
+    crate_version_number, mode_report_value, named_private_mode_flag, named_private_mode_number,
+};
 
-#[expect(clippy::needless_pass_by_ref_mut, reason = "Handler trait requires &mut self")]
+#[expect(
+    clippy::needless_pass_by_ref_mut,
+    reason = "Handler trait requires &mut self"
+)]
 impl<T: EventListener> Term<T> {
     /// DECRQM: report ANSI mode status.
     pub(super) fn status_report_mode(&mut self, mode: Mode) {
         let (num, value) = match mode {
-            Mode::Named(NamedMode::Insert) => {
-                (4u16, mode_report_value(self.mode.contains(TermMode::INSERT)))
-            }
-            Mode::Named(NamedMode::LineFeedNewLine) => {
-                (20, mode_report_value(self.mode.contains(TermMode::LINE_FEED_NEW_LINE)))
-            }
+            Mode::Named(NamedMode::Insert) => (
+                4u16,
+                mode_report_value(self.mode.contains(TermMode::INSERT)),
+            ),
+            Mode::Named(NamedMode::LineFeedNewLine) => (
+                20,
+                mode_report_value(self.mode.contains(TermMode::LINE_FEED_NEW_LINE)),
+            ),
             Mode::Unknown(n) => (n, 0),
         };
         let response = format!("\x1b[{num};{value}$y");

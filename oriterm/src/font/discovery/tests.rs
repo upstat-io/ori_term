@@ -1,11 +1,16 @@
 use super::families::{FALLBACK_FONTS, PRIMARY_FAMILIES};
-use super::{EMBEDDED_FONT_DATA, FontOrigin, discover_fonts, embedded_family, resolve_user_fallback};
+use super::{
+    EMBEDDED_FONT_DATA, FontOrigin, discover_fonts, embedded_family, resolve_user_fallback,
+};
 
 /// The embedded JetBrains Mono bytes parse as a valid font.
 #[test]
 fn embedded_font_is_valid() {
     let font_ref = swash::FontRef::from_index(EMBEDDED_FONT_DATA, 0);
-    assert!(font_ref.is_some(), "embedded font data should parse as a valid font");
+    assert!(
+        font_ref.is_some(),
+        "embedded font data should parse as a valid font"
+    );
 }
 
 /// The embedded family has the correct origin and variant flags.
@@ -14,10 +19,22 @@ fn embedded_family_has_correct_origin() {
     let family = embedded_family();
 
     assert_eq!(family.origin, FontOrigin::Embedded);
-    assert!(family.has_variant[0], "Regular slot must be marked available");
-    assert!(!family.has_variant[1], "Bold slot should be unavailable (needs synthesis)");
-    assert!(!family.has_variant[2], "Italic slot should be unavailable (needs synthesis)");
-    assert!(!family.has_variant[3], "BoldItalic slot should be unavailable (needs synthesis)");
+    assert!(
+        family.has_variant[0],
+        "Regular slot must be marked available"
+    );
+    assert!(
+        !family.has_variant[1],
+        "Bold slot should be unavailable (needs synthesis)"
+    );
+    assert!(
+        !family.has_variant[2],
+        "Italic slot should be unavailable (needs synthesis)"
+    );
+    assert!(
+        !family.has_variant[3],
+        "BoldItalic slot should be unavailable (needs synthesis)"
+    );
 
     // All paths are None for embedded fonts.
     for (i, path) in family.paths.iter().enumerate() {
@@ -140,7 +157,9 @@ fn font_index_finds_files() {
         );
         // Spot-check: only font-like extensions.
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            let valid = ["ttf", "otf", "ttc", "woff", "woff2", "dfont", "pcf", "bdf", "pfb"];
+            let valid = [
+                "ttf", "otf", "ttc", "woff", "woff2", "dfont", "pcf", "bdf", "pfb",
+            ];
             // We index everything; just verify the path is a file.
             let _ = valid.contains(&ext);
         }
@@ -170,7 +189,10 @@ fn discovery_result_consistency() {
 fn embedded_font_has_metrics() {
     let font_ref = swash::FontRef::from_index(EMBEDDED_FONT_DATA, 0).unwrap();
     let metrics = font_ref.metrics(&[]);
-    assert!(metrics.units_per_em > 0, "font must have valid units_per_em");
+    assert!(
+        metrics.units_per_em > 0,
+        "font must have valid units_per_em"
+    );
     assert!(metrics.ascent > 0.0, "font must have positive ascent");
 }
 
@@ -236,7 +258,10 @@ fn resolve_user_fallback_absolute_path() {
     if let Some((_name, path)) = index.iter().next() {
         let path_str = path.to_str().expect("font path should be valid UTF-8");
         let result = resolve_user_fallback(path_str);
-        assert!(result.is_some(), "absolute path to existing font should resolve");
+        assert!(
+            result.is_some(),
+            "absolute path to existing font should resolve"
+        );
         let fb = result.unwrap();
         assert_eq!(fb.path, *path);
         assert_eq!(fb.origin, FontOrigin::UserConfig);

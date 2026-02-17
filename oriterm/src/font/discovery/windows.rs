@@ -7,8 +7,7 @@ use std::path::PathBuf;
 
 use super::families::{DWRITE_FALLBACK_FAMILIES, DWRITE_FAMILY_NAMES, PRIMARY_FAMILIES};
 use super::{
-    DiscoveryResult, FallbackDiscovery, FontOrigin, resolve_fallback_chain,
-    try_families_from_specs,
+    DiscoveryResult, FallbackDiscovery, FontOrigin, resolve_fallback_chain, try_families_from_specs,
 };
 
 /// Resolve a single font variant via DirectWrite by family name, weight, and style.
@@ -45,25 +44,26 @@ fn resolve_family_dwrite(family_name: &str, weight: u16) -> Option<[Option<PathB
 
     let regular = resolve_font_dwrite(family_name, regular_weight, dwrote::FontStyle::Normal)?;
 
-    let bold =
-        resolve_font_dwrite(family_name, bold_weight, dwrote::FontStyle::Normal)
-            .filter(|p| *p != regular);
+    let bold = resolve_font_dwrite(family_name, bold_weight, dwrote::FontStyle::Normal)
+        .filter(|p| *p != regular);
 
-    let italic =
-        resolve_font_dwrite(family_name, regular_weight, dwrote::FontStyle::Italic)
-            .filter(|p| *p != regular);
+    let italic = resolve_font_dwrite(family_name, regular_weight, dwrote::FontStyle::Italic)
+        .filter(|p| *p != regular);
 
-    let bold_italic =
-        resolve_font_dwrite(family_name, bold_weight, dwrote::FontStyle::Italic)
-            .filter(|p| *p != regular);
+    let bold_italic = resolve_font_dwrite(family_name, bold_weight, dwrote::FontStyle::Italic)
+        .filter(|p| *p != regular);
 
     log::info!(
         "font discovery (dwrite): {family_name:?} weight={weight} → \
          regular={}, bold={}, italic={}, bold_italic={}",
         regular.display(),
         bold.as_ref().map_or("none", |p| p.to_str().unwrap_or("?")),
-        italic.as_ref().map_or("none", |p| p.to_str().unwrap_or("?")),
-        bold_italic.as_ref().map_or("none", |p| p.to_str().unwrap_or("?")),
+        italic
+            .as_ref()
+            .map_or("none", |p| p.to_str().unwrap_or("?")),
+        bold_italic
+            .as_ref()
+            .map_or("none", |p| p.to_str().unwrap_or("?")),
     );
 
     Some([Some(regular), bold, italic, bold_italic])
@@ -80,7 +80,10 @@ fn resolve_fallbacks_dwrite() -> Vec<FallbackDiscovery> {
             resolve_font_dwrite(name, dwrote::FontWeight::Regular, dwrote::FontStyle::Normal)
         {
             if seen.insert(path.clone()) {
-                log::debug!("font discovery: dwrite fallback {name:?} → {}", path.display());
+                log::debug!(
+                    "font discovery: dwrite fallback {name:?} → {}",
+                    path.display()
+                );
                 fallbacks.push(FallbackDiscovery {
                     path,
                     face_index: 0,
@@ -121,11 +124,8 @@ pub(super) fn try_user_family(name: &str, weight: u16) -> Option<DiscoveryResult
         PathBuf::from(r"C:\Windows\Fonts").join(name)
     };
     if path.exists() {
-        let primary = super::family_from_paths(
-            name,
-            [Some(path), None, None, None],
-            FontOrigin::UserConfig,
-        );
+        let primary =
+            super::family_from_paths(name, [Some(path), None, None, None], FontOrigin::UserConfig);
         let fallbacks = resolve_fallbacks_dwrite();
         return Some(DiscoveryResult { primary, fallbacks });
     }
@@ -152,8 +152,7 @@ pub(super) fn try_platform_defaults(weight: u16) -> Option<DiscoveryResult> {
         let path = PathBuf::from(filename);
         if path.exists() { Some(path) } else { None }
     };
-    let primary =
-        try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
+    let primary = try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
     let fallbacks = resolve_fallbacks_dwrite();
     Some(DiscoveryResult { primary, fallbacks })
 }

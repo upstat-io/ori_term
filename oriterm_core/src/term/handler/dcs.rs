@@ -5,13 +5,11 @@
 //! by the `vte::ansi::Handler` trait impl on `Term<T>`.
 
 use log::debug;
-use vte::ansi::{
-    CursorStyle, KeyboardModes, KeyboardModesApplyBehavior, ModifyOtherKeys,
-};
+use vte::ansi::{CursorStyle, KeyboardModes, KeyboardModesApplyBehavior, ModifyOtherKeys};
 
 use crate::event::{Event, EventListener};
 use crate::grid::CursorShape;
-use crate::term::{Term, TermMode, KEYBOARD_MODE_STACK_MAX_DEPTH};
+use crate::term::{KEYBOARD_MODE_STACK_MAX_DEPTH, Term, TermMode};
 
 impl<T: EventListener> Term<T> {
     /// DECSCUSR: set cursor shape and blinking.
@@ -48,7 +46,10 @@ impl<T: EventListener> Term<T> {
 
     /// Pop `to_pop` keyboard modes from the stack, reloading the active mode.
     pub(super) fn dcs_pop_keyboard_modes(&mut self, to_pop: u16) {
-        let new_len = self.keyboard_mode_stack.len().saturating_sub(to_pop as usize);
+        let new_len = self
+            .keyboard_mode_stack
+            .len()
+            .saturating_sub(to_pop as usize);
         self.keyboard_mode_stack.truncate(new_len);
 
         let mode = self
@@ -79,7 +80,10 @@ impl<T: EventListener> Term<T> {
     }
 
     /// Report the current keyboard mode to the PTY (`CSI ? <mode> u`).
-    #[expect(clippy::needless_pass_by_ref_mut, reason = "Handler trait requires &mut self")]
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "Handler trait requires &mut self"
+    )]
     pub(super) fn dcs_report_keyboard_mode(&mut self) {
         let bits = self
             .keyboard_mode_stack
@@ -92,13 +96,19 @@ impl<T: EventListener> Term<T> {
     }
 
     /// `XTerm` `modifyOtherKeys`: stub implementation.
-    #[expect(clippy::needless_pass_by_ref_mut, reason = "Handler trait requires &mut self")]
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "Handler trait requires &mut self"
+    )]
     pub(super) fn dcs_set_modify_other_keys(&mut self, mode: ModifyOtherKeys) {
         debug!("Ignoring modifyOtherKeys: {mode:?}");
     }
 
     /// `XTerm` `modifyOtherKeys` report: stub implementation.
-    #[expect(clippy::needless_pass_by_ref_mut, reason = "Handler trait requires &mut self")]
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "Handler trait requires &mut self"
+    )]
     pub(super) fn dcs_report_modify_other_keys(&mut self) {
         // Report mode 0 (disabled) since we don't implement modifyOtherKeys.
         let response = "\x1b[>4;0m".to_string();
@@ -109,7 +119,10 @@ impl<T: EventListener> Term<T> {
     ///
     /// Real implementation requires window dimensions from the GUI layer.
     /// Returns 0x0 until wired to the actual window.
-    #[expect(clippy::needless_pass_by_ref_mut, reason = "Handler trait requires &mut self")]
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "Handler trait requires &mut self"
+    )]
     pub(super) fn dcs_text_area_size_pixels(&mut self) {
         debug!("text_area_size_pixels: no window yet, reporting 0x0");
         let response = "\x1b[4;0;0t".to_string();

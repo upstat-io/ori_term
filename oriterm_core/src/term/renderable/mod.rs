@@ -157,7 +157,11 @@ pub(super) fn resolve_fg(color: Color, flags: CellFlags, palette: &Palette) -> R
 
     match color {
         Color::Spec(rgb) => {
-            if is_dim { dim_rgb(rgb) } else { rgb }
+            if is_dim {
+                dim_rgb(rgb)
+            } else {
+                rgb
+            }
         }
         Color::Indexed(idx) => {
             if is_dim {

@@ -15,37 +15,125 @@ pub const NUM_COLORS: usize = 270;
 
 /// Standard xterm ANSI colors (indices 0–15).
 const ANSI_COLORS: [Rgb; 16] = [
-    Rgb { r: 0x00, g: 0x00, b: 0x00 }, // 0  Black
-    Rgb { r: 0xcc, g: 0x00, b: 0x00 }, // 1  Red
-    Rgb { r: 0x4e, g: 0x9a, b: 0x06 }, // 2  Green
-    Rgb { r: 0xc4, g: 0xa0, b: 0x00 }, // 3  Yellow
-    Rgb { r: 0x34, g: 0x65, b: 0xa4 }, // 4  Blue
-    Rgb { r: 0x75, g: 0x50, b: 0x7b }, // 5  Magenta
-    Rgb { r: 0x06, g: 0x98, b: 0x9a }, // 6  Cyan
-    Rgb { r: 0xd3, g: 0xd7, b: 0xcf }, // 7  White
-    Rgb { r: 0x55, g: 0x57, b: 0x53 }, // 8  Bright Black
-    Rgb { r: 0xef, g: 0x29, b: 0x29 }, // 9  Bright Red
-    Rgb { r: 0x8a, g: 0xe2, b: 0x34 }, // 10 Bright Green
-    Rgb { r: 0xfc, g: 0xe9, b: 0x4f }, // 11 Bright Yellow
-    Rgb { r: 0x72, g: 0x9f, b: 0xcf }, // 12 Bright Blue
-    Rgb { r: 0xad, g: 0x7f, b: 0xa8 }, // 13 Bright Magenta
-    Rgb { r: 0x34, g: 0xe2, b: 0xe2 }, // 14 Bright Cyan
-    Rgb { r: 0xee, g: 0xee, b: 0xec }, // 15 Bright White
+    Rgb {
+        r: 0x00,
+        g: 0x00,
+        b: 0x00,
+    }, // 0  Black
+    Rgb {
+        r: 0xcc,
+        g: 0x00,
+        b: 0x00,
+    }, // 1  Red
+    Rgb {
+        r: 0x4e,
+        g: 0x9a,
+        b: 0x06,
+    }, // 2  Green
+    Rgb {
+        r: 0xc4,
+        g: 0xa0,
+        b: 0x00,
+    }, // 3  Yellow
+    Rgb {
+        r: 0x34,
+        g: 0x65,
+        b: 0xa4,
+    }, // 4  Blue
+    Rgb {
+        r: 0x75,
+        g: 0x50,
+        b: 0x7b,
+    }, // 5  Magenta
+    Rgb {
+        r: 0x06,
+        g: 0x98,
+        b: 0x9a,
+    }, // 6  Cyan
+    Rgb {
+        r: 0xd3,
+        g: 0xd7,
+        b: 0xcf,
+    }, // 7  White
+    Rgb {
+        r: 0x55,
+        g: 0x57,
+        b: 0x53,
+    }, // 8  Bright Black
+    Rgb {
+        r: 0xef,
+        g: 0x29,
+        b: 0x29,
+    }, // 9  Bright Red
+    Rgb {
+        r: 0x8a,
+        g: 0xe2,
+        b: 0x34,
+    }, // 10 Bright Green
+    Rgb {
+        r: 0xfc,
+        g: 0xe9,
+        b: 0x4f,
+    }, // 11 Bright Yellow
+    Rgb {
+        r: 0x72,
+        g: 0x9f,
+        b: 0xcf,
+    }, // 12 Bright Blue
+    Rgb {
+        r: 0xad,
+        g: 0x7f,
+        b: 0xa8,
+    }, // 13 Bright Magenta
+    Rgb {
+        r: 0x34,
+        g: 0xe2,
+        b: 0xe2,
+    }, // 14 Bright Cyan
+    Rgb {
+        r: 0xee,
+        g: 0xee,
+        b: 0xec,
+    }, // 15 Bright White
 ];
 
 /// Default foreground for dark theme (light gray — Tango Aluminium 3).
-const DARK_FG: Rgb = Rgb { r: 0xd3, g: 0xd7, b: 0xcf };
+const DARK_FG: Rgb = Rgb {
+    r: 0xd3,
+    g: 0xd7,
+    b: 0xcf,
+};
 /// Default background for dark theme (black).
-const DARK_BG: Rgb = Rgb { r: 0x00, g: 0x00, b: 0x00 };
+const DARK_BG: Rgb = Rgb {
+    r: 0x00,
+    g: 0x00,
+    b: 0x00,
+};
 /// Default cursor color for dark theme (white).
-const DARK_CURSOR: Rgb = Rgb { r: 0xff, g: 0xff, b: 0xff };
+const DARK_CURSOR: Rgb = Rgb {
+    r: 0xff,
+    g: 0xff,
+    b: 0xff,
+};
 
 /// Default foreground for light theme (dark gray — Tango Aluminium 6).
-const LIGHT_FG: Rgb = Rgb { r: 0x2e, g: 0x34, b: 0x36 };
+const LIGHT_FG: Rgb = Rgb {
+    r: 0x2e,
+    g: 0x34,
+    b: 0x36,
+};
 /// Default background for light theme (white).
-const LIGHT_BG: Rgb = Rgb { r: 0xff, g: 0xff, b: 0xff };
+const LIGHT_BG: Rgb = Rgb {
+    r: 0xff,
+    g: 0xff,
+    b: 0xff,
+};
 /// Default cursor color for light theme (black).
-const LIGHT_CURSOR: Rgb = Rgb { r: 0x00, g: 0x00, b: 0x00 };
+const LIGHT_CURSOR: Rgb = Rgb {
+    r: 0x00,
+    g: 0x00,
+    b: 0x00,
+};
 
 /// 270-entry color palette with indexed and named color slots.
 ///
@@ -74,7 +162,10 @@ impl Palette {
     #[must_use]
     pub fn for_theme(theme: Theme) -> Self {
         let colors = build_palette(theme);
-        Self { colors, defaults: colors }
+        Self {
+            colors,
+            defaults: colors,
+        }
     }
 
     /// Resolve a `vte::ansi::Color` to an `Rgb` value.

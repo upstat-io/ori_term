@@ -97,10 +97,7 @@ fn select_alpha_mode_prefers_premultiplied() {
         usages: TextureUsages::RENDER_ATTACHMENT,
     };
 
-    assert_eq!(
-        select_alpha_mode(&caps),
-        CompositeAlphaMode::PreMultiplied,
-    );
+    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::PreMultiplied,);
 }
 
 #[test]
@@ -115,10 +112,7 @@ fn select_alpha_mode_falls_back_to_postmultiplied() {
         usages: TextureUsages::RENDER_ATTACHMENT,
     };
 
-    assert_eq!(
-        select_alpha_mode(&caps),
-        CompositeAlphaMode::PostMultiplied,
-    );
+    assert_eq!(select_alpha_mode(&caps), CompositeAlphaMode::PostMultiplied,);
 }
 
 #[test]
@@ -269,10 +263,7 @@ fn gpu_adapter_reports_srgb_capable_format() {
 
     // Every modern GPU should support at least one format with an sRGB suffix.
     let info = adapter.get_info();
-    let srgb_capable = [
-        TextureFormat::Bgra8UnormSrgb,
-        TextureFormat::Rgba8UnormSrgb,
-    ];
+    let srgb_capable = [TextureFormat::Bgra8UnormSrgb, TextureFormat::Rgba8UnormSrgb];
 
     // We can't check surface formats without a surface, but we can verify
     // the adapter is not a software fallback with no capabilities.
@@ -298,14 +289,12 @@ fn gpu_device_creation_succeeds() {
         return;
     };
 
-    let result = pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: Some("oriterm_test"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            ..Default::default()
-        },
-    ));
+    let result = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("oriterm_test"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        ..Default::default()
+    }));
 
     assert!(result.is_ok(), "device creation should succeed: {result:?}");
 }
@@ -322,14 +311,12 @@ fn gpu_pipeline_cache_round_trip() {
         return;
     }
 
-    let (device, _queue) = pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: Some("oriterm_cache_test"),
-            required_features: wgpu::Features::PIPELINE_CACHE,
-            required_limits: wgpu::Limits::default(),
-            ..Default::default()
-        },
-    ))
+    let (device, _queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("oriterm_cache_test"),
+        required_features: wgpu::Features::PIPELINE_CACHE,
+        required_limits: wgpu::Limits::default(),
+        ..Default::default()
+    }))
     .expect("device creation should succeed");
 
     // Create a fresh pipeline cache (no initial data).
@@ -367,14 +354,12 @@ fn gpu_texture_dimension_limits_are_reasonable() {
         return;
     };
 
-    let (device, _queue) = pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: Some("oriterm_limits_test"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            ..Default::default()
-        },
-    ))
+    let (device, _queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("oriterm_limits_test"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        ..Default::default()
+    }))
     .expect("device creation should succeed");
 
     let limits = device.limits();
@@ -405,10 +390,7 @@ fn headless_init_succeeds_when_adapter_available() {
     match GpuState::new_headless() {
         Ok(gpu) => {
             // Headless always uses Rgba8UnormSrgb.
-            assert_eq!(
-                gpu.render_format(),
-                TextureFormat::Rgba8UnormSrgb,
-            );
+            assert_eq!(gpu.render_format(), TextureFormat::Rgba8UnormSrgb,);
             assert_eq!(gpu.surface_format(), gpu.render_format());
             // Headless has no compositor, so no transparency.
             assert!(!gpu.supports_transparency());

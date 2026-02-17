@@ -13,14 +13,20 @@ fn default_all_ascii_no_translation() {
 #[test]
 fn dec_special_graphics_q_maps_to_horizontal_line() {
     let mut state = CharsetState::default();
-    state.set_charset(CharsetIndex::G0, StandardCharset::SpecialCharacterAndLineDrawing);
+    state.set_charset(
+        CharsetIndex::G0,
+        StandardCharset::SpecialCharacterAndLineDrawing,
+    );
     assert_eq!(state.translate('q'), '─'); // U+2500
 }
 
 #[test]
 fn dec_special_graphics_box_drawing_chars() {
     let mut state = CharsetState::default();
-    state.set_charset(CharsetIndex::G0, StandardCharset::SpecialCharacterAndLineDrawing);
+    state.set_charset(
+        CharsetIndex::G0,
+        StandardCharset::SpecialCharacterAndLineDrawing,
+    );
 
     assert_eq!(state.translate('l'), '┌'); // top-left corner
     assert_eq!(state.translate('k'), '┐'); // top-right corner
@@ -34,7 +40,10 @@ fn dec_special_graphics_box_drawing_chars() {
 fn single_shift_applies_for_one_char_then_reverts() {
     let mut state = CharsetState::default();
     // G0 = ASCII (default), G2 = DEC special graphics.
-    state.set_charset(CharsetIndex::G2, StandardCharset::SpecialCharacterAndLineDrawing);
+    state.set_charset(
+        CharsetIndex::G2,
+        StandardCharset::SpecialCharacterAndLineDrawing,
+    );
     state.set_single_shift(CharsetIndex::G2);
 
     // First char uses G2 (DEC special graphics).
@@ -46,7 +55,10 @@ fn single_shift_applies_for_one_char_then_reverts() {
 #[test]
 fn g0_g1_switching() {
     let mut state = CharsetState::default();
-    state.set_charset(CharsetIndex::G1, StandardCharset::SpecialCharacterAndLineDrawing);
+    state.set_charset(
+        CharsetIndex::G1,
+        StandardCharset::SpecialCharacterAndLineDrawing,
+    );
 
     // Active is G0 (ASCII) by default.
     assert_eq!(state.translate('q'), 'q');
@@ -63,7 +75,10 @@ fn g0_g1_switching() {
 #[test]
 fn chars_outside_mapping_range_pass_through() {
     let mut state = CharsetState::default();
-    state.set_charset(CharsetIndex::G0, StandardCharset::SpecialCharacterAndLineDrawing);
+    state.set_charset(
+        CharsetIndex::G0,
+        StandardCharset::SpecialCharacterAndLineDrawing,
+    );
 
     // Characters below 0x5F pass through unchanged.
     assert_eq!(state.translate('A'), 'A');
@@ -75,7 +90,10 @@ fn chars_outside_mapping_range_pass_through() {
 fn single_shift_overrides_active_charset() {
     let mut state = CharsetState::default();
     // G0 = DEC special graphics, G1 = ASCII.
-    state.set_charset(CharsetIndex::G0, StandardCharset::SpecialCharacterAndLineDrawing);
+    state.set_charset(
+        CharsetIndex::G0,
+        StandardCharset::SpecialCharacterAndLineDrawing,
+    );
     state.set_charset(CharsetIndex::G1, StandardCharset::Ascii);
     state.set_active(CharsetIndex::G0);
 

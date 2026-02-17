@@ -63,7 +63,10 @@ impl Grid {
 
     /// Create a new grid with explicit scrollback capacity.
     pub fn with_scrollback(lines: usize, cols: usize, max_scrollback: usize) -> Self {
-        debug_assert!(lines >= 1 && cols >= 1, "Grid dimensions must be >= 1 (got {lines}x{cols})");
+        debug_assert!(
+            lines >= 1 && cols >= 1,
+            "Grid dimensions must be >= 1 (got {lines}x{cols})"
+        );
         let rows = (0..lines).map(|_| Row::new(cols)).collect();
         let tab_stops = Self::init_tab_stops(cols);
 

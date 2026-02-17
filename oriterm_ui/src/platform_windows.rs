@@ -24,8 +24,8 @@ use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWi
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWL_STYLE, GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, HTBOTTOM,
     HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT,
-    HTTOPRIGHT, IsZoomed, NCCALCSIZE_PARAMS, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOW,
+    HTTOPRIGHT, IsZoomed, NCCALCSIZE_PARAMS, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE,
+    SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_DPICHANGED, WM_EXITSIZEMOVE, WM_MOVING,
     WM_NCCALCSIZE, WM_NCDESTROY, WM_NCHITTEST, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
     WS_THICKFRAME,
@@ -310,11 +310,7 @@ fn get_y_lparam(lp: isize) -> i32 {
 /// `WM_DPICHANGED` has been received.
 fn dpi_scale_factor(data: &SnapData) -> f32 {
     let dpi = data.last_dpi.load(Ordering::Relaxed);
-    if dpi == 0 {
-        1.0
-    } else {
-        dpi as f32 / 96.0
-    }
+    if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 }
 }
 
 /// Maps a [`HitTestResult`] to a Windows HT constant.
@@ -459,10 +455,8 @@ unsafe extern "system" fn subclass_proc(
             WM_NCCALCSIZE if wparam == 1 => {
                 if IsZoomed(hwnd) != 0 {
                     let params = &mut *(lparam as *mut NCCALCSIZE_PARAMS);
-                    let fx =
-                        GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                    let fy =
-                        GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    let fx = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    let fy = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
                     params.rgrc[0].left += fx;
                     params.rgrc[0].top += fy;
                     params.rgrc[0].right -= fx;

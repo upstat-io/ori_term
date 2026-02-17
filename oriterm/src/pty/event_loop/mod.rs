@@ -10,8 +10,8 @@
 //! `process_commands` → PTY writer.
 
 use std::io::{self, Read, Write};
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 
 use oriterm_core::{EventListener, FairMutex, Term};

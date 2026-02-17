@@ -8,8 +8,7 @@ use std::path::{Path, PathBuf};
 
 use super::families::PRIMARY_FAMILIES;
 use super::{
-    DiscoveryResult, FallbackDiscovery, FontOrigin, resolve_fallback_chain,
-    try_families_from_specs,
+    DiscoveryResult, FallbackDiscovery, FontOrigin, resolve_fallback_chain, try_families_from_specs,
 };
 
 /// Standard font directories on macOS, in priority order.
@@ -90,11 +89,8 @@ pub(super) fn try_user_family(name: &str, _weight: u16) -> Option<DiscoveryResul
     // Try as absolute path.
     let path = PathBuf::from(name);
     if path.is_absolute() && path.exists() {
-        let primary = super::family_from_paths(
-            name,
-            [Some(path), None, None, None],
-            FontOrigin::UserConfig,
-        );
+        let primary =
+            super::family_from_paths(name, [Some(path), None, None, None], FontOrigin::UserConfig);
         let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
         return Some(DiscoveryResult { primary, fallbacks });
     }
@@ -107,8 +103,7 @@ pub(super) fn try_platform_defaults(_weight: u16) -> Option<DiscoveryResult> {
     let index = build_font_index();
     let lookup = |filename: &str| -> Option<PathBuf> { index.get(filename).cloned() };
 
-    let primary =
-        try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
+    let primary = try_families_from_specs(PRIMARY_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
     let fallbacks = resolve_fallback_chain(&lookup, FontOrigin::DirectoryScan);
     Some(DiscoveryResult { primary, fallbacks })
 }
