@@ -36,5 +36,10 @@ pub(crate) use prepared_frame::PreparedFrame;
     unused_imports,
     reason = "render targets used starting in Section 5.13"
 )]
-pub(crate) use render_target::RenderTarget;
+pub(crate) use render_target::{ReadbackError, RenderTarget};
 pub(crate) use state::validate_gpu;
+#[expect(
+    unused_imports,
+    reason = "GpuState used once event loop is wired in Section 05"
+)]
+pub(crate) use state::{GpuInitError, GpuState};
