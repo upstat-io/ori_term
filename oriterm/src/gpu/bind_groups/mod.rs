@@ -9,9 +9,9 @@
 
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource,
-    Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, FilterMode, Queue,
-    SamplerDescriptor, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-    TextureView, TextureViewDescriptor, TextureViewDimension,
+    Buffer, BufferDescriptor, BufferUsages, Device, Extent3d, FilterMode, Queue, SamplerDescriptor,
+    Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
+    TextureViewDescriptor, TextureViewDimension,
 };
 
 /// Uniform buffer size in bytes: `vec2<f32> screen_size` + `vec2<f32> _pad` = 16 bytes.

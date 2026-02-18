@@ -13,7 +13,10 @@ use super::state::GpuState;
 ///
 /// Same format as the GPU's `render_format` so pipelines are reusable for
 /// both on-screen and off-screen rendering.
-#[allow(dead_code, reason = "used by tests now, production consumers in later sections")]
+#[allow(
+    dead_code,
+    reason = "used by tests now, production consumers in later sections"
+)]
 pub struct RenderTarget {
     /// The backing texture (`RENDER_ATTACHMENT | COPY_SRC`).
     texture: wgpu::Texture,
@@ -25,7 +28,10 @@ pub struct RenderTarget {
     height: u32,
 }
 
-#[allow(dead_code, reason = "used by tests now, production consumers in later sections")]
+#[allow(
+    dead_code,
+    reason = "used by tests now, production consumers in later sections"
+)]
 impl RenderTarget {
     /// Returns the texture view for use as a render pass attachment.
     pub fn view(&self) -> &wgpu::TextureView {
@@ -54,7 +60,10 @@ impl fmt::Debug for RenderTarget {
 
 /// Error returned when pixel readback fails.
 #[derive(Debug)]
-#[allow(dead_code, reason = "used by tests now, production consumers in later sections")]
+#[allow(
+    dead_code,
+    reason = "used by tests now, production consumers in later sections"
+)]
 pub enum ReadbackError {
     /// GPU device polling failed.
     Poll(wgpu::PollError),
@@ -89,7 +98,10 @@ impl GpuState {
     ///
     /// The texture uses the same `render_format` as surfaces so pipelines
     /// work identically. Includes `COPY_SRC` usage for pixel readback.
-    #[allow(dead_code, reason = "used by tests now, production consumers in later sections")]
+    #[allow(
+        dead_code,
+        reason = "used by tests now, production consumers in later sections"
+    )]
     pub fn create_render_target(&self, width: u32, height: u32) -> RenderTarget {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen_render_target"),
@@ -124,7 +136,10 @@ impl GpuState {
     ///
     /// Blocks until the GPU copy completes — intended for testing and offline
     /// use, not real-time rendering.
-    #[allow(dead_code, reason = "used by tests now, production consumers in later sections")]
+    #[allow(
+        dead_code,
+        reason = "used by tests now, production consumers in later sections"
+    )]
     pub fn read_render_target(&self, target: &RenderTarget) -> Result<Vec<u8>, ReadbackError> {
         let bytes_per_pixel = 4u32; // RGBA8
         let unpadded_row = target.width * bytes_per_pixel;

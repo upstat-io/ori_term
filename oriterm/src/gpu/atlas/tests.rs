@@ -4,7 +4,7 @@ use crate::font::collection::RasterizedGlyph;
 use crate::font::{FaceIdx, GlyphFormat, RasterKey, SyntheticFlags};
 use crate::gpu::state::GpuState;
 
-use super::{GlyphAtlas, GLYPH_PADDING, PAGE_SIZE};
+use super::{GLYPH_PADDING, GlyphAtlas, PAGE_SIZE};
 
 // ── Helpers ──
 
@@ -325,9 +325,7 @@ fn reinsert_after_clear_packs_from_origin() {
     // Re-insert should pack from origin.
     let key = test_key(100);
     let glyph = test_glyph(8, 14);
-    let entry = atlas
-        .insert(key, &glyph, &gpu.queue)
-        .unwrap();
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
 
     assert_eq!(entry.page, 0);
     assert!((entry.uv_x).abs() < f32::EPSILON);
@@ -364,16 +362,12 @@ fn insert_one_over_max_dimension_fails() {
     // Width one pixel over the max should fail.
     let key_w = test_key(1);
     let glyph_w = test_glyph(over, 1);
-    assert!(atlas
-        .insert(key_w, &glyph_w, &gpu.queue)
-        .is_none());
+    assert!(atlas.insert(key_w, &glyph_w, &gpu.queue).is_none());
 
     // Height one pixel over the max should also fail.
     let key_h = test_key(2);
     let glyph_h = test_glyph(1, over);
-    assert!(atlas
-        .insert(key_h, &glyph_h, &gpu.queue)
-        .is_none());
+    assert!(atlas.insert(key_h, &glyph_h, &gpu.queue).is_none());
 }
 
 #[test]
@@ -596,12 +590,8 @@ fn q6_keying_distinct_sizes() {
     let glyph_14 = test_glyph(8, 14);
     let glyph_16 = test_glyph(9, 16);
 
-    let e14 = atlas
-        .insert(key_14, &glyph_14, &gpu.queue)
-        .unwrap();
-    let e16 = atlas
-        .insert(key_16, &glyph_16, &gpu.queue)
-        .unwrap();
+    let e14 = atlas.insert(key_14, &glyph_14, &gpu.queue).unwrap();
+    let e16 = atlas.insert(key_16, &glyph_16, &gpu.queue).unwrap();
 
     assert_eq!(atlas.len(), 2);
     assert_ne!(e14.uv_x, e16.uv_x);

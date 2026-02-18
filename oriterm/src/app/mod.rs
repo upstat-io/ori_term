@@ -69,10 +69,7 @@ impl App {
     ///
     /// All GPU/window/tab state is `None` until [`resumed`] is called by
     /// the event loop (lazy initialization pattern from winit docs).
-    pub(crate) fn new(
-        event_proxy: EventLoopProxy<TermEvent>,
-        window_config: WindowConfig,
-    ) -> Self {
+    pub(crate) fn new(event_proxy: EventLoopProxy<TermEvent>, window_config: WindowConfig) -> Self {
         Self {
             gpu: None,
             renderer: None,
@@ -96,10 +93,7 @@ impl ApplicationHandler<TermEvent> for App {
         let t_start = std::time::Instant::now();
 
         // 1. Create window (invisible) for GPU surface capability probing.
-        let window_arc = match oriterm_ui::window::create_window(
-            event_loop,
-            &self.window_config,
-        ) {
+        let window_arc = match oriterm_ui::window::create_window(event_loop, &self.window_config) {
             Ok(w) => w,
             Err(e) => {
                 log::error!("failed to create window: {e}");
@@ -115,14 +109,20 @@ impl ApplicationHandler<TermEvent> for App {
         let font_dpi = DEFAULT_DPI;
         let font_handle = std::thread::Builder::new()
             .name("font-discovery".into())
-            .spawn(move || -> Result<(FontCollection, std::time::Duration), crate::font::FontError> {
-                let t0 = std::time::Instant::now();
-                let font_set = FontSet::load(None, font_weight)?;
-                let fc = FontCollection::new(
-                    font_set, font_size_pt, font_dpi, GlyphFormat::Alpha, font_weight,
-                )?;
-                Ok((fc, t0.elapsed()))
-            })
+            .spawn(
+                move || -> Result<(FontCollection, std::time::Duration), crate::font::FontError> {
+                    let t0 = std::time::Instant::now();
+                    let font_set = FontSet::load(None, font_weight)?;
+                    let fc = FontCollection::new(
+                        font_set,
+                        font_size_pt,
+                        font_dpi,
+                        GlyphFormat::Alpha,
+                        font_weight,
+                    )?;
+                    Ok((fc, t0.elapsed()))
+                },
+            )
             .expect("failed to spawn font discovery thread");
 
         // 3. Init GPU on main thread (requires window Arc, runs concurrently with fonts).
@@ -138,11 +138,7 @@ impl ApplicationHandler<TermEvent> for App {
         let t_gpu = t_gpu_start.elapsed();
 
         // 4. Wrap the same window into TermWindow (creates surface, applies effects).
-        let window = match TermWindow::from_window(
-            window_arc,
-            &self.window_config,
-            &gpu,
-        ) {
+        let window = match TermWindow::from_window(window_arc, &self.window_config, &gpu) {
             Ok(w) => w,
             Err(e) => {
                 log::error!("failed to attach GPU surface to window: {e}");
@@ -199,7 +195,12 @@ impl ApplicationHandler<TermEvent> for App {
         let t_total = t_start.elapsed();
         log::info!(
             "app: startup — window={:?} gpu={:?} fonts={:?} renderer={:?} tab={:?} total={:?}",
-            t_window, t_gpu, t_fonts, t_renderer, t_tab, t_total,
+            t_window,
+            t_gpu,
+            t_fonts,
+            t_renderer,
+            t_tab,
+            t_total,
         );
         log::info!(
             "app: initialized — {}x{} px, {cols} cols × {rows} rows, \
@@ -288,8 +289,7 @@ impl ApplicationHandler<TermEvent> for App {
                     // Cache blinking mode for about_to_wait gating.
                     // Reset blink phase on false→true transition so the
                     // cursor starts visible when blinking is first enabled.
-                    let blinking_now =
-                        frame.content.mode.contains(TermMode::CURSOR_BLINKING);
+                    let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
                     if blinking_now && !self.blinking_active {
                         self.cursor_blink.reset();
                     }
@@ -316,8 +316,7 @@ impl ApplicationHandler<TermEvent> for App {
                     Ok(()) => log::trace!("render ok"),
                     Err(SurfaceError::Lost) => {
                         log::warn!("surface lost, reconfiguring");
-                        if let (Some(window), Some(gpu)) =
-                            (self.window.as_mut(), self.gpu.as_ref())
+                        if let (Some(window), Some(gpu)) = (self.window.as_mut(), self.gpu.as_ref())
                         {
                             let (w, h) = window.size_px();
                             window.resize_surface(w, h, gpu);
@@ -325,7 +324,6 @@ impl ApplicationHandler<TermEvent> for App {
                     }
                     Err(e) => log::error!("render error: {e}"),
                 }
-
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
@@ -410,9 +408,7 @@ impl ApplicationHandler<TermEvent> for App {
         // doesn't sleep past it. When blinking is inactive, the default
         // ControlFlow::Wait lets the event loop sleep indefinitely.
         if self.blinking_active {
-            event_loop.set_control_flow(ControlFlow::WaitUntil(
-                self.cursor_blink.next_toggle(),
-            ));
+            event_loop.set_control_flow(ControlFlow::WaitUntil(self.cursor_blink.next_toggle()));
         }
     }
 }

@@ -57,8 +57,13 @@ pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFra
     let cols = input.columns();
     let rows = input.rows();
     let opacity = f64::from(input.palette.opacity);
-    let mut frame =
-        PreparedFrame::with_capacity(input.viewport, cols, rows, input.palette.background, opacity);
+    let mut frame = PreparedFrame::with_capacity(
+        input.viewport,
+        cols,
+        rows,
+        input.palette.background,
+        opacity,
+    );
     fill_frame(input, atlas, &mut frame);
     frame
 }
@@ -68,11 +73,7 @@ pub fn prepare_frame(input: &FrameInput, atlas: &dyn AtlasLookup) -> PreparedFra
 ///
 /// Used by tests. Production rendering uses [`prepare_frame_shaped`] instead.
 #[cfg(test)]
-pub fn prepare_frame_into(
-    input: &FrameInput,
-    atlas: &dyn AtlasLookup,
-    out: &mut PreparedFrame,
-) {
+pub fn prepare_frame_into(input: &FrameInput, atlas: &dyn AtlasLookup, out: &mut PreparedFrame) {
     out.clear();
     out.viewport = input.viewport;
     out.set_clear_color(input.palette.background, f64::from(input.palette.opacity));
@@ -97,8 +98,13 @@ pub fn prepare_frame_shaped(
     let cols = input.columns();
     let rows = input.rows();
     let opacity = f64::from(input.palette.opacity);
-    let mut frame =
-        PreparedFrame::with_capacity(input.viewport, cols, rows, input.palette.background, opacity);
+    let mut frame = PreparedFrame::with_capacity(
+        input.viewport,
+        cols,
+        rows,
+        input.palette.background,
+        opacity,
+    );
     fill_frame_shaped(input, atlas, shaped, &mut frame);
     frame
 }
@@ -156,7 +162,8 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
             atlas,
             size_q6: 0,
             metrics: &input.cell_size,
-        }.draw(cell.flags, cell.underline_color, cell.fg, x, y, bg_w);
+        }
+        .draw(cell.flags, cell.underline_color, cell.fg, x, y, bg_w);
 
         // Foreground glyph (skip spaces).
         if cell.ch != ' ' {
@@ -233,7 +240,8 @@ fn fill_frame_shaped(
             atlas,
             size_q6: shaped.size_q6(),
             metrics: &input.cell_size,
-        }.draw(cell.flags, cell.underline_color, cell.fg, x, y, bg_w);
+        }
+        .draw(cell.flags, cell.underline_color, cell.fg, x, y, bg_w);
 
         // Built-in geometric glyphs: bypass shaping, render from atlas.
         if crate::font::is_builtin(cell.ch) {
@@ -241,7 +249,14 @@ fn fill_frame_shaped(
             if let Some(entry) = atlas.lookup_key(key) {
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
                 frame.glyphs.push_glyph(
-                    x, y, entry.width as f32, entry.height as f32, uv, cell.fg, 1.0, entry.page,
+                    x,
+                    y,
+                    entry.width as f32,
+                    entry.height as f32,
+                    uv,
+                    cell.fg,
+                    1.0,
+                    entry.page,
                 );
             }
             continue;
@@ -259,14 +274,23 @@ fn fill_frame_shaped(
                 size_q6: shaped.size_q6(),
                 atlas,
                 frame,
-            }.emit(row_glyphs, start_idx, col, x, y, cell.fg);
+            }
+            .emit(row_glyphs, start_idx, col, x, y, cell.fg);
         }
     }
 
     // Cursor (identical to unshaped path).
     let cursor = &input.content.cursor;
     if cursor.visible {
-        build_cursor(frame, cursor.shape, cursor.column.0, cursor.line, cw, ch, input.palette.cursor_color);
+        build_cursor(
+            frame,
+            cursor.shape,
+            cursor.column.0,
+            cursor.line,
+            cw,
+            ch,
+            input.palette.cursor_color,
+        );
     }
 }
 
@@ -367,9 +391,7 @@ fn build_cursor(
             frame.cursors.push_cursor(x, y, cw, ch, color, 1.0);
         }
         CursorShape::Bar => {
-            frame
-                .cursors
-                .push_cursor(x, y, thickness, ch, color, 1.0);
+            frame.cursors.push_cursor(x, y, thickness, ch, color, 1.0);
         }
         CursorShape::Underline => {
             frame
@@ -378,17 +400,13 @@ fn build_cursor(
         }
         CursorShape::HollowBlock => {
             // Top edge.
-            frame
-                .cursors
-                .push_cursor(x, y, cw, thickness, color, 1.0);
+            frame.cursors.push_cursor(x, y, cw, thickness, color, 1.0);
             // Bottom edge.
             frame
                 .cursors
                 .push_cursor(x, y + ch - thickness, cw, thickness, color, 1.0);
             // Left edge.
-            frame
-                .cursors
-                .push_cursor(x, y, thickness, ch, color, 1.0);
+            frame.cursors.push_cursor(x, y, thickness, ch, color, 1.0);
             // Right edge.
             frame
                 .cursors

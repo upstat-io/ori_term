@@ -65,8 +65,8 @@ fn validate_font_rejects_empty() {
 
 #[test]
 fn font_ref_produces_working_charmap() {
-    let fd = build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0)
-        .expect("embedded font must build");
+    let fd =
+        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
     let fr = font_ref(&fd);
     let gid = fr.charmap().map('A');
     assert_ne!(gid, 0, "'A' must have a non-zero glyph ID");
@@ -74,8 +74,8 @@ fn font_ref_produces_working_charmap() {
 
 #[test]
 fn has_glyph_true_for_ascii() {
-    let fd = build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0)
-        .expect("embedded font must build");
+    let fd =
+        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
     assert!(has_glyph(&fd, 'A'), "embedded font must cover 'A'");
     assert!(has_glyph(&fd, 'z'), "embedded font must cover 'z'");
     assert!(has_glyph(&fd, '0'), "embedded font must cover '0'");
@@ -84,8 +84,8 @@ fn has_glyph_true_for_ascii() {
 
 #[test]
 fn has_glyph_notdef_graceful() {
-    let fd = build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0)
-        .expect("embedded font must build");
+    let fd =
+        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
     // CJK character unlikely in JetBrains Mono — just checking it doesn't panic.
     let _ = has_glyph(&fd, '\u{4E00}');
 }
@@ -124,8 +124,14 @@ fn cell_metrics_valid() {
         cm.stroke_size >= 1.0,
         "stroke_size must be at least 1.0 (clamped minimum)"
     );
-    assert!(cm.underline_offset.is_finite(), "underline_offset must be finite");
-    assert!(cm.strikeout_offset.is_finite(), "strikeout_offset must be finite");
+    assert!(
+        cm.underline_offset.is_finite(),
+        "underline_offset must be finite"
+    );
+    assert!(
+        cm.strikeout_offset.is_finite(),
+        "strikeout_offset must be finite"
+    );
 }
 
 #[test]
@@ -144,7 +150,11 @@ fn size_px_matches_computation() {
 fn resolve_ascii_regular() {
     let fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::Regular);
-    assert_eq!(resolved.face_idx, FaceIdx::REGULAR, "'A' should resolve to primary Regular");
+    assert_eq!(
+        resolved.face_idx,
+        FaceIdx::REGULAR,
+        "'A' should resolve to primary Regular"
+    );
     assert_ne!(resolved.glyph_id, 0, "'A' must have a non-zero glyph ID");
     assert_eq!(
         resolved.synthetic,
@@ -158,7 +168,8 @@ fn resolve_bold_without_bold_face_is_synthetic() {
     let fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::Bold);
     assert_eq!(
-        resolved.face_idx, FaceIdx::REGULAR,
+        resolved.face_idx,
+        FaceIdx::REGULAR,
         "should fall back to Regular face"
     );
     assert_ne!(resolved.glyph_id, 0);
@@ -265,7 +276,10 @@ fn rasterize_cache_hit() {
     let first_width = first.width;
 
     let second = fc.rasterize(key).expect("cache hit");
-    assert_eq!(second.width, first_width, "cache hit should return same data");
+    assert_eq!(
+        second.width, first_width,
+        "cache hit should return same data"
+    );
     assert_eq!(
         second.bitmap, first_bitmap,
         "cache hit should return same bitmap"
@@ -379,7 +393,10 @@ fn compute_metrics_positive() {
     assert!(m.cell_width > 0.0, "cell width must be positive");
     assert!(m.cell_height > 0.0, "cell height must be positive");
     assert!(m.baseline > 0.0, "baseline must be positive");
-    assert!(m.baseline <= m.cell_height, "baseline must not exceed cell height");
+    assert!(
+        m.baseline <= m.cell_height,
+        "baseline must not exceed cell height"
+    );
 }
 
 #[test]
@@ -387,8 +404,14 @@ fn compute_metrics_decoration_fields() {
     let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
     assert!(m.stroke_size > 0.0, "stroke_size must be positive");
     assert!(m.stroke_size.is_finite(), "stroke_size must be finite");
-    assert!(m.underline_offset.is_finite(), "underline_offset must be finite");
-    assert!(m.strikeout_offset.is_finite(), "strikeout_offset must be finite");
+    assert!(
+        m.underline_offset.is_finite(),
+        "underline_offset must be finite"
+    );
+    assert!(
+        m.strikeout_offset.is_finite(),
+        "strikeout_offset must be finite"
+    );
 }
 
 // ── Pre-cache ──
@@ -532,7 +555,10 @@ fn rasterize_emoji_as_color_format() {
 #[test]
 fn face_idx_primary_not_fallback() {
     for i in 0..4 {
-        assert!(!FaceIdx(i).is_fallback(), "primary index {i} is not fallback");
+        assert!(
+            !FaceIdx(i).is_fallback(),
+            "primary index {i} is not fallback"
+        );
     }
 }
 
@@ -884,8 +910,8 @@ fn synthetic_cache_separates_from_regular() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let regular = rasterize_with_synthesis(&mut fc, 'A', SyntheticFlags::NONE)
         .expect("regular must rasterize");
-    let bold = rasterize_with_synthesis(&mut fc, 'A', SyntheticFlags::BOLD)
-        .expect("bold must rasterize");
+    let bold =
+        rasterize_with_synthesis(&mut fc, 'A', SyntheticFlags::BOLD).expect("bold must rasterize");
 
     // They should be different glyphs (emboldening changes the bitmap).
     assert_ne!(
@@ -900,7 +926,16 @@ fn embolden_strength_scales_with_size() {
     let s17 = embolden_strength(17.0);
     let s32 = embolden_strength(32.0);
     assert!(s17 > 0.0, "embolden strength must be positive");
-    assert!(s32 > s17, "larger font should have greater embolden strength");
-    assert!(s17 < 1.0, "17px font should have sub-pixel embolden (~0.53)");
-    assert!((s32 - 1.0).abs() < f32::EPSILON, "32px font should have 1.0px embolden");
+    assert!(
+        s32 > s17,
+        "larger font should have greater embolden strength"
+    );
+    assert!(
+        s17 < 1.0,
+        "17px font should have sub-pixel embolden (~0.53)"
+    );
+    assert!(
+        (s32 - 1.0).abs() < f32::EPSILON,
+        "32px font should have 1.0px embolden"
+    );
 }

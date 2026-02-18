@@ -97,7 +97,10 @@ impl<T: EventListener> PtyEventLoop<T> {
                 }
             };
 
-            log::info!("PTY read {n} bytes: {:?}", String::from_utf8_lossy(&buf[..n.min(200)]));
+            log::info!(
+                "PTY read {n} bytes: {:?}",
+                String::from_utf8_lossy(&buf[..n.min(200)])
+            );
 
             // 3. Lock terminal and parse in bounded chunks.
             self.parse_pty_output(&buf[..n]);
@@ -125,7 +128,8 @@ impl<T: EventListener> PtyEventLoop<T> {
             }
             // Notify the main thread after each chunk so the renderer can
             // pick up partial updates during large output bursts.
-            term.event_listener().send_event(oriterm_core::Event::Wakeup);
+            term.event_listener()
+                .send_event(oriterm_core::Event::Wakeup);
             drop(term);
 
             offset = chunk_end;

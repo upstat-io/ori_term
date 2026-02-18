@@ -49,20 +49,36 @@ fn resolve_family_dwrite(
     let regular_weight = dwrote::FontWeight::from_u32(u32::from(weight));
     let bold_weight = dwrote::FontWeight::from_u32(u32::from(weight.saturating_add(300).min(900)));
 
-    let regular =
-        resolve_font_dwrite(collection, family_name, regular_weight, dwrote::FontStyle::Normal)?;
+    let regular = resolve_font_dwrite(
+        collection,
+        family_name,
+        regular_weight,
+        dwrote::FontStyle::Normal,
+    )?;
 
-    let bold =
-        resolve_font_dwrite(collection, family_name, bold_weight, dwrote::FontStyle::Normal)
-            .filter(|p| *p != regular);
+    let bold = resolve_font_dwrite(
+        collection,
+        family_name,
+        bold_weight,
+        dwrote::FontStyle::Normal,
+    )
+    .filter(|p| *p != regular);
 
-    let italic =
-        resolve_font_dwrite(collection, family_name, regular_weight, dwrote::FontStyle::Italic)
-            .filter(|p| *p != regular);
+    let italic = resolve_font_dwrite(
+        collection,
+        family_name,
+        regular_weight,
+        dwrote::FontStyle::Italic,
+    )
+    .filter(|p| *p != regular);
 
-    let bold_italic =
-        resolve_font_dwrite(collection, family_name, bold_weight, dwrote::FontStyle::Italic)
-            .filter(|p| *p != regular);
+    let bold_italic = resolve_font_dwrite(
+        collection,
+        family_name,
+        bold_weight,
+        dwrote::FontStyle::Italic,
+    )
+    .filter(|p| *p != regular);
 
     log::info!(
         "font discovery (dwrite): {family_name:?} weight={weight} → \

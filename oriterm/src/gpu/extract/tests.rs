@@ -308,14 +308,14 @@ fn extract_captures_wide_characters() {
     assert_eq!(frame.content.cells[0].ch, '世');
     assert!(frame.content.cells[0].flags.contains(CellFlags::WIDE_CHAR));
 
-    assert!(frame.content.cells[1]
-        .flags
-        .contains(CellFlags::WIDE_CHAR_SPACER));
+    assert!(
+        frame.content.cells[1]
+            .flags
+            .contains(CellFlags::WIDE_CHAR_SPACER)
+    );
 
     assert_eq!(frame.content.cells[2].ch, 'A');
-    assert!(!frame.content.cells[2]
-        .flags
-        .contains(CellFlags::WIDE_CHAR));
+    assert!(!frame.content.cells[2].flags.contains(CellFlags::WIDE_CHAR));
 }
 
 #[test]
@@ -380,7 +380,12 @@ fn extract_preserves_empty_cells_defaults() {
 
 /// Helper: clear all dirty marks so subsequent mutations produce precise damage.
 fn clear_dirty(terminal: &FairMutex<Term<VoidListener>>) {
-    terminal.lock().grid_mut().dirty_mut().drain().for_each(drop);
+    terminal
+        .lock()
+        .grid_mut()
+        .dirty_mut()
+        .drain()
+        .for_each(drop);
 }
 
 #[test]
@@ -699,7 +704,10 @@ fn extract_theme_switch_updates_palette() {
     let light_frame = extract_frame(&terminal, viewport, CELL);
 
     // Background should differ between themes.
-    assert_ne!(dark_frame.palette.background, light_frame.palette.background);
+    assert_ne!(
+        dark_frame.palette.background,
+        light_frame.palette.background
+    );
     assert_ne!(
         dark_frame.palette.cursor_color,
         light_frame.palette.cursor_color,

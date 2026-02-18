@@ -13,15 +13,18 @@ use std::sync::Arc;
 
 use swash::scale::ScaleContext;
 
-use super::{CellMetrics, FaceIdx, FontError, GlyphFormat, GlyphStyle, RasterKey, ResolvedGlyph, SyntheticFlags};
-use face::{build_face, cap_height_px, compute_metrics, glyph_id, rasterize_from_face, FaceData};
-use metadata::{default_features, effective_size_for, weight_variation, FallbackMeta};
-#[cfg(test)]
-use metadata::{parse_features, MAX_FONT_SIZE, MIN_FONT_SIZE};
+use super::{
+    CellMetrics, FaceIdx, FontError, GlyphFormat, GlyphStyle, RasterKey, ResolvedGlyph,
+    SyntheticFlags,
+};
 pub use face::size_key;
-pub use loading::FontSet;
+use face::{FaceData, build_face, cap_height_px, compute_metrics, glyph_id, rasterize_from_face};
 #[cfg(test)]
 use loading::FontData;
+pub use loading::FontSet;
+use metadata::{FallbackMeta, default_features, effective_size_for, weight_variation};
+#[cfg(test)]
+use metadata::{MAX_FONT_SIZE, MIN_FONT_SIZE, parse_features};
 
 /// A rasterized glyph bitmap ready for atlas upload.
 #[derive(Debug, Clone)]
@@ -64,7 +67,10 @@ pub struct FontCollection {
     underline_offset: f32,
     stroke_size: f32,
     strikeout_offset: f32,
-    #[allow(dead_code, reason = "used for diagnostics and future dynamic fallback loading")]
+    #[allow(
+        dead_code,
+        reason = "used for diagnostics and future dynamic fallback loading"
+    )]
     cap_height_px: f32,
     // Rasterization
     format: GlyphFormat,
@@ -94,14 +100,13 @@ impl FontCollection {
         let size_px = size_pt * dpi / 72.0;
 
         // Validate Regular (required).
-        let regular_face = build_face(Arc::clone(&font_set.regular.data), font_set.regular.index)
-            .ok_or_else(|| FontError::InvalidFont("Regular font is invalid".into()))?;
+        let regular_face =
+            build_face(Arc::clone(&font_set.regular.data), font_set.regular.index)
+                .ok_or_else(|| FontError::InvalidFont("Regular font is invalid".into()))?;
 
         // Compute metrics from Regular.
-        let font_metrics =
-            compute_metrics(&font_set.regular.data, font_set.regular.index, size_px);
-        let primary_cap =
-            cap_height_px(&font_set.regular.data, font_set.regular.index, size_px);
+        let font_metrics = compute_metrics(&font_set.regular.data, font_set.regular.index, size_px);
+        let primary_cap = cap_height_px(&font_set.regular.data, font_set.regular.index, size_px);
 
         // Validate optional primary variants.
         let bold = font_set

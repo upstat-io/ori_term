@@ -28,8 +28,14 @@ const TEST_DPI: f32 = 96.0;
 fn headless_env() -> Option<(GpuState, GpuRenderer)> {
     let gpu = GpuState::new_headless().ok()?;
     let font_set = FontSet::load(None, TEST_FONT_WEIGHT).ok()?;
-    let font_collection =
-        FontCollection::new(font_set, TEST_FONT_SIZE_PT, TEST_DPI, GlyphFormat::Alpha, TEST_FONT_WEIGHT).ok()?;
+    let font_collection = FontCollection::new(
+        font_set,
+        TEST_FONT_SIZE_PT,
+        TEST_DPI,
+        GlyphFormat::Alpha,
+        TEST_FONT_WEIGHT,
+    )
+    .ok()?;
     let renderer = GpuRenderer::new(&gpu, font_collection);
     Some((gpu, renderer))
 }
@@ -147,10 +153,7 @@ fn render_colored_cell_correct_bg_color() {
 
     // Red channel should be high, green and blue low.
     // Allow tolerance for sRGB gamma conversion.
-    assert!(
-        r > 200,
-        "red channel should be high for red bg, got {r}",
-    );
+    assert!(r > 200, "red channel should be high for red bg, got {r}",);
     assert!(g < 30, "green channel should be low, got {g}");
     assert!(b < 30, "blue channel should be low, got {b}");
     assert!(a > 200, "alpha should be high, got {a}");
@@ -268,8 +271,9 @@ fn render_cursor_pixels_at_expected_position() {
 
     // Sample a pixel outside the cursor cell (e.g. top-left cell (0,0)).
     let non_cursor_idx = ((0u32 * w + 0) * 4) as usize;
-    let non_brightness =
-        pixels[non_cursor_idx].max(pixels[non_cursor_idx + 1]).max(pixels[non_cursor_idx + 2]);
+    let non_brightness = pixels[non_cursor_idx]
+        .max(pixels[non_cursor_idx + 1])
+        .max(pixels[non_cursor_idx + 2]);
     assert!(
         non_brightness < 30,
         "non-cursor pixel should be dark (black bg), got rgb=({}, {}, {})",

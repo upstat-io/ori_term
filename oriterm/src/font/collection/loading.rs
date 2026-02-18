@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use super::super::discovery::{self, FontOrigin};
 use super::super::FontError;
+use super::super::discovery::{self, FontOrigin};
 
 /// Raw font bytes and collection index (pre-validation).
 pub(super) struct FontData {
@@ -64,10 +64,7 @@ impl FontSet {
                 let bytes = match std::fs::read(&fb.path) {
                     Ok(b) => b,
                     Err(e) => {
-                        log::warn!(
-                            "font: failed to load fallback {}: {e}",
-                            fb.path.display()
-                        );
+                        log::warn!("font: failed to load fallback {}: {e}", fb.path.display());
                         return None;
                     }
                 };

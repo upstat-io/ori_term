@@ -41,10 +41,8 @@ fn no_overlap_50_varied_rects() {
     // Verify no two rects overlap.
     for (i, a) in placed.iter().enumerate() {
         for b in placed.iter().skip(i + 1) {
-            let no_overlap = a.x + a.w <= b.x
-                || b.x + b.w <= a.x
-                || a.y + a.h <= b.y
-                || b.y + b.h <= a.y;
+            let no_overlap =
+                a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
             assert!(
                 no_overlap,
                 "rects overlap: ({},{} {}x{}) vs ({},{} {}x{})",

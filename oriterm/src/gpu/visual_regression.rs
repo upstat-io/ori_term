@@ -61,11 +61,7 @@ fn headless_env() -> Option<(GpuState, GpuRenderer)> {
 }
 
 /// Render a `FrameInput` to RGBA pixels via the headless pipeline.
-fn render_to_pixels(
-    gpu: &GpuState,
-    renderer: &mut GpuRenderer,
-    input: &FrameInput,
-) -> Vec<u8> {
+fn render_to_pixels(gpu: &GpuState, renderer: &mut GpuRenderer, input: &FrameInput) -> Vec<u8> {
     let w = input.viewport.width;
     let h = input.viewport.height;
     let target = gpu.create_render_target(w, h);
@@ -97,7 +93,9 @@ fn compare_with_reference(
         ImageBuffer::from_raw(width, height, pixels.to_vec()).expect("pixel buffer size mismatch");
 
     if !ref_path.exists() {
-        actual.save(&ref_path).expect("failed to save reference PNG");
+        actual
+            .save(&ref_path)
+            .expect("failed to save reference PNG");
         eprintln!(
             "reference saved: {} ({}×{}). Re-run to compare.",
             ref_path.display(),
@@ -129,9 +127,7 @@ fn compare_with_reference(
         actual
             .save(&actual_path)
             .expect("failed to save actual PNG");
-        diff_img
-            .save(&diff_path)
-            .expect("failed to save diff PNG");
+        diff_img.save(&diff_path).expect("failed to save diff PNG");
 
         let total = (width * height) as usize;
         let pct = mismatches as f64 / total as f64 * 100.0;
@@ -166,9 +162,10 @@ fn pixel_diff(reference: &RgbaImage, actual: &RgbaImage, tolerance: u8) -> (usiz
             let r = reference.get_pixel(x, y);
             let a = actual.get_pixel(x, y);
 
-            let matches = r.0.iter().zip(a.0.iter()).all(|(&rv, &av)| {
-                (rv as i16 - av as i16).unsigned_abs() <= tolerance as u16
-            });
+            let matches =
+                r.0.iter()
+                    .zip(a.0.iter())
+                    .all(|(&rv, &av)| (rv as i16 - av as i16).unsigned_abs() <= tolerance as u16);
 
             if !matches {
                 diff.put_pixel(x, y, Rgba([255, 0, 0, 255]));
@@ -231,22 +228,62 @@ fn colors_16() {
 
     // 16 ANSI colors as background cells.
     let ansi_colors: [Rgb; 16] = [
-        Rgb { r: 0, g: 0, b: 0 },       // Black
-        Rgb { r: 205, g: 0, b: 0 },     // Red
-        Rgb { r: 0, g: 205, b: 0 },     // Green
-        Rgb { r: 205, g: 205, b: 0 },   // Yellow
-        Rgb { r: 0, g: 0, b: 238 },     // Blue
-        Rgb { r: 205, g: 0, b: 205 },   // Magenta
-        Rgb { r: 0, g: 205, b: 205 },   // Cyan
-        Rgb { r: 229, g: 229, b: 229 }, // White
-        Rgb { r: 127, g: 127, b: 127 }, // Bright Black
-        Rgb { r: 255, g: 0, b: 0 },     // Bright Red
-        Rgb { r: 0, g: 255, b: 0 },     // Bright Green
-        Rgb { r: 255, g: 255, b: 0 },   // Bright Yellow
-        Rgb { r: 92, g: 92, b: 255 },   // Bright Blue
-        Rgb { r: 255, g: 0, b: 255 },   // Bright Magenta
-        Rgb { r: 0, g: 255, b: 255 },   // Bright Cyan
-        Rgb { r: 255, g: 255, b: 255 }, // Bright White
+        Rgb { r: 0, g: 0, b: 0 },   // Black
+        Rgb { r: 205, g: 0, b: 0 }, // Red
+        Rgb { r: 0, g: 205, b: 0 }, // Green
+        Rgb {
+            r: 205,
+            g: 205,
+            b: 0,
+        }, // Yellow
+        Rgb { r: 0, g: 0, b: 238 }, // Blue
+        Rgb {
+            r: 205,
+            g: 0,
+            b: 205,
+        }, // Magenta
+        Rgb {
+            r: 0,
+            g: 205,
+            b: 205,
+        }, // Cyan
+        Rgb {
+            r: 229,
+            g: 229,
+            b: 229,
+        }, // White
+        Rgb {
+            r: 127,
+            g: 127,
+            b: 127,
+        }, // Bright Black
+        Rgb { r: 255, g: 0, b: 0 }, // Bright Red
+        Rgb { r: 0, g: 255, b: 0 }, // Bright Green
+        Rgb {
+            r: 255,
+            g: 255,
+            b: 0,
+        }, // Bright Yellow
+        Rgb {
+            r: 92,
+            g: 92,
+            b: 255,
+        }, // Bright Blue
+        Rgb {
+            r: 255,
+            g: 0,
+            b: 255,
+        }, // Bright Magenta
+        Rgb {
+            r: 0,
+            g: 255,
+            b: 255,
+        }, // Bright Cyan
+        Rgb {
+            r: 255,
+            g: 255,
+            b: 255,
+        }, // Bright White
     ];
 
     let mut input = FrameInput::test_grid(cols, rows, "");

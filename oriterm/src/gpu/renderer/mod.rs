@@ -30,7 +30,7 @@ use super::state::GpuState;
 use crate::font::collection::size_key;
 use crate::font::{CellMetrics, FontCollection, GlyphFormat, GlyphStyle, RasterKey};
 use crate::gpu::frame_input::ViewportSize;
-use helpers::{ensure_buffer, ensure_shaped_glyphs_cached, shape_frame, ShapingScratch};
+use helpers::{ShapingScratch, ensure_buffer, ensure_shaped_glyphs_cached, shape_frame};
 
 // ── Error type ──
 
@@ -152,8 +152,7 @@ impl GpuRenderer {
 
         // Bind groups.
         let atlas_bind_group = AtlasBindGroup::new(device, &atlas_layout, atlas.view());
-        let color_atlas_bind_group =
-            AtlasBindGroup::new(device, &atlas_layout, color_atlas.view());
+        let color_atlas_bind_group = AtlasBindGroup::new(device, &atlas_layout, color_atlas.view());
 
         log::info!(
             "renderer init: pipelines={t_pipelines:?} precache={t_precache:?} total={:?}",
@@ -172,11 +171,7 @@ impl GpuRenderer {
             color_atlas,
             font_collection,
             shaping: ShapingScratch::new(),
-            prepared: PreparedFrame::new(
-                ViewportSize::new(1, 1),
-                Rgb { r: 0, g: 0, b: 0 },
-                1.0,
-            ),
+            prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             bg_buffer: None,
             fg_buffer: None,
             color_fg_buffer: None,
@@ -242,12 +237,7 @@ impl GpuRenderer {
             mono: &self.atlas,
             color: &self.color_atlas,
         };
-        prepare::prepare_frame_shaped_into(
-            input,
-            &bridge,
-            &self.shaping.frame,
-            &mut self.prepared,
-        );
+        prepare::prepare_frame_shaped_into(input, &bridge, &self.shaping.frame, &mut self.prepared);
     }
 
     /// The most recently prepared frame.
@@ -365,11 +355,7 @@ impl GpuRenderer {
                 if let Some(buf) = &self.color_fg_buffer {
                     pass.set_pipeline(&self.color_fg_pipeline);
                     pass.set_bind_group(0, uniform_bg, &[]);
-                    pass.set_bind_group(
-                        1,
-                        self.color_atlas_bind_group.bind_group(),
-                        &[],
-                    );
+                    pass.set_bind_group(1, self.color_atlas_bind_group.bind_group(), &[]);
                     pass.set_vertex_buffer(0, buf.slice(..));
                     pass.draw(0..4, 0..self.prepared.color_glyphs.len() as u32);
                 }

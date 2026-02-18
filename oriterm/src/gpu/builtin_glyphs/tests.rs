@@ -40,7 +40,11 @@ fn is_builtin_powerline_handled_codepoints() {
 fn is_builtin_excludes_powerline_icons() {
     // Icon codepoints (branch, lock) should fall through to font rendering.
     for c in '\u{E0A0}'..='\u{E0A3}' {
-        assert!(!is_builtin(c), "U+{:04X} should NOT be builtin (icon)", c as u32);
+        assert!(
+            !is_builtin(c),
+            "U+{:04X} should NOT be builtin (icon)",
+            c as u32
+        );
     }
     // Unhandled extras beyond E0B6.
     assert!(!is_builtin('\u{E0B5}'), "U+E0B5 should NOT be builtin");
@@ -118,7 +122,11 @@ fn rasterize_lower_half() {
     // Lower half: top 8 rows empty, bottom 8 rows filled.
     for y in 0..8 {
         for x in 0..8 {
-            assert_eq!(glyph.bitmap[y * 8 + x], 0, "pixel ({x},{y}) should be empty");
+            assert_eq!(
+                glyph.bitmap[y * 8 + x],
+                0,
+                "pixel ({x},{y}) should be empty"
+            );
         }
     }
     for y in 8..16 {
@@ -147,7 +155,11 @@ fn rasterize_upper_half() {
     }
     for y in 8..16 {
         for x in 0..8 {
-            assert_eq!(glyph.bitmap[y * 8 + x], 0, "pixel ({x},{y}) should be empty");
+            assert_eq!(
+                glyph.bitmap[y * 8 + x],
+                0,
+                "pixel ({x},{y}) should be empty"
+            );
         }
     }
 }
@@ -177,7 +189,11 @@ fn rasterize_right_half() {
     // Right half: left 4 cols empty, right 4 cols filled.
     for y in 0..16 {
         for x in 0..4 {
-            assert_eq!(glyph.bitmap[y * 8 + x], 0, "pixel ({x},{y}) should be empty");
+            assert_eq!(
+                glyph.bitmap[y * 8 + x],
+                0,
+                "pixel ({x},{y}) should be empty"
+            );
         }
         for x in 4..8 {
             assert_eq!(
@@ -229,11 +245,7 @@ fn rasterize_vertical_line() {
     }
     // Leftmost column should be empty.
     for y in 0..16 {
-        assert_eq!(
-            glyph.bitmap[y * 8],
-            0,
-            "pixel (0,{y}) should be empty"
-        );
+        assert_eq!(glyph.bitmap[y * 8], 0, "pixel (0,{y}) should be empty");
     }
 }
 
@@ -434,7 +446,10 @@ fn canvas_fill_line_produces_antialiased_output() {
     canvas.fill_line(0.0, 0.0, 16.0, 32.0, 2.0);
     let has_full = canvas.data.iter().any(|&b| b == 255);
     let has_partial = canvas.data.iter().any(|&b| b > 0 && b < 255);
-    assert!(has_full, "anti-aliased line should have fully opaque pixels");
+    assert!(
+        has_full,
+        "anti-aliased line should have fully opaque pixels"
+    );
     assert!(
         has_partial,
         "anti-aliased line should have partially transparent pixels"
@@ -455,8 +470,8 @@ fn canvas_into_rasterized_glyph_format() {
 
 // ── Decoration rasterization tests ──
 
-use crate::font::CellMetrics;
 use super::decorations;
+use crate::font::CellMetrics;
 
 /// Standard test metrics: 8x16 cell, 1px stroke.
 fn test_metrics() -> CellMetrics {
@@ -488,7 +503,10 @@ fn rasterize_curly_produces_bitmap() {
     assert_eq!(glyph.format, GlyphFormat::Alpha);
     assert_eq!(glyph.bitmap.len(), (glyph.width * glyph.height) as usize);
     // Should have some filled pixels.
-    assert!(glyph.bitmap.iter().any(|&b| b > 0), "curly should have visible pixels");
+    assert!(
+        glyph.bitmap.iter().any(|&b| b > 0),
+        "curly should have visible pixels"
+    );
 }
 
 #[test]
@@ -520,7 +538,10 @@ fn rasterize_dotted_produces_bitmap() {
     let filled_cols: usize = (0..glyph.width as usize)
         .filter(|&x| glyph.bitmap[x] > 0)
         .count();
-    assert_eq!(filled_cols, 4, "dotted: 4 of 8 columns should be filled (step_by 2)");
+    assert_eq!(
+        filled_cols, 4,
+        "dotted: 4 of 8 columns should be filled (step_by 2)"
+    );
 }
 
 #[test]
@@ -533,7 +554,10 @@ fn rasterize_dashed_produces_bitmap() {
     let filled_cols: usize = (0..glyph.width as usize)
         .filter(|&x| glyph.bitmap[x] > 0)
         .count();
-    assert_eq!(filled_cols, 6, "dashed: 6 of 8 columns should be filled (3-on-2-off)");
+    assert_eq!(
+        filled_cols, 6,
+        "dashed: 6 of 8 columns should be filled (3-on-2-off)"
+    );
 }
 
 #[test]

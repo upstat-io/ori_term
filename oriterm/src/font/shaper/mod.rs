@@ -94,7 +94,10 @@ pub struct ShapedGlyph {
     /// First grid column this glyph occupies.
     pub col_start: usize,
     /// Number of grid columns (1 = normal, 2+ = ligature or wide char).
-    #[allow(dead_code, reason = "informational field consumed by tests and diagnostics")]
+    #[allow(
+        dead_code,
+        reason = "informational field consumed by tests and diagnostics"
+    )]
     pub col_span: usize,
     /// Shaper X positioning offset in pixels.
     pub x_offset: f32,
@@ -176,9 +179,9 @@ fn segment_runs<C: ShapableCell>(
 
         // Check if we can extend the current run (same face and synthesis).
         let extend = run_count > 0
-            && runs.get(run_count - 1).is_some_and(|r: &ShapingRun| {
-                r.face_idx == face_idx && r.synthetic == synthetic
-            });
+            && runs
+                .get(run_count - 1)
+                .is_some_and(|r: &ShapingRun| r.face_idx == face_idx && r.synthetic == synthetic);
 
         if extend {
             append_cell_to_run(&mut runs[run_count - 1], cell, col);
@@ -250,9 +253,7 @@ pub fn shape_prepared_runs(
     buffer_slot: &mut Option<rustybuzz::UnicodeBuffer>,
 ) {
     output.clear();
-    let mut buffer = buffer_slot
-        .take()
-        .unwrap_or_default();
+    let mut buffer = buffer_slot.take().unwrap_or_default();
     for run in runs {
         buffer = shape_run(run, faces, collection, output, buffer);
     }
@@ -357,11 +358,7 @@ fn emit_unshaped_fallback(run: &ShapingRun, output: &mut Vec<ShapedGlyph>) {
 ///
 /// The renderer uses this map to decide: render the glyph at `Some` columns
 /// (plus any combining marks that follow), skip `None` columns.
-pub fn build_col_glyph_map(
-    glyphs: &[ShapedGlyph],
-    cols: usize,
-    map_out: &mut Vec<Option<usize>>,
-) {
+pub fn build_col_glyph_map(glyphs: &[ShapedGlyph], cols: usize, map_out: &mut Vec<Option<usize>>) {
     map_out.clear();
     map_out.resize(cols, None);
 

@@ -17,7 +17,7 @@ use wgpu::Queue;
 use oriterm_core::CellFlags;
 
 use crate::font::collection::RasterizedGlyph;
-use crate::font::{is_builtin, CellMetrics, FaceIdx, GlyphFormat, RasterKey, SyntheticFlags};
+use crate::font::{CellMetrics, FaceIdx, GlyphFormat, RasterKey, SyntheticFlags, is_builtin};
 
 use super::atlas::GlyphAtlas;
 use super::frame_input::FrameInput;
@@ -50,9 +50,7 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
         '\u{2500}'..='\u{257F}' => box_drawing::draw_box(&mut canvas, ch),
         '\u{2580}'..='\u{259F}' => blocks::draw_block(&mut canvas, ch),
         '\u{2800}'..='\u{28FF}' => braille::draw_braille(&mut canvas, ch),
-        '\u{E0B0}'..='\u{E0B4}' | '\u{E0B6}' => {
-            powerline::draw_powerline(&mut canvas, ch)
-        }
+        '\u{E0B0}'..='\u{E0B4}' | '\u{E0B6}' => powerline::draw_powerline(&mut canvas, ch),
         _ => false,
     };
 
@@ -105,13 +103,34 @@ pub(crate) fn ensure_builtins_cached(
     }
 
     if need_curly {
-        cache_decoration(decorations::CURLY_GLYPH_ID, size_q6, metrics, atlas, queue, decorations::rasterize_curly);
+        cache_decoration(
+            decorations::CURLY_GLYPH_ID,
+            size_q6,
+            metrics,
+            atlas,
+            queue,
+            decorations::rasterize_curly,
+        );
     }
     if need_dotted {
-        cache_decoration(decorations::DOTTED_GLYPH_ID, size_q6, metrics, atlas, queue, decorations::rasterize_dotted);
+        cache_decoration(
+            decorations::DOTTED_GLYPH_ID,
+            size_q6,
+            metrics,
+            atlas,
+            queue,
+            decorations::rasterize_dotted,
+        );
     }
     if need_dashed {
-        cache_decoration(decorations::DASHED_GLYPH_ID, size_q6, metrics, atlas, queue, decorations::rasterize_dashed);
+        cache_decoration(
+            decorations::DASHED_GLYPH_ID,
+            size_q6,
+            metrics,
+            atlas,
+            queue,
+            decorations::rasterize_dashed,
+        );
     }
 }
 

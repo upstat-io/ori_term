@@ -20,7 +20,7 @@ use oriterm_ui::window::WindowConfig;
 
 use oriterm_core::Rgb;
 
-use crate::gpu::{apply_transparency, GpuState};
+use crate::gpu::{GpuState, apply_transparency};
 
 /// Default tint for the acrylic/blur layer (Catppuccin Mocha base).
 ///

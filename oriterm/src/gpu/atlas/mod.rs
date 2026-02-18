@@ -425,11 +425,7 @@ fn upload_glyph(
         wgpu::TexelCopyTextureInfo {
             texture,
             mip_level: 0,
-            origin: wgpu::Origin3d {
-                x,
-                y,
-                z: page_idx,
-            },
+            origin: wgpu::Origin3d { x, y, z: page_idx },
             aspect: wgpu::TextureAspect::All,
         },
         &glyph.bitmap,

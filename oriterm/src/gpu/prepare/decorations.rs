@@ -13,7 +13,7 @@ use oriterm_core::{CellFlags, Rgb};
 
 use crate::font::CellMetrics;
 use crate::gpu::builtin_glyphs::decorations::{
-    curly_amplitude, decoration_key, CURLY_GLYPH_ID, DASHED_GLYPH_ID, DOTTED_GLYPH_ID,
+    CURLY_GLYPH_ID, DASHED_GLYPH_ID, DOTTED_GLYPH_ID, curly_amplitude, decoration_key,
 };
 use crate::gpu::instance_writer::InstanceWriter;
 
@@ -68,22 +68,15 @@ impl DecorationContext<'_> {
 
         if has_strikethrough {
             let strike_y = y + self.metrics.baseline - self.metrics.strikeout_offset;
-            self.backgrounds.push_rect(x, strike_y, cell_width, t, fg, 1.0);
+            self.backgrounds
+                .push_rect(x, strike_y, cell_width, t, fg, 1.0);
         }
     }
 
     /// Dispatch to the appropriate underline style.
     ///
     /// Priority: curly > double > dotted > dashed > single.
-    fn draw_underline(
-        &mut self,
-        flags: CellFlags,
-        color: Rgb,
-        x: f32,
-        y: f32,
-        w: f32,
-        t: f32,
-    ) {
+    fn draw_underline(&mut self, flags: CellFlags, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
         if flags.contains(CellFlags::CURLY_UNDERLINE) {
             if !self.try_atlas_decoration(CURLY_GLYPH_ID, color, x, y) {
                 draw_curly_underline_rects(self.backgrounds, color, x, y, w, t);
@@ -108,13 +101,7 @@ impl DecorationContext<'_> {
     ///
     /// Returns `true` if the atlas had the entry and the glyph was emitted,
     /// `false` to signal the caller should fall back to rect emission.
-    fn try_atlas_decoration(
-        &mut self,
-        glyph_id: u16,
-        color: Rgb,
-        x: f32,
-        y: f32,
-    ) -> bool {
+    fn try_atlas_decoration(&mut self, glyph_id: u16, color: Rgb, x: f32, y: f32) -> bool {
         let key = decoration_key(glyph_id, self.size_q6);
         if let Some(entry) = self.atlas.lookup_key(key) {
             // Curly decorations are taller than the underline position —
@@ -145,14 +132,7 @@ impl DecorationContext<'_> {
 // ── Rect-based fallbacks (used when atlas entries are unavailable) ──
 
 /// Curly underline fallback: per-pixel sine wave rects.
-fn draw_curly_underline_rects(
-    bg: &mut InstanceWriter,
-    color: Rgb,
-    x: f32,
-    y: f32,
-    w: f32,
-    t: f32,
-) {
+fn draw_curly_underline_rects(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
     let amplitude = curly_amplitude(t);
     let steps = w as usize;
     for dx in 0..steps {
@@ -163,14 +143,7 @@ fn draw_curly_underline_rects(
 }
 
 /// Double underline: two lines separated by a gap that scales with thickness.
-fn draw_double_underline(
-    bg: &mut InstanceWriter,
-    color: Rgb,
-    x: f32,
-    y: f32,
-    w: f32,
-    t: f32,
-) {
+fn draw_double_underline(bg: &mut InstanceWriter, color: Rgb, x: f32, y: f32, w: f32, t: f32) {
     let gap = (t + 1.0).ceil();
     bg.push_rect(x, y, w, t, color, 1.0);
     bg.push_rect(x, y - gap, w, t, color, 1.0);

@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use swash::scale::{image::Content, Render, ScaleContext, Source, StrikeWith};
+use swash::scale::{Render, ScaleContext, Source, StrikeWith, image::Content};
 use swash::zeno::{Angle, Format, Transform};
 use swash::{CacheKey, FontRef};
 
@@ -88,7 +88,10 @@ pub(super) fn glyph_id(fd: &FaceData, ch: char) -> u16 {
 /// `format: GlyphFormat::Color` with RGBA premultiplied data regardless of
 /// the requested `format`. Callers must route color glyphs to a separate
 /// RGBA atlas.
-#[allow(clippy::too_many_arguments, reason = "rasterization requires all these parameters")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "rasterization requires all these parameters"
+)]
 pub(super) fn rasterize_from_face(
     fd: &FaceData,
     glyph_id: u16,

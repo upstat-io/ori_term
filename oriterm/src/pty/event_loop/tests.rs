@@ -139,7 +139,6 @@ fn processes_pty_output_into_terminal() {
     );
 }
 
-
 #[test]
 fn read_buffer_size_is_64kb() {
     assert_eq!(READ_BUFFER_SIZE, 65536);

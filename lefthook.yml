@@ -1,6 +1,9 @@
 pre-commit:
   parallel: true
   commands:
+    fmt:
+      glob: "*.rs"
+      run: cargo fmt --all -- --check
     clippy:
       glob: "*.rs"
       run: cargo clippy --target x86_64-pc-windows-gnu -- -D warnings
