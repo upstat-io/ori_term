@@ -1,9 +1,9 @@
 ---
 section: 6
-title: Font Pipeline + Advanced Glyph Rendering
+title: Font Pipeline + Best-in-Class Glyph Rendering
 status: not-started
 tier: 2
-goal: "Full font pipeline: multi-face loading, rustybuzz shaping, ligatures, fallback chain, built-in glyphs, color emoji, advanced atlas"
+goal: "Best font rendering of any terminal emulator. Full shaping pipeline with hinting, LCD subpixel rendering, subpixel positioning, proper font synthesis, and automated visual regression testing. The feature users switch terminals for."
 sections:
   - id: "6.1"
     title: Multi-Face Font Loading
@@ -36,7 +36,7 @@ sections:
     title: Color Emoji
     status: not-started
   - id: "6.11"
-    title: Synthetic Bold + Variable Weight
+    title: Font Synthesis (Bold + Italic)
     status: not-started
   - id: "6.12"
     title: Text Decorations
@@ -48,20 +48,39 @@ sections:
     title: Pre-Caching + Performance
     status: not-started
   - id: "6.15"
+    title: Hinting
+    status: not-started
+  - id: "6.16"
+    title: Subpixel Rendering (LCD)
+    status: not-started
+  - id: "6.17"
+    title: Subpixel Glyph Positioning
+    status: not-started
+  - id: "6.18"
+    title: Visual Regression Testing
+    status: not-started
+  - id: "6.19"
     title: Section Completion
     status: not-started
 ---
 
-# Section 06: Font Pipeline + Advanced Glyph Rendering
+# Section 06: Font Pipeline + Best-in-Class Glyph Rendering
 
 **Status:** 📋 Planned
-**Goal:** Replace Section 04's basic per-character rasterization with the full font pipeline from the old prototype: rustybuzz shaping, ligature support, multi-face fallback with cap-height normalization, built-in geometric glyphs, color emoji, advanced atlas packing, and all text decorations.
+**Goal:** Best font rendering of any terminal emulator — not just feature-complete but visually superior. Full rustybuzz shaping pipeline with ligatures, cap-height normalized fallback chains, pixel-perfect built-in glyphs, color emoji, proper font synthesis (embolden + skew, not crude hacks), hinting with auto-DPI detection, LCD subpixel rendering with per-channel blending, subpixel glyph positioning, and automated visual regression testing. This is the feature users switch terminals for.
 
 **Crate:** `oriterm` (binary)
-**Dependencies:** `swash`, `rustybuzz`, `dwrote` (Windows)
-**Reference:** `_old/src/font/`, `_old/src/gpu/atlas.rs`, `_old/src/gpu/builtin_glyphs.rs`, `_old/src/gpu/render_grid.rs`
+**Dependencies:** `swash`, `rustybuzz`, `zeno` (via swash, for `Format`, `Vector`, `Transform`), `dwrote` (Windows)
+**Reference:** `_old/src/font/`, `_old/src/gpu/atlas.rs`, `_old/src/gpu/builtin_glyphs.rs`, WezTerm `wezterm-font/` (LCD rendering, hinting config), Ghostty `src/font/face/freetype.zig` (embolden formula), cosmic-text `src/swash.rs` (subpixel positioning)
 
-**Prerequisite:** Section 04 complete (basic terminal rendering working with simple per-char glyphs). This section replaces the basic font path with the full pipeline.
+**Prerequisite:** Section 05B complete (startup performance). This section replaces the basic font path with the full pipeline.
+
+**Why this is the differentiator:**
+- **Alacritty**: No ligatures, no shaping, no color emoji. Refuses to add them.
+- **WezTerm**: Has ligatures but rendering artifacts, glyph bleeding, incorrect fallback sizing. 100+ open font issues.
+- **Ghostty**: Platform-inconsistent (CoreText on macOS, freetype on Linux — same font looks different). No LCD subpixel.
+- **Kitty**: Decent but quirks with certain fonts, no LCD subpixel.
+- **ori_term**: Same rasterizer (swash) + same shaper (rustybuzz) = identical rendering on all platforms. Plus hinting, LCD subpixel, proper synthesis, and subpixel positioning — features no competitor offers together.
 
 ---
 
@@ -465,32 +484,46 @@ Support for color emoji rendering (CBDT/CBLC bitmap emoji or COLR/CPAL outline e
 
 ---
 
-## 6.11 Synthetic Bold + Variable Weight
+## 6.11 Font Synthesis (Bold + Italic)
 
-When a font doesn't have a Bold variant, simulate it. When a font has a weight axis, use it.
+When a font lacks a Bold or Italic variant, synthesize it properly using swash's outline manipulation — not crude hacks like double-strike or missing-variant fallback-to-Regular.
 
-**File:** `oriterm/src/font/collection.rs`, `oriterm/src/gpu/render_grid.rs`
+**File:** `oriterm/src/font/collection.rs`, `oriterm/src/font/rasterize.rs`
 
-**Reference:** `_old/src/font/collection.rs` (weight_variation_for)
+**Reference:** `_old/src/font/collection.rs` (weight_variation_for), Ghostty `src/font/face/freetype.zig` (embolden formula)
 
-- [ ] Variable font weight:
+- [ ] Variable font weight (preferred path):
   - [ ] If font has `wght` axis: use font variations instead of separate Bold file
   - [ ] `weight_variation_for(face_idx: FaceIdx, weight: u16) -> Option<f32>`
     - [ ] Regular/Italic: use base weight (e.g., 400)
     - [ ] Bold/BoldItalic: `min(weight + 300, 900)` — CSS "bolder" algorithm
     - [ ] Fallbacks: `None` (use font's default weight)
   - [ ] Pass to swash: `scale_ctx.builder(face).variations(&[("wght", value)])`
-- [ ] Synthetic bold (when `has_variant[Bold] == false` and no wght axis):
-  - [ ] Render glyph at `(x, y)` AND `(x + 1.0, y)` — double-strike
-  - [ ] Detectable during rendering: check `has_variant[1]` for bold
-  - [ ] Only apply to primary face (fallbacks use their own weight)
-- [ ] Integration with rendering loop:
-  - [ ] If cell has BOLD flag and current face lacks real bold and lacks wght:
-    - [ ] Push foreground glyph instance twice (at x and x+1)
+- [ ] Synthetic bold via `Render::embolden(strength)` (when no real Bold and no wght axis):
+  - [ ] `embolden()` uniformly expands outlines before rasterization — strokes get thicker in all directions, not just a 1px horizontal shift
+  - [ ] Strength formula (from Ghostty): `(font_height_px * 64.0 / 2048.0).ceil()` — scales proportionally with font size so bold looks consistent at 8pt and 24pt
+  - [ ] Bounding box grows: adjust glyph metrics (bearing_x, width) to account for expansion so glyphs don't clip at cell edges
+  - [ ] Atlas key includes `synthetic_bold: bool` — emboldened glyphs cached separately from regular
+- [ ] Synthetic italic via `Render::transform(Transform::skew(14°, 0°))`:
+  - [ ] Standard 14-degree oblique angle (CSS spec, same as Ghostty and cosmic-text)
+  - [ ] `Transform::skew(Angle::from_degrees(14.0), Angle::from_degrees(0.0))`
+  - [ ] Applied when cell has ITALIC flag but face lacks real italic variant
+  - [ ] Atlas key includes `synthetic_italic: bool` — skewed glyphs cached separately
+- [ ] Use swash `Synthesis` for automatic detection:
+  - [ ] `font_attributes.synthesize(requested_attributes) -> Synthesis`
+  - [ ] `synthesis.embolden()` → apply embolden
+  - [ ] `synthesis.skew()` → apply transform with returned angle
+  - [ ] `synthesis.variations()` → apply weight/width settings
+- [ ] Synthesis combinations:
+  - [ ] BoldItalic with no variant: apply BOTH embolden and skew simultaneously
+  - [ ] Order: variations first, then embolden, then transform (swash applies in render order)
 - [ ] **Tests**:
-  - [ ] Variable font: weight variation applied (visually thicker at wght=700)
-  - [ ] Synthetic bold: two instances emitted for bold cell without bold face
-  - [ ] Regular cells: single instance only
+  - [ ] Variable font: weight variation applied (wght=700 produces thicker strokes)
+  - [ ] Synthetic bold: emboldened glyph is wider than regular (measure rasterized bitmap)
+  - [ ] Synthetic italic: skewed glyph has non-zero horizontal displacement
+  - [ ] Combined bold+italic: both embolden and skew applied
+  - [ ] Regular cells: no synthesis applied
+  - [ ] Synthesis detection: `Synthesis::any()` returns true only when variant is missing
 
 ---
 
@@ -608,26 +641,235 @@ Eliminate first-frame stalls and optimize per-frame costs.
 
 ---
 
-## 6.15 Section Completion
+## 6.15 Hinting
 
-- [ ] All 6.1–6.14 items complete
+Control over glyph hinting — the grid-fitting process that snaps outlines to pixel boundaries for sharper rendering at small sizes. This is the single biggest visual quality factor on non-HiDPI displays (still the majority of monitors in use).
+
+**File:** `oriterm/src/font/rasterize.rs`, `oriterm/src/font/collection.rs`
+
+**Reference:** WezTerm `wezterm-font/src/ftwrap.rs` (load targets), Ghostty `src/font/face/freetype.zig` (hinting flags)
+
+- [ ] Hinting mode enum:
+  ```rust
+  pub enum HintingMode {
+      /// Full hinting (snaps to pixel grid). Crispest text on non-HiDPI.
+      Full,
+      /// No hinting (preserves outline shape). Best on HiDPI (2x+) where
+      /// subpixel precision isn't needed for sharpness.
+      None,
+  }
+  ```
+  - [ ] swash only supports `.hint(bool)` — no "light" mode. Two modes is honest.
+- [ ] Auto-detection based on display scale:
+  - [ ] `scale_factor < 2.0` → `HintingMode::Full` (non-HiDPI needs grid-fitting)
+  - [ ] `scale_factor >= 2.0` → `HintingMode::None` (Retina/4K has enough pixels)
+  - [ ] Re-evaluate on `ScaleFactorChanged` events
+- [ ] User override via config:
+  ```toml
+  [font]
+  hinting = "full"  # or "none"
+  ```
+  - [ ] Config value overrides auto-detection
+- [ ] Integration with rasterization:
+  - [ ] `ScalerBuilder::hint(mode == HintingMode::Full)` applied when building scaler
+  - [ ] Hinted glyphs produce different bitmaps — atlas key must include hinting state
+  - [ ] `RasterKey` expanded: add `hinted: bool` field
+- [ ] Grid-fitted cell metrics:
+  - [ ] When hinting is Full: compute cell_width/cell_height from hinted advances
+  - [ ] When hinting is None: use unhinted metric (floating-point, rounded)
+  - [ ] Hinted metrics are more consistent across glyphs (less cumulative rounding error)
+- [ ] Font size change or hinting mode change:
+  - [ ] Clear entire atlas (all cached glyphs are now wrong)
+  - [ ] Recompute cell metrics
+  - [ ] Re-pre-cache ASCII
+- [ ] **Tests**:
+  - [ ] Hinted glyph bitmap differs from unhinted at same size
+  - [ ] Auto-detection: scale 1.0 → Full, scale 2.0 → None
+  - [ ] Config override: explicit "none" at scale 1.0 disables hinting
+  - [ ] Atlas invalidated on hinting mode change
+
+---
+
+## 6.16 Subpixel Rendering (LCD)
+
+LCD subpixel rendering uses the physical R/G/B subpixels of the display to achieve ~3x effective horizontal resolution. This is what makes ClearType text on Windows look sharp and what macOS used before Retina displays made it unnecessary. No GPU terminal except WezTerm implements this, and WezTerm's is buggy. Getting it right is a headline differentiator.
+
+**File:** `oriterm/src/font/rasterize.rs`, `oriterm/src/gpu/pipeline.rs` (shader), `oriterm/src/gpu/atlas.rs`
+
+**Reference:** WezTerm `wezterm-font/src/rasterizer/freetype.rs` (LCD rendering), WezTerm `wezterm-gui/src/glyph-frag.glsl` (dual-source blending)
+
+- [ ] Subpixel rasterization via swash:
+  - [ ] `Render::format(Format::Subpixel)` — produces RGBA subpixel mask
+  - [ ] Output: 4 bytes per pixel. R/G/B channels contain per-subpixel coverage. A channel contains overall coverage.
+  - [ ] `Format::Subpixel` uses standard RGB subpixel order (1/3 pixel offsets for R and B)
+  - [ ] `zeno::Format::subpixel_bgra()` for BGR panel layouts
+  - [ ] `Content::SubpixelMask` indicates subpixel output (vs `Content::Mask` for grayscale)
+- [ ] Pixel geometry detection and configuration:
+  ```toml
+  [font]
+  lcd_filter = "rgb"   # "rgb", "bgr", or "none" (disable subpixel)
+  ```
+  - [ ] Default: `"rgb"` (vast majority of displays)
+  - [ ] `"none"` falls back to grayscale alpha rendering
+  - [ ] Auto-disable on HiDPI (scale >= 2.0) — Retina displays don't have visible subpixels
+- [ ] Separate atlas storage for subpixel glyphs:
+  - [ ] Grayscale glyphs: `R8Unorm` texture (1 byte/pixel) — existing path
+  - [ ] Subpixel glyphs: `Rgba8Unorm` texture (4 bytes/pixel) — new
+  - [ ] Atlas tracks per-entry format: `AtlasEntry.subpixel: bool`
+  - [ ] Color emoji always rasterized as `Format::Alpha` → `Rgba8Unorm` (no subpixel for bitmaps)
+- [ ] Shader changes for per-channel alpha blending:
+  - [ ] Grayscale path (existing): `output.rgb = fg_color.rgb; output.a = texture_sample.r * fg_color.a`
+  - [ ] Subpixel path (new): each color channel blended independently:
+    ```wgsl
+    let mask = textureSample(atlas, sampler, uv);  // RGBA subpixel mask
+    output.r = mix(bg.r, fg.r, mask.r);
+    output.g = mix(bg.g, fg.g, mask.g);
+    output.b = mix(bg.b, fg.b, mask.b);
+    output.a = max(mask.r, max(mask.g, mask.b));
+    ```
+  - [ ] Alternative: dual-source blending (WezTerm approach) — more correct but requires `DUAL_SOURCE_BLENDING` wgpu feature
+  - [ ] Decision: start with the `mix()` approach (simpler, no feature requirement), upgrade to dual-source if quality demands it
+- [ ] Rendering pipeline integration:
+  - [ ] Subpixel glyphs need the background color at render time (for the `mix()`)
+  - [ ] Two approaches:
+    - [ ] **Read-back**: sample the current framebuffer at the glyph position (expensive)
+    - [ ] **Pass bg_color as uniform/instance data**: the Prepare phase already computes bg_color per cell — pass it to the fg shader as an instance attribute
+  - [ ] **Recommended**: pass bg_color in the fg instance buffer (add 4 bytes per glyph instance)
+- [ ] Interaction with other features:
+  - [ ] Transparent backgrounds: subpixel rendering over transparency produces color fringing — fall back to grayscale alpha for cells with non-opaque backgrounds
+  - [ ] Selection highlighting: when selection inverts colors, subpixel glyphs must be re-resolved or fall back to grayscale
+  - [ ] Color emoji: always grayscale alpha path (no subpixel for pre-colored bitmaps)
+- [ ] **Tests**:
+  - [ ] Subpixel-rasterized glyph has wider bitmap than grayscale equivalent (3x horizontal)
+  - [ ] RGB vs BGR: channel order swapped correctly
+  - [ ] Auto-disable: scale 2.0+ renders grayscale
+  - [ ] Config "none": forces grayscale regardless of scale
+  - [ ] Transparent cell: falls back to grayscale (no color fringing)
+  - [ ] Visual regression: compare subpixel vs grayscale rendering of reference string
+
+---
+
+## 6.17 Subpixel Glyph Positioning
+
+Render glyphs at fractional pixel offsets for tighter, more natural spacing. Most visible in UI text (tab titles, search bar) and for combining marks / shaper offsets in grid text. No terminal currently does this.
+
+**File:** `oriterm/src/font/rasterize.rs`, `oriterm/src/gpu/atlas.rs`
+
+**Reference:** cosmic-text `src/swash.rs` (x_bin/y_bin cache key)
+
+- [ ] Fractional offset via swash:
+  - [ ] `Render::offset(Vector::new(x_fract, y_fract))` — shifts rasterization grid
+  - [ ] A glyph at x=10.3 is rasterized with `offset(0.3, 0.0)` and placed at integer x=10
+  - [ ] The rasterizer produces a slightly different bitmap for each fractional offset — the anti-aliasing pattern shifts to represent the true sub-pixel position
+- [ ] Quantization to reduce atlas explosion:
+  - [ ] 4 horizontal phases: 0.00, 0.25, 0.50, 0.75 (snap fractional part to nearest quarter)
+  - [ ] 1 vertical phase: 0.0 only (vertical subpixel rarely matters for horizontal text)
+  - [ ] `subpx_bin(fract: f32) -> u8` — returns 0, 1, 2, or 3
+  - [ ] 4x atlas entries per glyph shape (acceptable — most grid text hits phase 0)
+- [ ] Atlas key expansion:
+  - [ ] Add `subpx_x: u8` (0–3) to `RasterKey`
+  - [ ] Grid text at integer cell boundaries → always phase 0 (no extra atlas entries)
+  - [ ] Shaper x_offset/y_offset → quantized to nearest phase
+  - [ ] UI text → free-positioned, each glyph may hit any phase
+- [ ] Where subpixel positioning applies:
+  - [ ] **UI text** (tab titles, search bar, overlays): full subpixel positioning — glyphs placed at fractional advances from shaper. Biggest visual improvement.
+  - [ ] **Combining marks**: shaper x_offset/y_offset are fractional — rasterize at correct subpixel offset for precise diacritic placement
+  - [ ] **Ligature internals**: multi-glyph ligatures may have fractional internal offsets
+  - [ ] **Base grid text**: integer cell boundaries → phase 0. No extra atlas cost.
+- [ ] Config:
+  ```toml
+  [font]
+  subpixel_positioning = true  # default true; false snaps everything to integer
+  ```
+- [ ] **Tests**:
+  - [ ] Phase 0 and phase 2 (0.5) produce different bitmaps for same glyph
+  - [ ] Quantization: 0.13 → phase 0, 0.37 → phase 1, 0.62 → phase 2, 0.88 → phase 3
+  - [ ] Grid text at integer position: always phase 0
+  - [ ] UI text: mixed phases across a shaped string
+  - [ ] Atlas key differs by subpx_x: cache stores separate entries
+
+---
+
+## 6.18 Visual Regression Testing
+
+Automated pixel-level comparison of rendered text against golden reference images. This is what prevents regressions and validates that the font pipeline produces correct output across all character types, sizes, and DPI scales. Infrastructure investment that pays compound interest.
+
+**File:** `oriterm/tests/visual/`, `oriterm/src/gpu/renderer/mod.rs` (headless rendering)
+
+**Reference:** Rio/Sugarloaf `sugarloaf/tests/util/image.rs` (FLIP algorithm), Ghostty `test/cases/` (golden PNGs)
+
+- [ ] Headless rendering infrastructure:
+  - [ ] `GpuState::new_headless()` already exists — extend to support offscreen render targets
+  - [ ] `render_text_to_image(text: &str, font_config: &FontConfig, size: (u32, u32)) -> RgbaImage`
+  - [ ] Renders text string through the full pipeline: shaping → atlas → GPU → pixel readback
+  - [ ] Returns RGBA pixel buffer for comparison
+- [ ] Golden image management:
+  - [ ] Store reference PNGs in `oriterm/tests/visual/golden/`
+  - [ ] Naming convention: `{test_name}_{size}pt_{dpi}dpi.png`
+  - [ ] Generated once, checked into git, reviewed on changes
+  - [ ] `ORITERM_UPDATE_GOLDEN=1 cargo test` regenerates golden images
+- [ ] Comparison algorithm:
+  - [ ] **Per-pixel difference**: compute per-channel absolute difference
+  - [ ] **Tolerance threshold**: allow ±1 per channel (anti-aliasing can vary by platform/driver)
+  - [ ] **Percentage threshold**: pass if ≥ 99.5% of pixels match within tolerance
+  - [ ] On failure: write `{test_name}_actual.png` and `{test_name}_diff.png` for visual inspection
+  - [ ] Diff image: highlight mismatched pixels in red
+- [ ] Reference test strings (each becomes a golden image test):
+  - [ ] `ascii_regular`: `"The quick brown fox jumps over the lazy dog 0123456789"` — baseline Latin
+  - [ ] `ascii_bold_italic`: same string with bold and italic variants — synthesis quality
+  - [ ] `ligatures`: `"=> -> != === !== >= <= |> <| :: <<"` — ligature shaping
+  - [ ] `box_drawing`: `"┌─┬─┐│ │ ││ │ │├─┼─┤│ │ │└─┴─┘"` — pixel-perfect connections
+  - [ ] `block_elements`: `"█▓▒░▀▄▌▐▖▗▘▝▚▞"` — block element coverage
+  - [ ] `braille`: `"⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣿⠿⡿⢿"` — braille pattern correctness
+  - [ ] `cjk_fallback`: `"Hello你好世界こんにちは안녕하세요"` — fallback chain + cap-height normalization
+  - [ ] `combining_marks`: `"é ñ ü ā ö ẗ ḁ̈"` — diacritic positioning
+  - [ ] `powerline`: `"  "` — powerline glyph shapes
+  - [ ] `mixed_styles`: bold, italic, bold-italic interleaved — variant switching
+- [ ] Multi-size testing:
+  - [ ] Test at 10pt, 14pt, 20pt — catches size-dependent hinting/rounding issues
+  - [ ] Test at 96 DPI and 192 DPI — catches HiDPI rendering differences
+- [ ] Integration with CI:
+  - [ ] `cargo test --test visual` runs all golden image tests
+  - [ ] Tests skip gracefully if no GPU available (headless may require software rasterizer)
+  - [ ] Font dependency: tests use an embedded font (e.g., JetBrains Mono subset) so results are reproducible regardless of system fonts
+- [ ] **Tests** (meta — testing the testing framework):
+  - [ ] Identical images: comparison passes
+  - [ ] 1-pixel-off images: comparison passes (within tolerance)
+  - [ ] Visually different images: comparison fails, diff image generated
+  - [ ] Missing golden: test skipped with message to regenerate
+
+---
+
+## 6.19 Section Completion
+
+- [ ] All 6.1–6.18 items complete
 - [ ] Full font pipeline: multi-face, fallback chain, cap-height normalization
 - [ ] Rustybuzz shaping: ligatures, combining marks, OpenType features
 - [ ] Advanced atlas: guillotine packing, multi-page, LRU eviction, Q6 keying
 - [ ] Built-in glyphs: box drawing, blocks, braille, powerline — pixel-perfect
 - [ ] Color emoji: RGBA atlas, correct rendering without fg tinting
-- [ ] Synthetic bold: double-strike when no real bold face
+- [ ] Font synthesis: proper embolden (outline expansion) + proper italic (14° skew) — no crude hacks
+- [ ] Hinting: auto-detected by DPI, user-overridable, atlas-aware
+- [ ] Subpixel rendering (LCD): per-channel alpha blending, RGB/BGR support, auto-disabled on HiDPI
+- [ ] Subpixel glyph positioning: fractional offsets for UI text and combining marks
 - [ ] All text decorations: single, double, curly, dotted, dashed underline + strikethrough
 - [ ] UI text shaping: tab bar titles, search bar, measure + truncate
 - [ ] Pre-caching: no first-frame stall for ASCII
-- [ ] **Visual tests**:
-  - [ ] Ligatures: `=>`, `->`, `!=` render as single glyphs (with ligature font)
-  - [ ] Box drawing: `htop`, `top`, `tmux` borders look pixel-perfect
-  - [ ] Braille: `braille-art` renders correctly
-  - [ ] Powerline: oh-my-zsh/starship prompt renders correctly
-  - [ ] CJK: Chinese/Japanese/Korean characters render at correct size
-  - [ ] Emoji: 🎉 🔥 ❤️ render in color
-  - [ ] Combining marks: `é`, `ñ`, `ü` render with correct accents
-- [ ] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
+- [ ] Visual regression suite: golden image tests for all character types, sizes, and DPI scales
+- [ ] **Visual tests** (automated via golden images):
+  - [ ] Ligatures: `=>`, `->`, `!=` render as single glyphs
+  - [ ] Box drawing: connected borders, pixel-perfect at all sizes
+  - [ ] Braille: correct dot patterns
+  - [ ] Powerline: triangle shapes render correctly
+  - [ ] CJK: cap-height normalized, visually consistent with Latin text
+  - [ ] Emoji: rendered in color, correct size
+  - [ ] Combining marks: correctly positioned diacritics
+  - [ ] Synthetic bold: visually heavier than regular, no clipping
+  - [ ] Synthetic italic: 14° oblique, no artifacts
+  - [ ] Hinted vs unhinted: both produce clean output at their target DPIs
+  - [ ] Subpixel LCD: visibly sharper than grayscale on 1x displays
+- [ ] `./clippy-all.sh` — no warnings
+- [ ] `./test-all.sh` — all tests pass including visual regression suite
+- [ ] `./build-all.sh` — cross-compilation succeeds
 
-**Exit Criteria:** Font pipeline is production-quality. Every character type renders correctly: ASCII, ligatures, CJK, emoji, box drawing, braille, powerline, combining marks. Visual parity with the old prototype's font rendering.
+**Exit Criteria:** Font rendering is best-in-class — not just feature-complete but visually superior. Every character type renders correctly. Hinting produces crisp text on 1080p. LCD subpixel rendering provides measurably sharper text than any competing GPU terminal. Font synthesis (bold/italic) is indistinguishable from real variants at normal reading distance. Visual regression tests prevent quality regressions. This is the feature users switch terminals for.

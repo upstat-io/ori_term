@@ -166,7 +166,7 @@ profiling, timing, Instant, startup time, latency
 
 ---
 
-### Section 06: Font Pipeline
+### Section 06: Font Pipeline + Best-in-Class Glyph Rendering
 **File:** `section-06-font-pipeline.md` | **Tier:** 2 | **Status:** Not Started
 
 ```
@@ -183,12 +183,18 @@ AtlasEntry, GlyphKey, Q6 fixed-point, subpixel, page_index
 built-in glyphs, box drawing, block elements, braille, powerline
 geometric, BOX_DRAWING_TABLE, lookup table, rasterize_builtin
 color emoji, RGBA, ColorOutline, ColorBitmap, VS15, VS16, presentation selector
-synthetic bold, double-strike, variable weight, wght axis
+hinting, hint, grid-fitting, HintingMode, DPI-aware, auto-detect, crisp text
+subpixel rendering, LCD, ClearType, Format::Subpixel, per-channel alpha, RGB, BGR
+subpixel positioning, fractional offset, Vector, offset, subpx_bin, quantization
+font synthesis, embolden, synthetic bold, synthetic italic, skew, Transform, oblique
+visual regression, golden image, pixel comparison, reference PNG, FLIP, automated testing
+synthetic bold, embolden, variable weight, wght axis, Synthesis
+synthetic italic, skew, oblique, Transform, 14 degrees
 underline, curly underline, dotted, dashed, double, strikethrough
 text decoration, underline color, SGR 58, hyperlink hover
 UI text, UiShapedGlyph, measure_text, ellipsis truncation, tab bar text
 pre-cache, ASCII pre-cache, scratch buffer, face creation, perf
-swash, rasterize, glyph, RasterizedGlyph, GlyphStyle
+swash, rasterize, glyph, RasterizedGlyph, GlyphStyle, zeno
 dwrote, DirectWrite, Windows font, system fonts
 ```
 
