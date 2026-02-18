@@ -63,12 +63,13 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
     }
 }
 
-/// Rasterize and cache built-in geometric glyphs found in the frame.
+/// Rasterize and cache all built-in glyphs and decoration patterns in the frame.
 ///
-/// Scans all cells for built-in characters (box drawing, block elements,
-/// braille, powerline). On cache miss, rasterizes the glyph to an alpha
-/// bitmap and inserts it into the atlas.
-pub(crate) fn ensure_cached(
+/// Single-pass scan: checks each cell for built-in characters (box drawing,
+/// block elements, braille, powerline) and patterned underline flags (curly,
+/// dotted, dashed). Built-in glyphs are rasterized individually on cache miss;
+/// decoration patterns are collected as flags and rasterized once after the scan.
+pub(crate) fn ensure_builtins_cached(
     input: &FrameInput,
     size_q6: u32,
     atlas: &mut GlyphAtlas,
@@ -76,51 +77,30 @@ pub(crate) fn ensure_cached(
 ) {
     let cell_w = input.cell_size.width.round() as u32;
     let cell_h = input.cell_size.height.round() as u32;
-
-    for cell in &input.content.cells {
-        if !is_builtin(cell.ch) {
-            continue;
-        }
-        let key = raster_key(cell.ch, size_q6);
-        if atlas.lookup_touch(key).is_some() {
-            continue;
-        }
-        if atlas.is_known_empty(key) {
-            continue;
-        }
-        if let Some(glyph) = rasterize(cell.ch, cell_w, cell_h) {
-            atlas.insert(key, &glyph, queue);
-        } else {
-            atlas.mark_empty(key);
-        }
-    }
-}
-
-/// Rasterize and cache patterned underline decorations found in the frame.
-///
-/// Scans all cells for curly, dotted, or dashed underline flags. On cache
-/// miss, rasterizes the pattern to an alpha bitmap and inserts it into the
-/// atlas. Each pattern is rasterized once per (`cell_width`, `stroke_size`)
-/// combination (captured by `size_q6`).
-pub(crate) fn ensure_decorations_cached(
-    input: &FrameInput,
-    size_q6: u32,
-    atlas: &mut GlyphAtlas,
-    queue: &Queue,
-) {
     let metrics = &input.cell_size;
 
-    // Scan for which pattern types are needed.
     let mut need_curly = false;
     let mut need_dotted = false;
     let mut need_dashed = false;
 
     for cell in &input.content.cells {
-        need_curly = need_curly || cell.flags.contains(CellFlags::CURLY_UNDERLINE);
-        need_dotted = need_dotted || cell.flags.contains(CellFlags::DOTTED_UNDERLINE);
-        need_dashed = need_dashed || cell.flags.contains(CellFlags::DASHED_UNDERLINE);
-        if need_curly && need_dotted && need_dashed {
-            break;
+        // Built-in geometric glyphs.
+        if is_builtin(cell.ch) {
+            let key = raster_key(cell.ch, size_q6);
+            if atlas.lookup_touch(key).is_none() && !atlas.is_known_empty(key) {
+                if let Some(glyph) = rasterize(cell.ch, cell_w, cell_h) {
+                    atlas.insert(key, &glyph, queue);
+                } else {
+                    atlas.mark_empty(key);
+                }
+            }
+        }
+
+        // Decoration pattern flags (early-exit when all 3 found).
+        if !(need_curly && need_dotted && need_dashed) {
+            need_curly = need_curly || cell.flags.contains(CellFlags::CURLY_UNDERLINE);
+            need_dotted = need_dotted || cell.flags.contains(CellFlags::DOTTED_UNDERLINE);
+            need_dashed = need_dashed || cell.flags.contains(CellFlags::DASHED_UNDERLINE);
         }
     }
 

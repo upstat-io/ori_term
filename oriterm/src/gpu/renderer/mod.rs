@@ -229,16 +229,8 @@ impl GpuRenderer {
             &gpu.queue,
         );
 
-        // Phase B2: Ensure built-in geometric glyphs cached.
-        super::builtin_glyphs::ensure_cached(
-            input,
-            self.shaping.frame.size_q6(),
-            &mut self.atlas,
-            &gpu.queue,
-        );
-
-        // Phase B3: Ensure patterned decoration glyphs cached.
-        super::builtin_glyphs::ensure_decorations_cached(
+        // Phase B2: Ensure built-in geometric glyphs + decoration patterns cached.
+        super::builtin_glyphs::ensure_builtins_cached(
             input,
             self.shaping.frame.size_q6(),
             &mut self.atlas,

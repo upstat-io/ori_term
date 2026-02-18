@@ -29,6 +29,15 @@ pub(crate) fn decoration_key(glyph_id: u16, size_q6: u32) -> RasterKey {
     }
 }
 
+/// Curly underline wave amplitude, derived from stroke thickness.
+///
+/// Used by both rasterization (bitmap height) and the prepare phase
+/// (vertical positioning). Must stay in sync — if the formula changes,
+/// the curly underline will be vertically misaligned.
+pub(crate) fn curly_amplitude(stroke_size: f32) -> f32 {
+    (stroke_size * 2.0).max(2.0)
+}
+
 /// Rasterize a curly underline pattern.
 ///
 /// Produces a sine wave with period = `cell_width`, amplitude scaling with
@@ -40,7 +49,7 @@ pub(crate) fn rasterize_curly(metrics: &CellMetrics) -> Option<RasterizedGlyph> 
         return None;
     }
 
-    let amplitude = (t * 2.0).max(2.0);
+    let amplitude = curly_amplitude(t);
     // Height = 2 * amplitude + thickness (covers full sine wave extent).
     let h = (2.0 * amplitude + t).ceil() as u32;
     if h == 0 {

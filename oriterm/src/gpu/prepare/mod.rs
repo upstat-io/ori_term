@@ -150,11 +150,13 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
         };
         frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
 
-        decorations::draw_decorations(
-            &mut frame.backgrounds, &mut frame.glyphs, atlas, 0,
-            cell.flags, cell.underline_color,
-            cell.fg, x, y, bg_w, &input.cell_size,
-        );
+        decorations::DecorationContext {
+            backgrounds: &mut frame.backgrounds,
+            glyphs: &mut frame.glyphs,
+            atlas,
+            size_q6: 0,
+            metrics: &input.cell_size,
+        }.draw(cell.flags, cell.underline_color, cell.fg, x, y, bg_w);
 
         // Foreground glyph (skip spaces).
         if cell.ch != ' ' {
@@ -225,11 +227,13 @@ fn fill_frame_shaped(
         };
         frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
 
-        decorations::draw_decorations(
-            &mut frame.backgrounds, &mut frame.glyphs, atlas, shaped.size_q6(),
-            cell.flags, cell.underline_color,
-            cell.fg, x, y, bg_w, &input.cell_size,
-        );
+        decorations::DecorationContext {
+            backgrounds: &mut frame.backgrounds,
+            glyphs: &mut frame.glyphs,
+            atlas,
+            size_q6: shaped.size_q6(),
+            metrics: &input.cell_size,
+        }.draw(cell.flags, cell.underline_color, cell.fg, x, y, bg_w);
 
         // Built-in geometric glyphs: bypass shaping, render from atlas.
         if crate::font::is_builtin(cell.ch) {
@@ -250,7 +254,12 @@ fn fill_frame_shaped(
         }
         if let Some(start_idx) = shaped.col_map(row, col) {
             let row_glyphs = shaped.row_glyphs(row);
-            emit_shaped_glyphs(row_glyphs, start_idx, col, x, y, baseline, shaped.size_q6(), atlas, cell.fg, frame);
+            GlyphEmitter {
+                baseline,
+                size_q6: shaped.size_q6(),
+                atlas,
+                frame,
+            }.emit(row_glyphs, start_idx, col, x, y, cell.fg);
         }
     }
 
@@ -261,62 +270,73 @@ fn fill_frame_shaped(
     }
 }
 
-/// Emit glyph instances for a shaped cell: base glyph + any combining marks.
+/// Frame-level context for shaped glyph emission.
 ///
-/// Starts at `start_idx` in `row_glyphs` (the base glyph from the col map),
-/// then iterates forward while subsequent glyphs share the same `col_start`
-/// (combining marks are contiguous in the shaper output).
-///
-/// Color emoji (entries with `is_color`) are routed to `frame.color_glyphs`
-/// instead of `frame.glyphs`, so they render via the RGBA pipeline without
-/// `fg_color` tinting.
-fn emit_shaped_glyphs(
-    row_glyphs: &[ShapedGlyph],
-    start_idx: usize,
-    col: usize,
-    x: f32,
-    y: f32,
+/// Bundles the atlas, size key, baseline, and output frame that are invariant
+/// across cells. Per-cell parameters (row glyphs, column, position, color)
+/// are passed to [`emit`](Self::emit).
+struct GlyphEmitter<'a> {
     baseline: f32,
     size_q6: u32,
-    atlas: &dyn AtlasLookup,
-    fg: Rgb,
-    frame: &mut PreparedFrame,
-) {
-    let mut is_first = true;
-    for sg in &row_glyphs[start_idx..] {
-        // Stop at the first glyph in a different column (combining marks are contiguous).
-        if !is_first && sg.col_start != col {
-            break;
-        }
-        is_first = false;
+    atlas: &'a dyn AtlasLookup,
+    frame: &'a mut PreparedFrame,
+}
 
-        let key = RasterKey {
-            glyph_id: sg.glyph_id,
-            face_idx: sg.face_idx,
-            size_q6,
-            synthetic: sg.synthetic,
-        };
-        if let Some(entry) = atlas.lookup_key(key) {
-            // Apply shaper offsets: x_offset shifts horizontally,
-            // y_offset shifts vertically (positive = up in font coords = subtract in screen).
-            let gx = x + entry.bearing_x as f32 + sg.x_offset;
-            let gy = y + baseline - entry.bearing_y as f32 - sg.y_offset;
-            let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-            let writer = if entry.is_color {
-                &mut frame.color_glyphs
-            } else {
-                &mut frame.glyphs
+impl GlyphEmitter<'_> {
+    /// Emit glyph instances for a shaped cell: base glyph + any combining marks.
+    ///
+    /// Starts at `start_idx` in `row_glyphs` (the base glyph from the col map),
+    /// then iterates forward while subsequent glyphs share the same `col_start`
+    /// (combining marks are contiguous in the shaper output).
+    ///
+    /// Color emoji (entries with `is_color`) are routed to `frame.color_glyphs`
+    /// instead of `frame.glyphs`, so they render via the RGBA pipeline without
+    /// `fg_color` tinting.
+    fn emit(
+        &mut self,
+        row_glyphs: &[ShapedGlyph],
+        start_idx: usize,
+        col: usize,
+        x: f32,
+        y: f32,
+        fg: Rgb,
+    ) {
+        let mut is_first = true;
+        for sg in &row_glyphs[start_idx..] {
+            // Stop at the first glyph in a different column (combining marks are contiguous).
+            if !is_first && sg.col_start != col {
+                break;
+            }
+            is_first = false;
+
+            let key = RasterKey {
+                glyph_id: sg.glyph_id,
+                face_idx: sg.face_idx,
+                size_q6: self.size_q6,
+                synthetic: sg.synthetic,
             };
-            writer.push_glyph(
-                gx,
-                gy,
-                entry.width as f32,
-                entry.height as f32,
-                uv,
-                fg,
-                1.0,
-                entry.page,
-            );
+            if let Some(entry) = self.atlas.lookup_key(key) {
+                // Apply shaper offsets: x_offset shifts horizontally,
+                // y_offset shifts vertically (positive = up in font coords = subtract in screen).
+                let gx = x + entry.bearing_x as f32 + sg.x_offset;
+                let gy = y + self.baseline - entry.bearing_y as f32 - sg.y_offset;
+                let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
+                let writer = if entry.is_color {
+                    &mut self.frame.color_glyphs
+                } else {
+                    &mut self.frame.glyphs
+                };
+                writer.push_glyph(
+                    gx,
+                    gy,
+                    entry.width as f32,
+                    entry.height as f32,
+                    uv,
+                    fg,
+                    1.0,
+                    entry.page,
+                );
+            }
         }
     }
 }

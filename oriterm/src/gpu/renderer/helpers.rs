@@ -110,6 +110,8 @@ pub(super) fn ensure_shaped_glyphs_cached(
             } else {
                 mono_atlas.insert(key, rasterized, queue);
             }
+        } else {
+            mono_atlas.mark_empty(key);
         }
     }
 }

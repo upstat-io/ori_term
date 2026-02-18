@@ -13,141 +13,132 @@ use oriterm_core::{CellFlags, Rgb};
 
 use crate::font::CellMetrics;
 use crate::gpu::builtin_glyphs::decorations::{
-    decoration_key, CURLY_GLYPH_ID, DASHED_GLYPH_ID, DOTTED_GLYPH_ID,
+    curly_amplitude, decoration_key, CURLY_GLYPH_ID, DASHED_GLYPH_ID, DOTTED_GLYPH_ID,
 };
 use crate::gpu::instance_writer::InstanceWriter;
 
 use super::AtlasLookup;
 
-/// Emit underline and strikethrough decorations for a single cell.
+/// Frame-level context for decoration rendering.
 ///
-/// Fast-path: returns immediately when no decoration flags are set.
-/// Underlines and strikethrough are independent — both can coexist on
-/// the same cell.
-///
-/// Patterned underlines (curly, dotted, dashed) are emitted as glyph
-/// instances from the atlas. If the atlas entry is missing (e.g. in tests),
-/// falls back to per-pixel rect emission.
-pub(super) fn draw_decorations(
-    backgrounds: &mut InstanceWriter,
-    glyphs: &mut InstanceWriter,
-    atlas: &dyn AtlasLookup,
-    size_q6: u32,
-    flags: CellFlags,
-    underline_color: Option<Rgb>,
-    fg: Rgb,
-    x: f32,
-    y: f32,
-    cell_width: f32,
-    metrics: &CellMetrics,
-) {
-    let has_underline = flags.intersects(CellFlags::ALL_UNDERLINES);
-    let has_strikethrough = flags.contains(CellFlags::STRIKETHROUGH);
-
-    if !has_underline && !has_strikethrough {
-        return;
-    }
-
-    let t = metrics.stroke_size;
-
-    if has_underline {
-        let color = underline_color.unwrap_or(fg);
-        let underline_y = y + metrics.baseline + metrics.underline_offset;
-        draw_underline(
-            backgrounds,
-            glyphs,
-            atlas,
-            size_q6,
-            flags,
-            color,
-            x,
-            underline_y,
-            cell_width,
-            t,
-            metrics,
-        );
-    }
-
-    if has_strikethrough {
-        let strike_y = y + metrics.baseline - metrics.strikeout_offset;
-        backgrounds.push_rect(x, strike_y, cell_width, t, fg, 1.0);
-    }
+/// Bundles the instance writers, atlas, size key, and font metrics that are
+/// invariant across cells within a single frame. Per-cell parameters (flags,
+/// colors, position) are passed to [`draw`](Self::draw).
+pub(super) struct DecorationContext<'a> {
+    pub(super) backgrounds: &'a mut InstanceWriter,
+    pub(super) glyphs: &'a mut InstanceWriter,
+    pub(super) atlas: &'a dyn AtlasLookup,
+    pub(super) size_q6: u32,
+    pub(super) metrics: &'a CellMetrics,
 }
 
-/// Dispatch to the appropriate underline style.
-///
-/// Priority: curly > double > dotted > dashed > single.
-fn draw_underline(
-    bg: &mut InstanceWriter,
-    glyphs: &mut InstanceWriter,
-    atlas: &dyn AtlasLookup,
-    size_q6: u32,
-    flags: CellFlags,
-    color: Rgb,
-    x: f32,
-    y: f32,
-    w: f32,
-    t: f32,
-    metrics: &CellMetrics,
-) {
-    if flags.contains(CellFlags::CURLY_UNDERLINE) {
-        if !try_atlas_decoration(glyphs, atlas, CURLY_GLYPH_ID, size_q6, color, x, y, metrics) {
-            draw_curly_underline_rects(bg, color, x, y, w, t);
-        }
-    } else if flags.contains(CellFlags::DOUBLE_UNDERLINE) {
-        draw_double_underline(bg, color, x, y, w, t);
-    } else if flags.contains(CellFlags::DOTTED_UNDERLINE) {
-        if !try_atlas_decoration(glyphs, atlas, DOTTED_GLYPH_ID, size_q6, color, x, y, metrics) {
-            draw_dotted_underline_rects(bg, color, x, y, w, t);
-        }
-    } else if flags.contains(CellFlags::DASHED_UNDERLINE) {
-        if !try_atlas_decoration(glyphs, atlas, DASHED_GLYPH_ID, size_q6, color, x, y, metrics) {
-            draw_dashed_underline_rects(bg, color, x, y, w, t);
-        }
-    } else {
-        // Single underline (plain UNDERLINE flag).
-        bg.push_rect(x, y, w, t, color, 1.0);
-    }
-}
+impl DecorationContext<'_> {
+    /// Emit underline and strikethrough decorations for a single cell.
+    ///
+    /// Fast-path: returns immediately when no decoration flags are set.
+    /// Underlines and strikethrough are independent — both can coexist on
+    /// the same cell.
+    ///
+    /// Patterned underlines (curly, dotted, dashed) are emitted as glyph
+    /// instances from the atlas. If the atlas entry is missing (e.g. in tests),
+    /// falls back to per-pixel rect emission.
+    pub(super) fn draw(
+        &mut self,
+        flags: CellFlags,
+        underline_color: Option<Rgb>,
+        fg: Rgb,
+        x: f32,
+        y: f32,
+        cell_width: f32,
+    ) {
+        let has_underline = flags.intersects(CellFlags::ALL_UNDERLINES);
+        let has_strikethrough = flags.contains(CellFlags::STRIKETHROUGH);
 
-/// Try to emit a patterned decoration as a single atlas glyph instance.
-///
-/// Returns `true` if the atlas had the entry and the glyph was emitted,
-/// `false` to signal the caller should fall back to rect emission.
-fn try_atlas_decoration(
-    glyphs: &mut InstanceWriter,
-    atlas: &dyn AtlasLookup,
-    glyph_id: u16,
-    size_q6: u32,
-    color: Rgb,
-    x: f32,
-    y: f32,
-    metrics: &CellMetrics,
-) -> bool {
-    let key = decoration_key(glyph_id, size_q6);
-    if let Some(entry) = atlas.lookup_key(key) {
-        // Curly decorations are taller than the underline position —
-        // center the bitmap vertically on the underline Y coordinate.
-        let glyph_y = if glyph_id == CURLY_GLYPH_ID {
-            let amplitude = (metrics.stroke_size * 2.0).max(2.0);
-            y - amplitude
+        if !has_underline && !has_strikethrough {
+            return;
+        }
+
+        let t = self.metrics.stroke_size;
+
+        if has_underline {
+            let color = underline_color.unwrap_or(fg);
+            let underline_y = y + self.metrics.baseline + self.metrics.underline_offset;
+            self.draw_underline(flags, color, x, underline_y, cell_width, t);
+        }
+
+        if has_strikethrough {
+            let strike_y = y + self.metrics.baseline - self.metrics.strikeout_offset;
+            self.backgrounds.push_rect(x, strike_y, cell_width, t, fg, 1.0);
+        }
+    }
+
+    /// Dispatch to the appropriate underline style.
+    ///
+    /// Priority: curly > double > dotted > dashed > single.
+    fn draw_underline(
+        &mut self,
+        flags: CellFlags,
+        color: Rgb,
+        x: f32,
+        y: f32,
+        w: f32,
+        t: f32,
+    ) {
+        if flags.contains(CellFlags::CURLY_UNDERLINE) {
+            if !self.try_atlas_decoration(CURLY_GLYPH_ID, color, x, y) {
+                draw_curly_underline_rects(self.backgrounds, color, x, y, w, t);
+            }
+        } else if flags.contains(CellFlags::DOUBLE_UNDERLINE) {
+            draw_double_underline(self.backgrounds, color, x, y, w, t);
+        } else if flags.contains(CellFlags::DOTTED_UNDERLINE) {
+            if !self.try_atlas_decoration(DOTTED_GLYPH_ID, color, x, y) {
+                draw_dotted_underline_rects(self.backgrounds, color, x, y, w, t);
+            }
+        } else if flags.contains(CellFlags::DASHED_UNDERLINE) {
+            if !self.try_atlas_decoration(DASHED_GLYPH_ID, color, x, y) {
+                draw_dashed_underline_rects(self.backgrounds, color, x, y, w, t);
+            }
         } else {
-            y
-        };
-        let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-        glyphs.push_glyph(
-            x,
-            glyph_y,
-            entry.width as f32,
-            entry.height as f32,
-            uv,
-            color,
-            1.0,
-            entry.page,
-        );
-        true
-    } else {
-        false
+            // Single underline (plain UNDERLINE flag).
+            self.backgrounds.push_rect(x, y, w, t, color, 1.0);
+        }
+    }
+
+    /// Try to emit a patterned decoration as a single atlas glyph instance.
+    ///
+    /// Returns `true` if the atlas had the entry and the glyph was emitted,
+    /// `false` to signal the caller should fall back to rect emission.
+    fn try_atlas_decoration(
+        &mut self,
+        glyph_id: u16,
+        color: Rgb,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        let key = decoration_key(glyph_id, self.size_q6);
+        if let Some(entry) = self.atlas.lookup_key(key) {
+            // Curly decorations are taller than the underline position —
+            // center the bitmap vertically on the underline Y coordinate.
+            let glyph_y = if glyph_id == CURLY_GLYPH_ID {
+                y - curly_amplitude(self.metrics.stroke_size)
+            } else {
+                y
+            };
+            let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
+            self.glyphs.push_glyph(
+                x,
+                glyph_y,
+                entry.width as f32,
+                entry.height as f32,
+                uv,
+                color,
+                1.0,
+                entry.page,
+            );
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -162,7 +153,7 @@ fn draw_curly_underline_rects(
     w: f32,
     t: f32,
 ) {
-    let amplitude = (t * 2.0).max(2.0);
+    let amplitude = curly_amplitude(t);
     let steps = w as usize;
     for dx in 0..steps {
         let phase = (dx as f32 / w) * std::f32::consts::TAU;
