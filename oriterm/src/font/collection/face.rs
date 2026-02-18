@@ -18,12 +18,12 @@ use crate::font::GlyphFormat;
 /// Raw bytes are kept in [`Arc<Vec<u8>>`] for shared ownership with rustybuzz
 /// faces (Section 6). The `offset` and `cache_key` enable fast transient
 /// [`FontRef`] construction without re-parsing.
-pub(crate) struct FaceData {
+pub(super) struct FaceData {
     /// Raw font file bytes.
-    pub(crate) bytes: Arc<Vec<u8>>,
+    pub(super) bytes: Arc<Vec<u8>>,
     /// Index within a `.ttc` collection file (0 for standalone `.ttf`).
     #[allow(dead_code, reason = "font face helpers consumed in later sections")]
-    pub(crate) face_index: u32,
+    pub(super) face_index: u32,
     /// Byte offset to the font table directory.
     offset: u32,
     /// Unique cache key for [`ScaleContext`] reuse.
@@ -33,7 +33,7 @@ pub(crate) struct FaceData {
 /// Validate font bytes and extract swash metadata.
 ///
 /// Returns `(byte_offset, cache_key)` on success, `None` for invalid data.
-pub(crate) fn validate_font(data: &[u8], face_index: u32) -> Option<(u32, CacheKey)> {
+pub(super) fn validate_font(data: &[u8], face_index: u32) -> Option<(u32, CacheKey)> {
     let fr = FontRef::from_index(data, face_index as usize)?;
     Some((fr.offset, fr.key))
 }
@@ -41,7 +41,7 @@ pub(crate) fn validate_font(data: &[u8], face_index: u32) -> Option<(u32, CacheK
 /// Build a [`FaceData`] from an [`Arc<Vec<u8>>`] and face index.
 ///
 /// Returns `None` if the font bytes are invalid.
-pub(crate) fn build_face(bytes: Arc<Vec<u8>>, face_index: u32) -> Option<FaceData> {
+pub(super) fn build_face(bytes: Arc<Vec<u8>>, face_index: u32) -> Option<FaceData> {
     let (offset, cache_key) = validate_font(&bytes, face_index)?;
     Some(FaceData {
         bytes,
@@ -54,7 +54,7 @@ pub(crate) fn build_face(bytes: Arc<Vec<u8>>, face_index: u32) -> Option<FaceDat
 /// Create a transient swash [`FontRef`] from stored face data.
 ///
 /// This is cheap (no parsing) because offset and `cache_key` are pre-computed.
-pub(crate) fn font_ref(fd: &FaceData) -> FontRef<'_> {
+pub(super) fn font_ref(fd: &FaceData) -> FontRef<'_> {
     FontRef {
         data: &fd.bytes,
         offset: fd.offset,
@@ -64,14 +64,14 @@ pub(crate) fn font_ref(fd: &FaceData) -> FontRef<'_> {
 
 /// Check whether a face covers a given character.
 #[allow(dead_code, reason = "font face helpers consumed in later sections")]
-pub(crate) fn has_glyph(fd: &FaceData, ch: char) -> bool {
+pub(super) fn has_glyph(fd: &FaceData, ch: char) -> bool {
     font_ref(fd).charmap().map(ch) != 0
 }
 
 /// Map a character to its glyph ID in the given face.
 ///
 /// Returns 0 (.notdef) if the character is not covered.
-pub(crate) fn glyph_id(fd: &FaceData, ch: char) -> u16 {
+pub(super) fn glyph_id(fd: &FaceData, ch: char) -> u16 {
     font_ref(fd).charmap().map(ch)
 }
 
@@ -84,7 +84,7 @@ pub(crate) fn glyph_id(fd: &FaceData, ch: char) -> u16 {
 /// `format: GlyphFormat::Color` with RGBA premultiplied data regardless of
 /// the requested `format`. Callers must route color glyphs to a separate
 /// RGBA atlas.
-pub(crate) fn rasterize_from_face(
+pub(super) fn rasterize_from_face(
     fd: &FaceData,
     glyph_id: u16,
     size_px: f32,
@@ -142,7 +142,7 @@ pub(crate) fn rasterize_from_face(
 ///
 /// Panics if `bytes` does not contain a valid font at `face_index`.
 /// Callers must validate before calling.
-pub(crate) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> (f32, f32, f32) {
+pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> (f32, f32, f32) {
     let fr = FontRef::from_index(bytes, face_index as usize).expect("pre-validated font");
     let metrics = fr.metrics(&[]).scale(size_px);
     let cell_height = (metrics.ascent + metrics.descent.abs()).ceil();
@@ -160,7 +160,7 @@ pub(crate) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> (f
 ///
 /// Reads `capital_height` from the OS/2 table via `ttf-parser`. Falls back to
 /// `0.75 * ascender` when the metric is missing.
-pub(crate) fn cap_height_px(bytes: &[u8], face_index: u32, size_px: f32) -> f32 {
+pub(super) fn cap_height_px(bytes: &[u8], face_index: u32, size_px: f32) -> f32 {
     let Some(face) = rustybuzz::Face::from_slice(bytes, face_index) else {
         return 0.0;
     };

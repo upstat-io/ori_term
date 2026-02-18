@@ -333,6 +333,13 @@ impl FontCollection {
     /// Returns `None` for empty glyphs (e.g. space) or unsupported formats.
     /// Subsequent calls with the same key return the cached bitmap.
     pub fn rasterize(&mut self, key: RasterKey) -> Option<&RasterizedGlyph> {
+        // Built-in glyphs are rasterized by `builtin_glyphs::ensure_cached`,
+        // not through font faces. Guard against the sentinel index to prevent
+        // an out-of-bounds panic on `self.primary[65535]`.
+        if key.face_idx == FaceIdx::BUILTIN {
+            return None;
+        }
+
         // Cache hit — early return. Uses `contains_key` + final `get` because
         // `if let Some(g) = get()` borrows `glyph_cache` for the return
         // lifetime, conflicting with `insert` on the miss path (E0502).
