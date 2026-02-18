@@ -151,8 +151,9 @@ fn fill_frame(input: &FrameInput, atlas: &dyn AtlasLookup, frame: &mut PreparedF
         frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
 
         decorations::draw_decorations(
-            &mut frame.backgrounds, cell.flags, cell.underline_color,
-            cell.fg, x, y, bg_w, ch,
+            &mut frame.backgrounds, &mut frame.glyphs, atlas, 0,
+            cell.flags, cell.underline_color,
+            cell.fg, x, y, bg_w, &input.cell_size,
         );
 
         // Foreground glyph (skip spaces).
@@ -225,8 +226,9 @@ fn fill_frame_shaped(
         frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
 
         decorations::draw_decorations(
-            &mut frame.backgrounds, cell.flags, cell.underline_color,
-            cell.fg, x, y, bg_w, ch,
+            &mut frame.backgrounds, &mut frame.glyphs, atlas, shaped.size_q6(),
+            cell.flags, cell.underline_color,
+            cell.fg, x, y, bg_w, &input.cell_size,
         );
 
         // Built-in geometric glyphs: bypass shaping, render from atlas.

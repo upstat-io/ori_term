@@ -9,12 +9,15 @@
 mod blocks;
 mod box_drawing;
 mod braille;
+pub(crate) mod decorations;
 mod powerline;
 
 use wgpu::Queue;
 
+use oriterm_core::CellFlags;
+
 use crate::font::collection::RasterizedGlyph;
-use crate::font::{is_builtin, FaceIdx, GlyphFormat, RasterKey, SyntheticFlags};
+use crate::font::{is_builtin, CellMetrics, FaceIdx, GlyphFormat, RasterKey, SyntheticFlags};
 
 use super::atlas::GlyphAtlas;
 use super::frame_input::FrameInput;
@@ -90,6 +93,65 @@ pub(crate) fn ensure_cached(
         } else {
             atlas.mark_empty(key);
         }
+    }
+}
+
+/// Rasterize and cache patterned underline decorations found in the frame.
+///
+/// Scans all cells for curly, dotted, or dashed underline flags. On cache
+/// miss, rasterizes the pattern to an alpha bitmap and inserts it into the
+/// atlas. Each pattern is rasterized once per (`cell_width`, `stroke_size`)
+/// combination (captured by `size_q6`).
+pub(crate) fn ensure_decorations_cached(
+    input: &FrameInput,
+    size_q6: u32,
+    atlas: &mut GlyphAtlas,
+    queue: &Queue,
+) {
+    let metrics = &input.cell_size;
+
+    // Scan for which pattern types are needed.
+    let mut need_curly = false;
+    let mut need_dotted = false;
+    let mut need_dashed = false;
+
+    for cell in &input.content.cells {
+        need_curly = need_curly || cell.flags.contains(CellFlags::CURLY_UNDERLINE);
+        need_dotted = need_dotted || cell.flags.contains(CellFlags::DOTTED_UNDERLINE);
+        need_dashed = need_dashed || cell.flags.contains(CellFlags::DASHED_UNDERLINE);
+        if need_curly && need_dotted && need_dashed {
+            break;
+        }
+    }
+
+    if need_curly {
+        cache_decoration(decorations::CURLY_GLYPH_ID, size_q6, metrics, atlas, queue, decorations::rasterize_curly);
+    }
+    if need_dotted {
+        cache_decoration(decorations::DOTTED_GLYPH_ID, size_q6, metrics, atlas, queue, decorations::rasterize_dotted);
+    }
+    if need_dashed {
+        cache_decoration(decorations::DASHED_GLYPH_ID, size_q6, metrics, atlas, queue, decorations::rasterize_dashed);
+    }
+}
+
+/// Cache a single decoration pattern if not already present.
+fn cache_decoration(
+    glyph_id: u16,
+    size_q6: u32,
+    metrics: &CellMetrics,
+    atlas: &mut GlyphAtlas,
+    queue: &Queue,
+    rasterize_fn: fn(&CellMetrics) -> Option<RasterizedGlyph>,
+) {
+    let key = decorations::decoration_key(glyph_id, size_q6);
+    if atlas.lookup_touch(key).is_some() || atlas.is_known_empty(key) {
+        return;
+    }
+    if let Some(glyph) = rasterize_fn(metrics) {
+        atlas.insert(key, &glyph, queue);
+    } else {
+        atlas.mark_empty(key);
     }
 }
 
@@ -214,7 +276,7 @@ impl Canvas {
     /// Consume the canvas and produce a [`RasterizedGlyph`].
     ///
     /// The glyph fills the entire cell: `bearing_x = 0`, `bearing_y = 0`.
-    fn into_rasterized_glyph(self) -> RasterizedGlyph {
+    pub(super) fn into_rasterized_glyph(self) -> RasterizedGlyph {
         RasterizedGlyph {
             width: self.width,
             height: self.height,

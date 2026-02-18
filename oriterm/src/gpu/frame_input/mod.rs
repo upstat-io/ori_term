@@ -147,7 +147,7 @@ impl FrameInput {
                 damage: Vec::new(),
             },
             viewport: ViewportSize::new(cols as u32 * 8, rows as u32 * 16),
-            cell_size: CellMetrics::new(8.0, 16.0, 12.0),
+            cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
             palette: FramePalette {
                 background: bg,
                 foreground: fg,

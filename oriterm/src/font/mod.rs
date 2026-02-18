@@ -28,6 +28,22 @@ pub struct CellMetrics {
     pub height: f32,
     /// Distance from cell top to text baseline, in pixels.
     pub baseline: f32,
+    /// Distance from baseline to underline stroke, in pixels.
+    ///
+    /// Positive values are below the baseline (typical). Extracted from the
+    /// font's `post` table via swash `underline_offset`, negated so that a
+    /// larger value means further below baseline.
+    pub underline_offset: f32,
+    /// Thickness of underline and strikethrough strokes, in pixels.
+    ///
+    /// Extracted from the font's OS/2 `stroke_size` via swash. Clamped to
+    /// a minimum of 1.0 to ensure visibility at small sizes.
+    pub stroke_size: f32,
+    /// Distance from baseline to strikeout stroke, in pixels.
+    ///
+    /// Positive values are above the baseline (typical). Extracted from the
+    /// font's OS/2 table via swash `strikeout_offset`.
+    pub strikeout_offset: f32,
 }
 
 impl CellMetrics {
@@ -36,7 +52,14 @@ impl CellMetrics {
     /// # Panics
     ///
     /// Panics in debug mode if any dimension is non-positive or non-finite.
-    pub fn new(width: f32, height: f32, baseline: f32) -> Self {
+    pub fn new(
+        width: f32,
+        height: f32,
+        baseline: f32,
+        underline_offset: f32,
+        stroke_size: f32,
+        strikeout_offset: f32,
+    ) -> Self {
         debug_assert!(
             width > 0.0 && width.is_finite(),
             "cell width must be positive"
@@ -50,6 +73,9 @@ impl CellMetrics {
             width,
             height,
             baseline,
+            underline_offset,
+            stroke_size: stroke_size.max(1.0),
+            strikeout_offset,
         }
     }
 

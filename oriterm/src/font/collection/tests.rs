@@ -119,6 +119,13 @@ fn cell_metrics_valid() {
         cm.baseline <= cm.height,
         "baseline must not exceed cell height"
     );
+    // Decoration metrics from font tables.
+    assert!(
+        cm.stroke_size >= 1.0,
+        "stroke_size must be at least 1.0 (clamped minimum)"
+    );
+    assert!(cm.underline_offset.is_finite(), "underline_offset must be finite");
+    assert!(cm.strikeout_offset.is_finite(), "strikeout_offset must be finite");
 }
 
 #[test]
@@ -356,23 +363,32 @@ fn cap_height_px_positive() {
 
 #[test]
 fn compute_metrics_stable() {
-    let (w1, h1, b1) = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
-    let (w2, h2, b2) = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    let m1 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    let m2 = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
     assert!(
-        (w1 - w2).abs() < f32::EPSILON
-            && (h1 - h2).abs() < f32::EPSILON
-            && (b1 - b2).abs() < f32::EPSILON,
+        (m1.cell_width - m2.cell_width).abs() < f32::EPSILON
+            && (m1.cell_height - m2.cell_height).abs() < f32::EPSILON
+            && (m1.baseline - m2.baseline).abs() < f32::EPSILON,
         "metrics should be deterministic"
     );
 }
 
 #[test]
 fn compute_metrics_positive() {
-    let (w, h, b) = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
-    assert!(w > 0.0, "cell width must be positive");
-    assert!(h > 0.0, "cell height must be positive");
-    assert!(b > 0.0, "baseline must be positive");
-    assert!(b <= h, "baseline must not exceed cell height");
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    assert!(m.cell_width > 0.0, "cell width must be positive");
+    assert!(m.cell_height > 0.0, "cell height must be positive");
+    assert!(m.baseline > 0.0, "baseline must be positive");
+    assert!(m.baseline <= m.cell_height, "baseline must not exceed cell height");
+}
+
+#[test]
+fn compute_metrics_decoration_fields() {
+    let m = compute_metrics(EMBEDDED_FONT_DATA, 0, 16.0);
+    assert!(m.stroke_size > 0.0, "stroke_size must be positive");
+    assert!(m.stroke_size.is_finite(), "stroke_size must be finite");
+    assert!(m.underline_offset.is_finite(), "underline_offset must be finite");
+    assert!(m.strikeout_offset.is_finite(), "strikeout_offset must be finite");
 }
 
 // ── Pre-cache ──

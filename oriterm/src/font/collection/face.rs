@@ -170,17 +170,30 @@ pub(super) fn embolden_strength(cell_height: f32) -> f32 {
 /// cosmic-text (14°). We use 14° as the more standard value.
 const SYNTHETIC_ITALIC_ANGLE: f32 = 14.0;
 
+/// Computed font metrics for cell layout and text decorations.
+pub(super) struct FontMetrics {
+    pub cell_width: f32,
+    pub cell_height: f32,
+    pub baseline: f32,
+    /// Distance below baseline to underline center (positive = below).
+    pub underline_offset: f32,
+    /// Thickness of underline and strikethrough strokes.
+    pub stroke_size: f32,
+    /// Distance above baseline to strikeout center (positive = above).
+    pub strikeout_offset: f32,
+}
+
 /// Compute cell metrics from font bytes at the given pixel size.
 ///
-/// Returns `(cell_width, cell_height, baseline)` as f32 values.
 /// Cell height = `ceil(ascent + |descent|)`, cell width = `ceil(advance of 'M')`,
-/// baseline = `ceil(ascent)`.
+/// baseline = `ceil(ascent)`. Decoration metrics (underline, strikeout) are
+/// extracted from the font's OS/2 and post tables via swash.
 ///
 /// # Panics
 ///
 /// Panics if `bytes` does not contain a valid font at `face_index`.
 /// Callers must validate before calling.
-pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> (f32, f32, f32) {
+pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> FontMetrics {
     let fr = FontRef::from_index(bytes, face_index as usize).expect("pre-validated font");
     let metrics = fr.metrics(&[]).scale(size_px);
     let cell_height = (metrics.ascent + metrics.descent.abs()).ceil();
@@ -191,7 +204,21 @@ pub(super) fn compute_metrics(bytes: &[u8], face_index: u32, size_px: f32) -> (f
         .scale(size_px)
         .advance_width(gid)
         .ceil();
-    (cell_width, cell_height, baseline)
+
+    // swash underline_offset is negative (below baseline), negate for our
+    // convention where positive = pixels below baseline.
+    let underline_offset = -metrics.underline_offset;
+    let stroke_size = metrics.stroke_size;
+    let strikeout_offset = metrics.strikeout_offset;
+
+    FontMetrics {
+        cell_width,
+        cell_height,
+        baseline,
+        underline_offset,
+        stroke_size,
+        strikeout_offset,
+    }
 }
 
 /// Compute the cap height in pixels for a font at the given pixel size.

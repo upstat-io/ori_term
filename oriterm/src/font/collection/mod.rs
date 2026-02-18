@@ -61,6 +61,9 @@ pub struct FontCollection {
     cell_width: f32,
     cell_height: f32,
     baseline: f32,
+    underline_offset: f32,
+    stroke_size: f32,
+    strikeout_offset: f32,
     #[allow(dead_code, reason = "used for diagnostics and future dynamic fallback loading")]
     cap_height_px: f32,
     // Rasterization
@@ -95,7 +98,7 @@ impl FontCollection {
             .ok_or_else(|| FontError::InvalidFont("Regular font is invalid".into()))?;
 
         // Compute metrics from Regular.
-        let (cell_width, cell_height, baseline) =
+        let font_metrics =
             compute_metrics(&font_set.regular.data, font_set.regular.index, size_px);
         let primary_cap =
             cap_height_px(&font_set.regular.data, font_set.regular.index, size_px);
@@ -139,9 +142,12 @@ impl FontCollection {
             fallbacks,
             fallback_meta,
             size_px,
-            cell_width,
-            cell_height,
-            baseline,
+            cell_width: font_metrics.cell_width,
+            cell_height: font_metrics.cell_height,
+            baseline: font_metrics.baseline,
+            underline_offset: font_metrics.underline_offset,
+            stroke_size: font_metrics.stroke_size,
+            strikeout_offset: font_metrics.strikeout_offset,
             cap_height_px: primary_cap,
             format,
             glyph_cache: HashMap::new(),
@@ -159,7 +165,14 @@ impl FontCollection {
 
     /// Cell metrics for the GPU renderer.
     pub fn cell_metrics(&self) -> CellMetrics {
-        CellMetrics::new(self.cell_width, self.cell_height, self.baseline)
+        CellMetrics::new(
+            self.cell_width,
+            self.cell_height,
+            self.baseline,
+            self.underline_offset,
+            self.stroke_size,
+            self.strikeout_offset,
+        )
     }
 
     /// Font size in pixels.

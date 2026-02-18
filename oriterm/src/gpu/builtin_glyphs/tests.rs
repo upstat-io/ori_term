@@ -452,3 +452,107 @@ fn canvas_into_rasterized_glyph_format() {
     assert_eq!(glyph.format, GlyphFormat::Alpha);
     assert_eq!(glyph.bitmap.len(), 8 * 16);
 }
+
+// ── Decoration rasterization tests ──
+
+use crate::font::CellMetrics;
+use super::decorations;
+
+/// Standard test metrics: 8x16 cell, 1px stroke.
+fn test_metrics() -> CellMetrics {
+    CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0)
+}
+
+#[test]
+fn decoration_key_uses_builtin_face() {
+    let key = decorations::decoration_key(decorations::CURLY_GLYPH_ID, 1024);
+    assert_eq!(key.face_idx, FaceIdx::BUILTIN);
+    assert_eq!(key.glyph_id, decorations::CURLY_GLYPH_ID);
+}
+
+#[test]
+fn decoration_keys_are_distinct() {
+    let k1 = decorations::decoration_key(decorations::CURLY_GLYPH_ID, 1024);
+    let k2 = decorations::decoration_key(decorations::DOTTED_GLYPH_ID, 1024);
+    let k3 = decorations::decoration_key(decorations::DASHED_GLYPH_ID, 1024);
+    assert_ne!(k1.glyph_id, k2.glyph_id);
+    assert_ne!(k2.glyph_id, k3.glyph_id);
+}
+
+#[test]
+fn rasterize_curly_produces_bitmap() {
+    let m = test_metrics();
+    let glyph = decorations::rasterize_curly(&m).expect("curly should rasterize");
+    assert_eq!(glyph.width, 8);
+    assert!(glyph.height > 0);
+    assert_eq!(glyph.format, GlyphFormat::Alpha);
+    assert_eq!(glyph.bitmap.len(), (glyph.width * glyph.height) as usize);
+    // Should have some filled pixels.
+    assert!(glyph.bitmap.iter().any(|&b| b > 0), "curly should have visible pixels");
+}
+
+#[test]
+fn rasterize_curly_has_wave_pattern() {
+    let m = test_metrics();
+    let glyph = decorations::rasterize_curly(&m).expect("curly should rasterize");
+    // The sine wave should create filled pixels in multiple rows (not just one).
+    let filled_rows: Vec<u32> = (0..glyph.height)
+        .filter(|&y| {
+            let start = (y * glyph.width) as usize;
+            let end = start + glyph.width as usize;
+            glyph.bitmap[start..end].iter().any(|&b| b > 0)
+        })
+        .collect();
+    assert!(
+        filled_rows.len() >= 3,
+        "curly wave should span at least 3 rows, got {}",
+        filled_rows.len()
+    );
+}
+
+#[test]
+fn rasterize_dotted_produces_bitmap() {
+    let m = test_metrics();
+    let glyph = decorations::rasterize_dotted(&m).expect("dotted should rasterize");
+    assert_eq!(glyph.width, 8);
+    assert!(glyph.height > 0);
+    // Should have alternating pattern: ~4 filled columns, ~4 empty.
+    let filled_cols: usize = (0..glyph.width as usize)
+        .filter(|&x| glyph.bitmap[x] > 0)
+        .count();
+    assert_eq!(filled_cols, 4, "dotted: 4 of 8 columns should be filled (step_by 2)");
+}
+
+#[test]
+fn rasterize_dashed_produces_bitmap() {
+    let m = test_metrics();
+    let glyph = decorations::rasterize_dashed(&m).expect("dashed should rasterize");
+    assert_eq!(glyph.width, 8);
+    assert!(glyph.height > 0);
+    // Pattern: 3 on, 2 off, 3 on → 6 filled of 8.
+    let filled_cols: usize = (0..glyph.width as usize)
+        .filter(|&x| glyph.bitmap[x] > 0)
+        .count();
+    assert_eq!(filled_cols, 6, "dashed: 6 of 8 columns should be filled (3-on-2-off)");
+}
+
+#[test]
+fn rasterize_zero_width_returns_none() {
+    let m = CellMetrics::new(0.1, 16.0, 12.0, 2.0, 1.0, 4.0);
+    // 0.1 rounds to 0 → should return None.
+    assert!(decorations::rasterize_curly(&m).is_none());
+    assert!(decorations::rasterize_dotted(&m).is_none());
+    assert!(decorations::rasterize_dashed(&m).is_none());
+}
+
+#[test]
+fn rasterize_thick_stroke_produces_taller_curly() {
+    let thin = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0);
+    let thick = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 3.0, 4.0);
+    let g_thin = decorations::rasterize_curly(&thin).unwrap();
+    let g_thick = decorations::rasterize_curly(&thick).unwrap();
+    assert!(
+        g_thick.height > g_thin.height,
+        "thicker stroke should produce taller curly bitmap"
+    );
+}

@@ -63,7 +63,7 @@ fn viewport_preserves_nonzero() {
 
 #[test]
 fn cell_metrics_columns_and_rows() {
-    let m = CellMetrics::new(8.0, 16.0, 12.0);
+    let m = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0);
 
     // 1920 / 8 = 240 columns.
     assert_eq!(m.columns(1920), 240);
@@ -73,7 +73,7 @@ fn cell_metrics_columns_and_rows() {
 
 #[test]
 fn cell_metrics_fractional_cell_size() {
-    let m = CellMetrics::new(8.5, 17.0, 13.0);
+    let m = CellMetrics::new(8.5, 17.0, 13.0, 2.0, 1.0, 4.5);
 
     // 1920 / 8.5 = 225.88... → floor = 225.
     assert_eq!(m.columns(1920), 225);
@@ -83,7 +83,7 @@ fn cell_metrics_fractional_cell_size() {
 
 #[test]
 fn cell_metrics_small_viewport() {
-    let m = CellMetrics::new(8.0, 16.0, 12.0);
+    let m = CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0);
     // Viewport smaller than one cell.
     assert_eq!(m.columns(4), 0);
     assert_eq!(m.rows(10), 0);
@@ -107,7 +107,7 @@ fn frame_input_grid_dimensions() {
     let input = FrameInput {
         content: empty_content(),
         viewport: ViewportSize::new(800, 600),
-        cell_size: CellMetrics::new(8.0, 16.0, 12.0),
+        cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
         selection: None,
         search_matches: Vec::new(),
@@ -125,7 +125,7 @@ fn frame_input_needs_full_repaint() {
     let input = FrameInput {
         content,
         viewport: ViewportSize::new(800, 600),
-        cell_size: CellMetrics::new(8.0, 16.0, 12.0),
+        cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
         selection: None,
         search_matches: Vec::new(),
@@ -142,7 +142,7 @@ fn frame_input_incremental_repaint() {
     let input = FrameInput {
         content,
         viewport: ViewportSize::new(800, 600),
-        cell_size: CellMetrics::new(8.0, 16.0, 12.0),
+        cell_size: CellMetrics::new(8.0, 16.0, 12.0, 2.0, 1.0, 4.0),
         palette: test_palette(),
         selection: None,
         search_matches: Vec::new(),

@@ -31,6 +31,9 @@ const CELL: CellMetrics = CellMetrics {
     width: 8.0,
     height: 16.0,
     baseline: 12.0,
+    underline_offset: 2.0,
+    stroke_size: 1.0,
+    strikeout_offset: 4.0,
 };
 
 // =======================================================================
