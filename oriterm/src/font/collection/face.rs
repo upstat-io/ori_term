@@ -22,7 +22,6 @@ pub(super) struct FaceData {
     /// Raw font file bytes.
     pub(super) bytes: Arc<Vec<u8>>,
     /// Index within a `.ttc` collection file (0 for standalone `.ttf`).
-    #[allow(dead_code, reason = "font face helpers consumed in later sections")]
     pub(super) face_index: u32,
     /// Byte offset to the font table directory.
     offset: u32,
