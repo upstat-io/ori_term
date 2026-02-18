@@ -1,24 +1,34 @@
 ---
 section: 18
 title: Multi-Window & Window Lifecycle
-status: not-started
+status: superseded
 tier: 4
 goal: Multiple windows with shared GPU, window creation/destruction, DPI, Aero Snap
+superseded_by: [32]
+superseded_reason: "Absorbed into Section 32 (Tab & Window Management, Mux-Aware). Multi-window support is now built on top of the mux layer, with windows as thin GUI shells that subscribe to mux notifications."
 sections:
   - id: "18.1"
     title: Multi-Window Support
-    status: not-started
+    status: superseded
   - id: "18.2"
     title: Window Lifecycle
-    status: not-started
+    status: superseded
   - id: "18.3"
     title: Section Completion
-    status: not-started
+    status: superseded
 ---
 
 # Section 18: Multi-Window & Window Lifecycle
 
-**Status:** Not Started
+> **SUPERSEDED** — This section has been absorbed into the first-class multiplexing architecture.
+> - Multi-window support + window lifecycle → **Section 32** (Tab & Window Management, Mux-Aware)
+>
+> The original design had windows owning tabs directly. The multiplexing
+> redesign makes windows thin GUI clients that subscribe to mux notifications
+> for pane output. All hard-won patterns (no-flash startup, DPI handling,
+> Aero Snap, ConPTY-safe cleanup, exit-before-drop) are preserved in Section 32.
+
+**Status:** Superseded
 **Goal:** Multiple windows with shared GPU device, font collections, and config. Window creation/destruction with no-flash startup, DPI handling, ConPTY-safe cleanup, and Aero Snap support.
 
 **Crate:** `oriterm` (binary only — no core changes)

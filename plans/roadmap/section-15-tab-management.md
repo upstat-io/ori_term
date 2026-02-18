@@ -1,24 +1,36 @@
 ---
 section: 15
 title: Tab Struct & Management
-status: not-started
+status: superseded
 tier: 4
 goal: Tab struct with clean lifecycle, mode cache, ConPTY-safe shutdown; tab CRUD operations
+superseded_by: [30, 32]
+superseded_reason: "Absorbed into Section 30 (Pane Extraction + Domain System) and Section 32 (Tab & Window Management, Mux-Aware). The Tab struct is replaced by Pane + mux-aware Tab shell; tab CRUD moves to Section 32 with mux integration."
 sections:
   - id: "15.1"
     title: Tab Struct + Lifecycle
-    status: not-started
+    status: superseded
   - id: "15.2"
     title: Tab Management Operations
-    status: not-started
+    status: superseded
   - id: "15.3"
     title: Section Completion
-    status: not-started
+    status: superseded
 ---
 
 # Section 15: Tab Struct & Management
 
-**Status:** Not Started
+> **SUPERSEDED** — This section has been absorbed into the first-class multiplexing architecture.
+> - Tab struct + lifecycle → **Section 30** (Pane Extraction + Domain System)
+> - Tab management operations → **Section 32** (Tab & Window Management, Mux-Aware)
+>
+> The original design assumed tabs as the atomic unit. The multiplexing redesign
+> makes *panes* the atomic unit (one shell per pane) and tabs become layout
+> containers managed through the mux layer. All hard-won patterns from this
+> section (ConPTY-safe shutdown, mode cache, lock-free dirty flags, CWD
+> inheritance) are preserved in the new sections.
+
+**Status:** Superseded
 **Goal:** Tab struct with clean lifecycle, mode cache, ConPTY-safe shutdown. Tab CRUD operations: create, close, duplicate, cycle, reorder, CWD inheritance.
 
 **Crate:** `oriterm` (binary only — no core changes)

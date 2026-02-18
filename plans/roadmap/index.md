@@ -331,7 +331,7 @@ implicit URL, OSC 8 hyperlink
 ---
 
 ### Section 15: Tab Struct & Management
-**File:** `section-15-tab-management.md` | **Tier:** 4 | **Status:** Not Started
+**File:** `section-15-tab-management.md` | **Tier:** 4 | **Status:** Superseded → Sections 30, 32
 
 ```
 Tab, TabId, tab struct, per-tab state, tab lifecycle
@@ -377,7 +377,7 @@ compute_drop_index, DWM invisible borders, screen to local
 ---
 
 ### Section 18: Multi-Window & Window Lifecycle
-**File:** `section-18-multi-window.md` | **Tier:** 4 | **Status:** Not Started
+**File:** `section-18-multi-window.md` | **Tier:** 4 | **Status:** Superseded → Section 32
 
 ```
 multi-window, TermWindow, window management, WindowId
@@ -504,7 +504,7 @@ theme conversion, iTerm2, Ghostty, base16
 ---
 
 ### Section 26: Split Panes
-**File:** `section-26-split-panes.md` | **Tier:** 7 | **Status:** Not Started
+**File:** `section-26-split-panes.md` | **Tier:** 7 | **Status:** Superseded → Sections 29, 31, 33
 
 ```
 split, pane, PaneId, PaneNode, PaneTree, SplitDirection
@@ -545,6 +545,139 @@ session serialization, workspace presets, broadcast input
 
 ---
 
+### Section 29: Mux Crate + Layout Engine
+**File:** `section-29-mux-layout-engine.md` | **Tier:** 4M | **Status:** Not Started
+
+```
+oriterm_mux, mux crate, multiplexing foundation, workspace member
+PaneId, TabId, WindowId, SessionId, DomainId, newtype IDs, IdAllocator
+SplitTree, immutable tree, structural sharing, Arc, COW
+SplitDirection, Horizontal, Vertical, ratio, split_at, remove, equalize
+FloatingLayer, FloatingPane, z_order, hit_test, floating overlay
+LayoutDescriptor, PaneLayout, DividerLayout, compute_layout, compute_dividers
+pixel rect, cell grid snapping, divider_px, min_pane_cells
+spatial navigation, navigate, Direction, Up, Down, Left, Right, cycle
+nearest_pane, ray cast, directional movement
+```
+
+---
+
+### Section 30: Pane Extraction + Domain System
+**File:** `section-30-pane-domain.md` | **Tier:** 4M | **Status:** Not Started
+
+```
+Pane, PaneId, pane struct, per-shell state, pane lifecycle
+Arc<FairMutex<Term<MuxEventProxy>>>, terminal lock, mode_cache, AtomicU32
+PtyWriter, ConPTY deadlock, VTE responses outside lock, background thread drop
+Domain, Domain trait, DomainId, DomainState, spawn_pane, can_spawn
+LocalDomain, local shell, portable-pty, shell spawning
+WslDomain, WSL, wsl.exe, distro, Windows Subsystem for Linux
+SpawnConfig, shell, cwd, env, max_scrollback, cursor_shape
+PaneRegistry, PaneEntry, register, unregister, panes_in_tab
+SessionRegistry, MuxTab, MuxWindow, tree_history, undo stack
+MuxEventProxy, MuxEvent, MuxNotification, event bridge, coalescing
+PaneOutput, PaneExited, PaneTitleChanged, PaneBell
+```
+
+---
+
+### Section 31: In-Process Mux + Multi-Pane Rendering
+**File:** `section-31-in-process-mux.md` | **Tier:** 4M | **Status:** Not Started
+
+```
+InProcessMux, in-process mux, synchronous fast path, no daemon
+spawn_pane, close_pane, split_pane, create_tab, close_tab
+event pump, poll_events, MuxEvent drain, notification channel
+App rewiring, mux integration, pane store, thin GUI shell
+prepare_pane_into, origin offset, viewport offset, multi-pane frame loop
+divider rendering, focus border, accent color, inactive dimming
+PaneRenderCache, CachedPaneFrame, per-pane caching, dirty check
+single-pane fast path, zero overhead, backward compatibility
+```
+
+---
+
+### Section 32: Tab & Window Management (Mux-Aware)
+**File:** `section-32-tab-window-mux.md` | **Tier:** 4M | **Status:** Not Started
+
+```
+mux-aware tab, tab CRUD, new_tab_in_window, close_tab, duplicate_tab
+cycle_tab, switch_to_tab, move_tab, CWD inheritance, auto-close
+TermWindow, multi-window, shared GPU, surface, window ID mapping
+winit_to_mux, mux_to_winit, bidirectional lookup
+window lifecycle, create_window, close_window, exit_app
+no-flash startup, render before show, DPI, Aero Snap, WS_EX_NOREDIRECTIONBITMAP
+ConPTY-safe shutdown, exit-before-drop, background thread cleanup
+cross-window tab movement, move_tab_to_window, move_tab_to_new_window
+tear-off, multi-pane tab move, fullscreen toggle
+handle_resize, handle_scale_factor_changed, resize ALL panes
+```
+
+---
+
+### Section 33: Split Navigation + Floating Panes
+**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** Not Started
+
+```
+spatial navigation, Alt+Arrow, focus pane direction, cycle pane
+Alt+[, Alt+], forward, backward, tree order, click focus
+Ctrl+Shift+D, split horizontal, Ctrl+Shift+E, split vertical
+Ctrl+W, close pane, collapse split, ClosePane action
+divider drag, mouse resize, ColResize, RowResize, 5px hit zone
+keyboard resize, Alt+Shift+Arrow, ratio adjustment, equalize
+zoom, unzoom, Ctrl+Shift+Z, zoomed_pane, auto-unzoom
+floating pane, Ctrl+Shift+F, ToggleFloatingPane, overlay
+float-tile toggle, Ctrl+Shift+G, ToggleFloatTile
+floating drag, floating resize, snap-to-edge, minimum size
+render_frame_scissored, drop shadow, floating z-order, raise, lower
+undo split, redo split, Ctrl+Shift+U, Ctrl+Shift+Y, SplitHistory
+```
+
+---
+
+### Section 34: IPC Protocol + Daemon Mode
+**File:** `section-34-ipc-daemon.md` | **Tier:** 7A | **Status:** Not Started
+
+```
+wire protocol, binary protocol, 15-byte header, frame format
+magic, version, type, payload_len, flags, seq, COMPRESSED
+bincode, zstd, serialization, compression, codec
+version negotiation, Hello, HelloAck, VersionMismatch
+MuxServer, oriterm-mux, daemon, server event loop
+ClientConnection, ClientId, subscriptions, push notifications
+OutputCoalescer, coalesce timer, 1ms, 16ms, 100ms, tiered
+focused pane coalesce, visible pane coalesce, hidden pane coalesce
+backpressure, latest value channel, drop intermediate
+MuxClient, client API, MuxBackend trait, transparent switching
+auto-start daemon, fallback InProcessMux, reconnection
+Unix domain socket, named pipe, IPC transport
+shadow grid, reconnect snapshot, PaneContent
+PID file, daemon lifecycle, --daemon, --stop, --persist
+```
+
+---
+
+### Section 35: Session Persistence + Remote Domains
+**File:** `section-35-persistence-remote.md` | **Tier:** 7A | **Status:** Not Started
+
+```
+session persistence, SessionSnapshot, save, load, restore
+WindowSnapshot, TabSnapshot, PaneSnapshot, SplitTreeSnapshot
+atomic write, auto-save, 30 seconds, JSON, session file
+crash recovery, is_clean_shutdown, stale PID, restore prompt
+restore_on_crash, ask, always, never, auto-recovery
+scrollback archive, ScrollbackArchive, bincode, zstd, disk
+unlimited scrollback, max_scrollback_memory, append-only
+archive cleanup, retention, 7 days, 1GB limit
+SshDomain, SSH, remote shell, openssh, thrussh, SSH channel
+SshConfig, host, port, user, identity_file, proxy_command
+SSH agent forwarding, X11 forwarding, keepalive, reconnect
+WslDomain, WSL full, auto-detect, wsl --list, distro
+path mapping, win_to_wsl, wsl_to_win, WSLENV
+```
+
+---
+
 ## Quick Reference
 
 | ID | Title | File | Tier | Status |
@@ -564,10 +697,10 @@ session serialization, workspace presets, broadcast input
 | 12 | Resize & Reflow | `section-12-resize-reflow.md` | 3 | Not Started |
 | 13 | Configuration & Keybindings | `section-13-config-keybindings.md` | 3 | Not Started |
 | 14 | URL Detection | `section-14-url-detection.md` | 3 | Not Started |
-| 15 | Tab Struct & Management | `section-15-tab-management.md` | 4 | Not Started |
+| 15 | Tab Struct & Management | `section-15-tab-management.md` | 4 | Superseded → 30, 32 |
 | 16 | Tab Bar & Chrome | `section-16-tab-bar.md` | 4 | Not Started |
 | 17 | Drag & Drop | `section-17-drag-drop.md` | 4 | Not Started |
-| 18 | Multi-Window & Window Lifecycle | `section-18-multi-window.md` | 4 | Not Started |
+| 18 | Multi-Window & Window Lifecycle | `section-18-multi-window.md` | 4 | Superseded → 32 |
 | 19 | Event Routing & Render Scheduling | `section-19-event-routing.md` | 4 | Not Started |
 | 20 | Shell Integration | `section-20-shell-integration.md` | 4 | Not Started |
 | 21 | Context Menu & Window Controls | `section-21-context-menu.md` | 4 | Not Started |
@@ -575,9 +708,16 @@ session serialization, workspace presets, broadcast input
 | 23 | Performance & Damage Tracking | `section-23-performance.md` | 5 | Not Started |
 | 24 | Visual Polish | `section-24-visual-polish.md` | 6 | Not Started |
 | 25 | Theme System | `section-25-theme-system.md` | 6 | Not Started |
-| 26 | Split Panes | `section-26-split-panes.md` | 7 | Not Started |
+| 26 | Split Panes | `section-26-split-panes.md` | 7 | Superseded → 29, 31, 33 |
 | 27 | Command Palette & Quick Terminal | `section-27-command-palette.md` | 7 | Not Started |
 | 28 | Extensibility | `section-28-extensibility.md` | 7 | Not Started |
+| 29 | Mux Crate + Layout Engine | `section-29-mux-layout-engine.md` | 4M | Not Started |
+| 30 | Pane Extraction + Domain System | `section-30-pane-domain.md` | 4M | Not Started |
+| 31 | In-Process Mux + Multi-Pane Rendering | `section-31-in-process-mux.md` | 4M | Not Started |
+| 32 | Tab & Window Management (Mux-Aware) | `section-32-tab-window-mux.md` | 4M | Not Started |
+| 33 | Split Navigation + Floating Panes | `section-33-split-nav-floating.md` | 4M | Not Started |
+| 34 | IPC Protocol + Daemon Mode | `section-34-ipc-daemon.md` | 7A | Not Started |
+| 35 | Session Persistence + Remote Domains | `section-35-persistence-remote.md` | 7A | Not Started |
 
 ## Tier Summary
 
@@ -587,10 +727,12 @@ session serialization, workspace presets, broadcast input
 | 1 | 04 | Process layer (PTY, threads) |
 | 2 | 05, 05B, 06-07 | Rendering foundation (window, GPU, fonts, UI framework) |
 | 3 | 08-14 | Interaction (keyboard, mouse, selection, search, config) |
-| 4 | 15-21 | Multi-tab + chrome (feature parity with prototype) |
+| 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
+| **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
 | 5 | 22-23 | Hardening (terminal modes, performance) |
 | 6 | 24-25 | Polish (visual refinements, themes) |
-| 7 | 26-28 | Advanced (split panes, command palette, extensibility) |
+| 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
+| **7A** | **34-35** | **Server + persistence (daemon, IPC, sessions, SSH, WSL)** |
 
 ## Dependency DAG
 
@@ -602,22 +744,40 @@ session serialization, workspace presets, broadcast input
 03 Cross-Platform         <- platform abstractions (PTY, fonts, clipboard, GPU, window)
  |
 04 PTY + Event Loop       <- builds on platform PTY abstraction
- |
-05 Window + GPU           <- first visual milestone (Vulkan/DX12/Metal via wgpu)
- |
-05B Startup Performance   <- zero-delay launch (BLOCKS 06)
- |
-06 Font Pipeline          <- advanced fonts, ligatures, emoji
- |
-07 2D UI Framework        <- drawing primitives, layout, widgets (oriterm_ui crate)
- |
-08-14 Interaction         <- keyboard, mouse, selection, search, config, URL
- |
-15-21 Tabs + Chrome       <- tab bar, drag/drop, menus built on UI framework
- |
-22-23 Hardening           <- terminal modes, performance
- |
-24-25 Polish              <- cursor blink, smooth scroll, themes
- |
-26-28 Advanced            <- split panes, command palette, extensibility
+ ├──────────────────────────────────────┐
+ |                                      |
+05 Window + GPU                         29 Mux Crate + Layout Engine  (oriterm_mux)
+ |                                      |
+05B Startup Performance                 30 Pane Extraction + Domains
+ |                                      |
+06 Font Pipeline                   ┌────┤
+ |                                 |    |
+07 2D UI Framework                 |    31 In-Process Mux + Multi-Pane Rendering
+ |                                 |    |     (depends on 29, 30, 05)
+08-14 Interaction                  |    |
+ |                                 |    32 Tab & Window Mgmt (Mux-Aware)
+ |                                 |    |     (depends on 31)
+16-17, 19-21 Chrome                |    |
+ |  (tab bar, drag, routing,       |    33 Split Nav + Floating Panes
+ |   shell integration, menus)     |    |     (depends on 31)
+ |                                 |    |
+ └─────────────┬───────────────────┘    |
+               |                        |
+          22-23 Hardening               |
+               |                        |
+          24-25 Polish                  |
+               |                        |
+          27-28 Advanced                |
+               |                        |
+               └────────────┬───────────┘
+                            |
+                       34 IPC Protocol + Daemon Mode
+                            |     (depends on 32)
+                            |
+                       35 Session Persistence + Remote Domains
+                                  (depends on 34)
+
+  ~~15~~ Tab Struct           -> SUPERSEDED by 30, 32
+  ~~18~~ Multi-Window         -> SUPERSEDED by 32
+  ~~26~~ Split Panes          -> SUPERSEDED by 29, 31, 33
 ```

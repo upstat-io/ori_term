@@ -1,30 +1,43 @@
 ---
 section: 26
 title: Split Panes
-status: not-started
+status: superseded
 tier: 7
 goal: Horizontal/vertical splits within a window, binary tree layout, pane navigation and resize
+superseded_by: [29, 31, 33]
+superseded_reason: "Absorbed into Sections 29 (Mux Crate + Layout Engine), 31 (In-Process Mux + Multi-Pane Rendering), and 33 (Split Navigation + Floating Panes). Split panes are now a foundational mux feature, not a Tier 7 afterthought."
 sections:
   - id: "26.1"
     title: Split Data Model
-    status: not-started
+    status: superseded
   - id: "26.2"
     title: Split Creation & Navigation
-    status: not-started
+    status: superseded
   - id: "26.3"
     title: Split Rendering
-    status: not-started
+    status: superseded
   - id: "26.4"
     title: Split Resize
-    status: not-started
+    status: superseded
   - id: "26.5"
     title: Section Completion
-    status: not-started
+    status: superseded
 ---
 
 # Section 26: Split Panes
 
-**Status:** Not Started
+> **SUPERSEDED** — This section has been absorbed into the first-class multiplexing architecture.
+> - Split data model (SplitTree, PaneNode) → **Section 29** (Mux Crate + Layout Engine)
+> - Split rendering + multi-pane frame loop → **Section 31** (In-Process Mux + Multi-Pane Rendering)
+> - Split navigation, resize, zoom, floating panes → **Section 33** (Split Navigation + Floating Panes)
+>
+> The original design added splits as a Tier 7 feature bolted onto existing tabs.
+> The multiplexing redesign makes the layout engine foundational (Tier 4M),
+> adds floating panes (Zellij-inspired), and builds toward a full server mode
+> with session persistence. The immutable SplitTree and domain abstraction
+> subsume everything in this section and go far beyond it.
+
+**Status:** Superseded
 **Goal:** Allow users to split the terminal window into multiple panes, each running its own shell, with keyboard and mouse navigation between them. This is the largest architectural change remaining.
 
 **Crate:** `oriterm` (app + rendering layer), `oriterm_core` (pane data model)
