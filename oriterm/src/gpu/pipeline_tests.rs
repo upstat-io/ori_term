@@ -113,7 +113,7 @@ fn render_colored_cell_correct_bg_color() {
         return;
     };
 
-    let cell_metrics = renderer.font_collection().cell_metrics();
+    let cell_metrics = renderer.cell_metrics();
     let cw = cell_metrics.width.ceil() as u32;
     let ch = cell_metrics.height.ceil() as u32;
 
@@ -163,7 +163,7 @@ fn render_text_produces_nonzero_alpha_in_glyph_region() {
         return;
     };
 
-    let cell_metrics = renderer.font_collection().cell_metrics();
+    let cell_metrics = renderer.cell_metrics();
     let cols = 10u32;
     let rows = 1u32;
     let w = (cell_metrics.width * cols as f32).ceil() as u32;
@@ -214,7 +214,7 @@ fn render_cursor_pixels_at_expected_position() {
         return;
     };
 
-    let cell_metrics = renderer.font_collection().cell_metrics();
+    let cell_metrics = renderer.cell_metrics();
     let cols = 5u32;
     let rows = 3u32;
     let w = (cell_metrics.width * cols as f32).ceil() as u32;
@@ -288,7 +288,7 @@ fn full_pipeline_extract_prepare_render_readback() {
         return;
     };
 
-    let cell_metrics = renderer.font_collection().cell_metrics();
+    let cell_metrics = renderer.cell_metrics();
     let cols = 20u32;
     let rows = 5u32;
     let w = (cell_metrics.width * cols as f32).ceil() as u32;

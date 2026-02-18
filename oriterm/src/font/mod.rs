@@ -170,6 +170,17 @@ pub struct RasterKey {
     pub size_q6: u32,
 }
 
+impl RasterKey {
+    /// Construct a raster key from a resolved glyph and a 26.6 fixed-point size.
+    pub fn from_resolved(resolved: ResolvedGlyph, size_q6: u32) -> Self {
+        Self {
+            glyph_id: resolved.glyph_id,
+            face_idx: resolved.face_idx,
+            size_q6,
+        }
+    }
+}
+
 bitflags! {
     /// Flags indicating synthetic style transformations needed at render time.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

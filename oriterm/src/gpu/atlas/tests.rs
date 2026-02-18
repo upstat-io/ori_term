@@ -55,7 +55,7 @@ fn insert_and_lookup_round_trip() {
     let key = test_key(65); // 'A'
     let glyph = test_glyph(8, 14);
 
-    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+    let entry = atlas.insert(key, &glyph, &gpu.queue);
     assert!(entry.is_some());
 
     let looked_up = atlas.lookup(key);
@@ -81,7 +81,7 @@ fn insert_zero_size_returns_none_and_caches_as_empty() {
     let glyph = test_glyph(0, 0);
 
     assert!(!atlas.is_known_empty(key));
-    assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_none());
+    assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
     assert!(atlas.lookup(key).is_none());
     assert!(atlas.is_known_empty(key));
 }
@@ -97,8 +97,8 @@ fn insert_duplicate_returns_cached() {
     let key = test_key(65);
     let glyph = test_glyph(8, 14);
 
-    let first = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
-    let second = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+    let first = atlas.insert(key, &glyph, &gpu.queue).unwrap();
+    let second = atlas.insert(key, &glyph, &gpu.queue).unwrap();
 
     // Same UV coordinates — same cached entry.
     assert_eq!(first.uv_x, second.uv_x);
@@ -117,7 +117,7 @@ fn uv_coordinates_are_normalized() {
     let key = test_key(65);
     let glyph = test_glyph(8, 14);
 
-    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
 
     assert!(entry.uv_x >= 0.0 && entry.uv_x <= 1.0);
     assert!(entry.uv_y >= 0.0 && entry.uv_y <= 1.0);
@@ -141,7 +141,7 @@ fn clear_resets_atlas_state() {
     let key = test_key(65);
     let glyph = test_glyph(8, 14);
 
-    atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+    atlas.insert(key, &glyph, &gpu.queue);
     assert_eq!(atlas.len(), 1);
 
     atlas.clear();
@@ -165,7 +165,7 @@ fn insert_many_glyphs_fits_on_one_page() {
     for glyph_id in 0x20u16..=0x7Eu16 {
         let key = test_key(glyph_id);
         let glyph = test_glyph(8, 14);
-        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+        atlas.insert(key, &glyph, &gpu.queue);
     }
 
     assert_eq!(atlas.len(), 95);
@@ -187,14 +187,14 @@ fn insert_triggers_new_page_allocation() {
     for i in 0..100u16 {
         let key = test_key(i);
         let glyph = test_glyph(200, 200);
-        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+        atlas.insert(key, &glyph, &gpu.queue);
     }
     assert_eq!(atlas.page_count(), 1);
 
     // The 101st glyph should trigger page 2.
     let key = test_key(100);
     let glyph = test_glyph(200, 200);
-    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
 
     assert_eq!(atlas.page_count(), 2);
     assert_eq!(entry.page, 1);
@@ -212,7 +212,7 @@ fn insert_oversized_glyph_returns_none() {
     // Width exceeds max (PAGE_SIZE - GLYPH_PADDING = 2047).
     let glyph = test_glyph(PAGE_SIZE, 1);
 
-    assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_none());
+    assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
 }
 
 #[test]
@@ -241,7 +241,7 @@ fn clear_after_multi_page_resets_to_one_page() {
     for i in 0..=100u16 {
         let key = test_key(i);
         let glyph = test_glyph(200, 200);
-        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+        atlas.insert(key, &glyph, &gpu.queue);
     }
     assert!(atlas.page_count() >= 2);
 
@@ -268,7 +268,7 @@ fn glyphs_do_not_overlap() {
     for (i, &(w, h)) in sizes.iter().enumerate() {
         let key = test_key(i as u16);
         let glyph = test_glyph(w, h);
-        if let Some(entry) = atlas.insert(key, &glyph, &gpu.device, &gpu.queue) {
+        if let Some(entry) = atlas.insert(key, &glyph, &gpu.queue) {
             entries.push(entry);
         }
     }
@@ -315,7 +315,7 @@ fn reinsert_after_clear_packs_from_origin() {
     for i in 0..10u16 {
         let key = test_key(i);
         let glyph = test_glyph(20, 20);
-        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+        atlas.insert(key, &glyph, &gpu.queue);
     }
     assert_eq!(atlas.len(), 10);
 
@@ -325,7 +325,7 @@ fn reinsert_after_clear_packs_from_origin() {
     let key = test_key(100);
     let glyph = test_glyph(8, 14);
     let entry = atlas
-        .insert(key, &glyph, &gpu.device, &gpu.queue)
+        .insert(key, &glyph, &gpu.queue)
         .unwrap();
 
     assert_eq!(entry.page, 0);
@@ -347,7 +347,7 @@ fn insert_at_max_dimension_succeeds() {
     let glyph = test_glyph(max_dim, max_dim);
 
     // A glyph exactly at the max dimension should succeed.
-    assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_some());
+    assert!(atlas.insert(key, &glyph, &gpu.queue).is_some());
 }
 
 #[test]
@@ -364,14 +364,14 @@ fn insert_one_over_max_dimension_fails() {
     let key_w = test_key(1);
     let glyph_w = test_glyph(over, 1);
     assert!(atlas
-        .insert(key_w, &glyph_w, &gpu.device, &gpu.queue)
+        .insert(key_w, &glyph_w, &gpu.queue)
         .is_none());
 
     // Height one pixel over the max should also fail.
     let key_h = test_key(2);
     let glyph_h = test_glyph(1, over);
     assert!(atlas
-        .insert(key_h, &glyph_h, &gpu.device, &gpu.queue)
+        .insert(key_h, &glyph_h, &gpu.queue)
         .is_none());
 }
 
@@ -386,7 +386,7 @@ fn insert_zero_width_nonzero_height_returns_none() {
     let key = test_key(1);
     let glyph = test_glyph(0, 14);
 
-    assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_none());
+    assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
     assert!(atlas.lookup(key).is_none());
     assert!(atlas.is_known_empty(key));
 }
@@ -402,7 +402,7 @@ fn insert_nonzero_width_zero_height_returns_none() {
     let key = test_key(1);
     let glyph = test_glyph(8, 0);
 
-    assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_none());
+    assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
     assert!(atlas.lookup(key).is_none());
     assert!(atlas.is_known_empty(key));
 }
@@ -430,7 +430,7 @@ fn is_known_empty_false_for_normal_glyph() {
     let key = test_key(65);
     let glyph = test_glyph(8, 14);
 
-    atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+    atlas.insert(key, &glyph, &gpu.queue);
 
     assert!(!atlas.is_known_empty(key));
 }
@@ -446,7 +446,7 @@ fn clear_resets_empty_keys() {
     let key = test_key(32);
     let glyph = test_glyph(0, 0);
 
-    atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+    atlas.insert(key, &glyph, &gpu.queue);
     assert!(atlas.is_known_empty(key));
 
     atlas.clear();
@@ -467,7 +467,7 @@ fn repeated_insert_of_empty_glyph_is_idempotent() {
 
     // Insert the same zero-size glyph multiple times.
     for _ in 0..5 {
-        assert!(atlas.insert(key, &glyph, &gpu.device, &gpu.queue).is_none());
+        assert!(atlas.insert(key, &glyph, &gpu.queue).is_none());
     }
 
     assert!(atlas.is_known_empty(key));
@@ -509,7 +509,7 @@ fn lru_eviction_evicts_oldest_page() {
         atlas.begin_frame();
         let key = test_key(i);
         let glyph = test_glyph(max_dim, max_dim);
-        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+        atlas.insert(key, &glyph, &gpu.queue);
     }
     assert_eq!(atlas.page_count(), 4);
 
@@ -518,7 +518,7 @@ fn lru_eviction_evicts_oldest_page() {
     atlas.begin_frame();
     let key = test_key(10);
     let glyph = test_glyph(8, 14);
-    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
 
     // The new glyph should be on page 0 (the evicted page).
     assert_eq!(entry.page, 0);
@@ -547,7 +547,7 @@ fn lru_eviction_preserves_newer_pages() {
         atlas.begin_frame();
         let key = test_key(i);
         let glyph = test_glyph(max_dim, max_dim);
-        atlas.insert(key, &glyph, &gpu.device, &gpu.queue);
+        atlas.insert(key, &glyph, &gpu.queue);
     }
 
     // Touch page 0 by looking up its glyph, making it the most recently used.
@@ -560,7 +560,7 @@ fn lru_eviction_preserves_newer_pages() {
     atlas.begin_frame();
     let key = test_key(10);
     let glyph = test_glyph(8, 14);
-    let entry = atlas.insert(key, &glyph, &gpu.device, &gpu.queue).unwrap();
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
 
     assert_eq!(entry.page, 1);
     assert!(atlas.lookup(test_key(1)).is_none()); // evicted
@@ -594,10 +594,10 @@ fn q6_keying_distinct_sizes() {
     let glyph_16 = test_glyph(9, 16);
 
     let e14 = atlas
-        .insert(key_14, &glyph_14, &gpu.device, &gpu.queue)
+        .insert(key_14, &glyph_14, &gpu.queue)
         .unwrap();
     let e16 = atlas
-        .insert(key_16, &glyph_16, &gpu.device, &gpu.queue)
+        .insert(key_16, &glyph_16, &gpu.queue)
         .unwrap();
 
     assert_eq!(atlas.len(), 2);

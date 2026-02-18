@@ -116,6 +116,18 @@ impl GlyphAtlas {
         self.cache.get(&key)
     }
 
+    /// Look up a glyph and touch its page for LRU tracking in one call.
+    ///
+    /// Combines [`lookup`](Self::lookup) and [`touch_page`](Self::touch_page)
+    /// atomically so callers can't forget to update LRU on cache hits.
+    pub fn lookup_touch(&mut self, key: RasterKey) -> Option<AtlasEntry> {
+        let entry = self.cache.get(&key).copied()?;
+        if let Some(p) = self.pages.get_mut(entry.page as usize) {
+            p.last_used_frame = self.frame_counter;
+        }
+        Some(entry)
+    }
+
     /// Mark a page as used this frame for LRU tracking.
     ///
     /// Call after [`lookup`](Self::lookup) when you have mutable access to
@@ -143,7 +155,6 @@ impl GlyphAtlas {
         &mut self,
         key: RasterKey,
         glyph: &RasterizedGlyph,
-        device: &Device,
         queue: &Queue,
     ) -> Option<AtlasEntry> {
         debug_assert_eq!(
@@ -172,7 +183,7 @@ impl GlyphAtlas {
             return None;
         }
 
-        let (page_idx, x, y) = self.find_space(glyph.width, glyph.height, device);
+        let (page_idx, x, y) = self.find_space(glyph.width, glyph.height);
 
         upload_glyph(queue, &self.texture, page_idx, x, y, glyph);
 
@@ -209,7 +220,6 @@ impl GlyphAtlas {
         &mut self,
         key: RasterKey,
         rasterize: impl FnOnce() -> Option<RasterizedGlyph>,
-        device: &Device,
         queue: &Queue,
     ) -> Option<AtlasEntry> {
         // Cache hit — touch page and return.
@@ -225,7 +235,7 @@ impl GlyphAtlas {
 
         // Cache miss — rasterize and insert.
         let glyph = rasterize()?;
-        self.insert(key, &glyph, device, queue)
+        self.insert(key, &glyph, queue)
     }
 
     /// `Texture2DArray` view for atlas bind group creation.
@@ -279,7 +289,7 @@ impl GlyphAtlas {
     /// Tries each existing page's guillotine packer. If all are full and
     /// fewer than `max_pages` exist, adds a new page. If at the page limit,
     /// evicts the least-recently-used page.
-    fn find_space(&mut self, w: u32, h: u32, _device: &Device) -> (u32, u32, u32) {
+    fn find_space(&mut self, w: u32, h: u32) -> (u32, u32, u32) {
         let padded_w = w + GLYPH_PADDING;
         let padded_h = h + GLYPH_PADDING;
 

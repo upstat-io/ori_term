@@ -26,7 +26,7 @@ use super::prepare::{self, AtlasLookup};
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
 use crate::font::collection::size_key;
-use crate::font::{FontCollection, GlyphStyle, RasterKey};
+use crate::font::{CellMetrics, FontCollection, GlyphStyle, RasterKey};
 
 // ── Error type ──
 
@@ -77,11 +77,7 @@ impl AtlasLookup for RendererAtlas<'_> {
         } else {
             // Cache miss (should be rare — ensure_glyphs_cached covers all cells).
             let resolved = self.collection.resolve(ch, style);
-            RasterKey {
-                glyph_id: resolved.glyph_id,
-                face_idx: resolved.face_idx,
-                size_q6: self.size_q6,
-            }
+            RasterKey::from_resolved(resolved, self.size_q6)
         };
         self.atlas.lookup(key)
     }
@@ -140,16 +136,14 @@ impl GpuRenderer {
 
         // Atlas + pre-cache printable ASCII (0x20–0x7E).
         let mut atlas = GlyphAtlas::new(device);
+        let mut resolve_cache = HashMap::new();
         let size_q6 = size_key(font_collection.size_px());
         for ch in ' '..='~' {
             let resolved = font_collection.resolve(ch, GlyphStyle::Regular);
-            let key = RasterKey {
-                glyph_id: resolved.glyph_id,
-                face_idx: resolved.face_idx,
-                size_q6,
-            };
+            let key = RasterKey::from_resolved(resolved, size_q6);
+            resolve_cache.insert((ch, GlyphStyle::Regular), key);
             if let Some(glyph) = font_collection.rasterize(key) {
-                atlas.insert(key, glyph, device, queue);
+                atlas.insert(key, glyph, queue);
             }
         }
         let t_precache = t0.elapsed();
@@ -170,7 +164,7 @@ impl GpuRenderer {
             atlas_layout,
             atlas,
             font_collection,
-            resolve_cache: HashMap::new(),
+            resolve_cache,
             bg_buffer: None,
             fg_buffer: None,
             cursor_buffer: None,
@@ -179,9 +173,14 @@ impl GpuRenderer {
 
     // ── Accessors ──
 
-    /// Font collection for cell metrics and glyph resolution.
-    pub fn font_collection(&self) -> &FontCollection {
-        &self.font_collection
+    /// Cell dimensions derived from the current font metrics.
+    pub fn cell_metrics(&self) -> CellMetrics {
+        self.font_collection.cell_metrics()
+    }
+
+    /// Primary font family name.
+    pub fn family_name(&self) -> &str {
+        self.font_collection.family_name()
     }
 
     /// Glyph atlas for cache statistics.
@@ -213,19 +212,13 @@ impl GpuRenderer {
                 cached
             } else {
                 let resolved = self.font_collection.resolve(cell.ch, style);
-                let k = RasterKey {
-                    glyph_id: resolved.glyph_id,
-                    face_idx: resolved.face_idx,
-                    size_q6,
-                };
+                let k = RasterKey::from_resolved(resolved, size_q6);
                 self.resolve_cache.insert((cell.ch, style), k);
                 k
             };
 
             // Touch the page for LRU tracking if already cached.
-            let page = self.atlas.lookup(key).map(|e| e.page);
-            if let Some(p) = page {
-                self.atlas.touch_page(p);
+            if self.atlas.lookup_touch(key).is_some() {
                 continue;
             }
 
@@ -234,7 +227,7 @@ impl GpuRenderer {
             }
 
             if let Some(glyph) = self.font_collection.rasterize(key) {
-                self.atlas.insert(key, glyph, &gpu.device, &gpu.queue);
+                self.atlas.insert(key, glyph, &gpu.queue);
             }
         }
     }

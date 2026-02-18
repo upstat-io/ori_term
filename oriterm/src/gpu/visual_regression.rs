@@ -190,7 +190,7 @@ fn basic_grid() {
         return;
     };
 
-    let cell = renderer.font_collection().cell_metrics();
+    let cell = renderer.cell_metrics();
     let cols = 80usize;
     let rows = 24usize;
     let w = (cell.width * cols as f32).ceil() as u32;
@@ -223,7 +223,7 @@ fn colors_16() {
         return;
     };
 
-    let cell = renderer.font_collection().cell_metrics();
+    let cell = renderer.cell_metrics();
     let cols = 16usize;
     let rows = 2usize;
     let w = (cell.width * cols as f32).ceil() as u32;
@@ -279,7 +279,7 @@ fn cursor_shapes() {
         return;
     };
 
-    let cell = renderer.font_collection().cell_metrics();
+    let cell = renderer.cell_metrics();
     let cols = 20usize;
     let rows = 5usize;
     let w = (cell.width * cols as f32).ceil() as u32;
@@ -325,7 +325,7 @@ fn bold_italic() {
         return;
     };
 
-    let cell = renderer.font_collection().cell_metrics();
+    let cell = renderer.cell_metrics();
     let cols = 20usize;
     let rows = 4usize;
     let w = (cell.width * cols as f32).ceil() as u32;

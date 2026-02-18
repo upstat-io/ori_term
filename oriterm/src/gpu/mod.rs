@@ -13,11 +13,12 @@ pub(crate) mod renderer;
 pub(crate) mod state;
 pub(crate) mod transparency;
 
-// Re-exports consumed by App (Section 5.11).
+// Re-exports consumed by App and Window.
 pub(crate) use extract::extract_frame;
 pub(crate) use frame_input::ViewportSize;
 pub(crate) use renderer::{GpuRenderer, SurfaceError};
 pub(crate) use state::GpuState;
+pub(crate) use transparency::apply_transparency;
 
 #[cfg(test)]
 mod pipeline_tests;

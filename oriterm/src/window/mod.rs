@@ -20,8 +20,7 @@ use oriterm_ui::window::WindowConfig;
 
 use oriterm_core::Rgb;
 
-use crate::gpu::state::GpuState;
-use crate::gpu::transparency;
+use crate::gpu::{apply_transparency, GpuState};
 
 /// Default tint for the acrylic/blur layer (Catppuccin Mocha base).
 ///
@@ -80,7 +79,7 @@ impl TermWindow {
 
         // Apply vibrancy/blur when transparent background is requested.
         if config.transparent && config.blur {
-            transparency::apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
+            apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
         }
 
         // Enable IME input for CJK and other complex input methods.
@@ -115,7 +114,7 @@ impl TermWindow {
         let scale_factor = ScaleFactor::new(window.scale_factor());
 
         if config.transparent && config.blur {
-            transparency::apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
+            apply_transparency(&window, config.opacity, true, DEFAULT_BLUR_TINT);
         }
 
         window.set_ime_allowed(true);

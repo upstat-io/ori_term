@@ -173,7 +173,7 @@ impl ApplicationHandler<TermEvent> for App {
 
         // 7. Compute grid dimensions from viewport and cell metrics.
         let (w, h) = window.size_px();
-        let cell = renderer.font_collection().cell_metrics();
+        let cell = renderer.cell_metrics();
         let cols = cell.columns(w).max(1);
         let rows = cell.rows(h).max(1);
 
@@ -206,7 +206,7 @@ impl ApplicationHandler<TermEvent> for App {
              font={} {:.1}pt",
             w,
             h,
-            renderer.font_collection().family_name(),
+            renderer.family_name(),
             DEFAULT_FONT_SIZE_PT,
         );
 
@@ -241,7 +241,7 @@ impl ApplicationHandler<TermEvent> for App {
                 {
                     window.resize_surface(size.width, size.height, gpu);
 
-                    let cell = renderer.font_collection().cell_metrics();
+                    let cell = renderer.cell_metrics();
                     let cols = cell.columns(size.width).max(1);
                     let rows = cell.rows(size.height).max(1);
 
@@ -281,7 +281,7 @@ impl ApplicationHandler<TermEvent> for App {
 
                     let (w, h) = window.size_px();
                     let viewport = ViewportSize::new(w, h);
-                    let cell = renderer.font_collection().cell_metrics();
+                    let cell = renderer.cell_metrics();
 
                     let mut frame = extract_frame(tab.terminal(), viewport, cell);
 
