@@ -98,6 +98,9 @@ pub struct ShapedGlyph {
     pub y_offset: f32,
 }
 
+/// Variation Selector 16: forces emoji presentation (U+FE0F).
+const VS16: char = '\u{FE0F}';
+
 // ── Phase 1: Run Segmentation ──
 
 /// Segment a row of cells into shaping runs.
@@ -159,7 +162,11 @@ fn segment_runs<C: ShapableCell>(
         }
 
         let style = GlyphStyle::from_cell_flags(cell.flags());
-        let resolved = collection.resolve(cell.ch(), style);
+        let resolved = if cell.zerowidth().contains(&VS16) {
+            collection.resolve_prefer_emoji(cell.ch(), style)
+        } else {
+            collection.resolve(cell.ch(), style)
+        };
         let face_idx = resolved.face_idx;
 
         // Check if we can extend the current run (same face).

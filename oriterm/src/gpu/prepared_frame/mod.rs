@@ -1,9 +1,9 @@
 //! Prepared frame output from the Prepare phase of the render pipeline.
 //!
-//! [`PreparedFrame`] holds three [`InstanceWriter`] buffers (backgrounds,
-//! glyphs, cursors) plus metadata the Render phase needs to upload and draw.
-//! The three buffers map to three draw calls in painter's order:
-//! backgrounds first, then glyphs on top, then cursors last.
+//! [`PreparedFrame`] holds four [`InstanceWriter`] buffers (backgrounds,
+//! glyphs, color glyphs, cursors) plus metadata the Render phase needs to
+//! upload and draw. The four buffers map to four draw calls in painter's
+//! order: backgrounds → monochrome glyphs → color glyphs → cursors.
 
 use oriterm_core::Rgb;
 
@@ -12,14 +12,16 @@ use super::instance_writer::InstanceWriter;
 
 /// GPU-ready frame data produced by the Prepare phase.
 ///
-/// Contains three instance buffers for the three rendering layers
-/// (drawn in order: backgrounds → glyphs → cursors) plus the clear
-/// color and total instance count for the Render phase.
+/// Contains four instance buffers for the four rendering layers
+/// (drawn in order: backgrounds → glyphs → color glyphs → cursors)
+/// plus the clear color and total instance count for the Render phase.
 pub struct PreparedFrame {
     /// Background rectangle instances (solid-color cell fills).
     pub backgrounds: InstanceWriter,
-    /// Glyph instances (texture-sampled from the atlas).
+    /// Monochrome glyph instances (`R8Unorm` atlas, tinted by `fg_color`).
     pub glyphs: InstanceWriter,
+    /// Color glyph instances (`Rgba8Unorm` atlas, rendered as-is).
+    pub color_glyphs: InstanceWriter,
     /// Cursor instances (block, bar, underline shapes).
     pub cursors: InstanceWriter,
     /// Viewport pixel dimensions for uniform buffer update.
@@ -34,6 +36,7 @@ impl PreparedFrame {
         Self {
             backgrounds: InstanceWriter::new(),
             glyphs: InstanceWriter::new(),
+            color_glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::new(),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
@@ -56,28 +59,36 @@ impl PreparedFrame {
         Self {
             backgrounds: InstanceWriter::with_capacity(cells),
             glyphs: InstanceWriter::with_capacity(cells),
+            color_glyphs: InstanceWriter::new(),
             cursors: InstanceWriter::with_capacity(4),
             viewport,
             clear_color: rgb_to_clear(background, opacity),
         }
     }
 
-    /// Total instance count across all three buffers.
+    /// Total instance count across all four buffers.
     #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn total_instances(&self) -> usize {
-        self.backgrounds.len() + self.glyphs.len() + self.cursors.len()
+        self.backgrounds.len()
+            + self.glyphs.len()
+            + self.color_glyphs.len()
+            + self.cursors.len()
     }
 
-    /// Whether all three buffers are empty.
+    /// Whether all four buffers are empty.
     #[allow(dead_code, reason = "frame management methods for later sections")]
     pub fn is_empty(&self) -> bool {
-        self.backgrounds.is_empty() && self.glyphs.is_empty() && self.cursors.is_empty()
+        self.backgrounds.is_empty()
+            && self.glyphs.is_empty()
+            && self.color_glyphs.is_empty()
+            && self.cursors.is_empty()
     }
 
     /// Reset all buffers for the next frame, retaining allocated memory.
     pub fn clear(&mut self) {
         self.backgrounds.clear();
         self.glyphs.clear();
+        self.color_glyphs.clear();
         self.cursors.clear();
     }
 

@@ -45,6 +45,7 @@ fn test_entry(ch: char) -> AtlasEntry {
         height: 14,
         bearing_x: 1,
         bearing_y: 12,
+        is_color: false,
     }
 }
 
@@ -868,6 +869,7 @@ fn test_entry_for_glyph(glyph_id: u16) -> AtlasEntry {
         height: 14,
         bearing_x: 1,
         bearing_y: 12,
+        is_color: false,
     }
 }
 
@@ -1093,6 +1095,112 @@ fn shaped_empty_glyphs_produces_bg_only() {
     let frame = prepare_frame_shaped(&input, &atlas, &sf);
 
     assert_counts(&frame, 3, 0, 1);
+}
+
+// ── Color glyph routing (Section 6.10) ──
+
+#[test]
+fn color_glyph_routes_to_color_glyphs_buffer() {
+    // A shaped glyph with is_color=true should go to frame.color_glyphs,
+    // not frame.glyphs.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(1, 1, "E"); // emoji placeholder
+
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 200,
+        face_idx: FaceIdx::REGULAR,
+        size_q6,
+    };
+    map.insert(key, AtlasEntry {
+        page: 0,
+        uv_x: 0.1,
+        uv_y: 0.2,
+        uv_w: 0.05,
+        uv_h: 0.05,
+        width: 14,
+        height: 14,
+        bearing_x: 0,
+        bearing_y: 12,
+        is_color: true, // Color emoji!
+    });
+    let atlas = KeyTestAtlas(map);
+
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 200,
+        face_idx: FaceIdx::REGULAR,
+        col_start: 0,
+        col_span: 1,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let shaped = shaped_one_row(1, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // Monochrome glyphs should be empty — the color glyph went to color_glyphs.
+    assert_eq!(frame.glyphs.len(), 0, "color glyph should NOT be in monochrome buffer");
+    assert_eq!(frame.color_glyphs.len(), 1, "color glyph should be in color buffer");
+}
+
+#[test]
+fn mixed_color_and_mono_glyphs_route_correctly() {
+    // Mix of monochrome and color glyphs in the same row.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(3, 1, "AEB");
+
+    let mut map = HashMap::new();
+    // Mono glyph 'A' at col 0.
+    map.insert(
+        RasterKey { glyph_id: 10, face_idx: FaceIdx::REGULAR, size_q6 },
+        test_entry_for_glyph(10),
+    );
+    // Color emoji 'E' at col 1.
+    map.insert(
+        RasterKey { glyph_id: 200, face_idx: FaceIdx::REGULAR, size_q6 },
+        AtlasEntry {
+            is_color: true,
+            ..test_entry_for_glyph(200)
+        },
+    );
+    // Mono glyph 'B' at col 2.
+    map.insert(
+        RasterKey { glyph_id: 11, face_idx: FaceIdx::REGULAR, size_q6 },
+        test_entry_for_glyph(11),
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 10,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 0,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 200,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 1,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 11,
+            face_idx: FaceIdx::REGULAR,
+            col_start: 2,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+    let shaped = shaped_one_row(3, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    assert_eq!(frame.glyphs.len(), 2, "2 mono glyphs in monochrome buffer");
+    assert_eq!(frame.color_glyphs.len(), 1, "1 color glyph in color buffer");
+    assert_eq!(frame.backgrounds.len(), 3, "3 backgrounds (one per cell)");
 }
 
 // ── prepare_frame_shaped_into ──

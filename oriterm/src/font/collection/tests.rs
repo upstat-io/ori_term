@@ -470,6 +470,79 @@ fn family_name_not_empty() {
     );
 }
 
+// ── Emoji resolution (Section 6.10) ──
+
+#[test]
+fn resolve_prefer_emoji_without_fallbacks_uses_primary() {
+    // With no fallbacks, resolve_prefer_emoji should fall through to
+    // normal resolution and return the primary face (or .notdef).
+    let fc = embedded_only_collection(GlyphFormat::Alpha);
+    let normal = fc.resolve('A', GlyphStyle::Regular);
+    let emoji = fc.resolve_prefer_emoji('A', GlyphStyle::Regular);
+    assert_eq!(normal.glyph_id, emoji.glyph_id);
+    assert_eq!(normal.face_idx, emoji.face_idx);
+}
+
+#[test]
+fn resolve_prefer_emoji_tries_fallback_for_ascii() {
+    // System collection has fallback fonts. For 'A' (in primary font), normal
+    // resolve returns primary. resolve_prefer_emoji returns fallback if it
+    // has 'A', otherwise falls through to normal.
+    let fc = system_collection(GlyphFormat::Alpha);
+    let normal = fc.resolve('A', GlyphStyle::Regular);
+    let emoji = fc.resolve_prefer_emoji('A', GlyphStyle::Regular);
+    // Both should produce a valid glyph (non-zero ID).
+    assert_ne!(normal.glyph_id, 0);
+    assert_ne!(emoji.glyph_id, 0);
+    // resolve_prefer_emoji should try fallbacks first — it may or may not
+    // return a different face_idx depending on whether a fallback has 'A'.
+    // Key invariant: the result is always valid.
+}
+
+#[test]
+fn resolve_prefer_emoji_emoji_char_hits_fallback() {
+    // System collection with fallbacks should resolve a known emoji to a
+    // fallback face (color emoji font). If no emoji font is installed,
+    // this test still passes — it just verifies no panic.
+    let fc = system_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve_prefer_emoji('\u{1F600}', GlyphStyle::Regular); // 😀
+    if resolved.glyph_id != 0 {
+        assert!(
+            resolved.face_idx.is_fallback(),
+            "emoji should resolve via fallback face (got face_idx={:?})",
+            resolved.face_idx,
+        );
+    }
+}
+
+#[test]
+fn rasterize_emoji_as_color_format() {
+    // When system has a color emoji font, rasterizing 😀 should produce
+    // GlyphFormat::Color (RGBA bitmap). Permissive: skips if no emoji font.
+    let mut fc = system_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve_prefer_emoji('\u{1F600}', GlyphStyle::Regular);
+    if resolved.glyph_id == 0 {
+        return; // No emoji font available.
+    }
+    let key = RasterKey {
+        glyph_id: resolved.glyph_id,
+        face_idx: resolved.face_idx,
+        size_q6: super::size_key(fc.size_px()),
+    };
+    if let Some(glyph) = fc.rasterize(key) {
+        if glyph.format == GlyphFormat::Color {
+            // Color emoji: RGBA bitmap, 4 bytes per pixel.
+            let expected = (glyph.width * glyph.height * 4) as usize;
+            assert_eq!(
+                glyph.bitmap.len(),
+                expected,
+                "color emoji bitmap should be width * height * 4 bytes"
+            );
+        }
+        // If the font renders it as Alpha (text presentation), that's also valid.
+    }
+}
+
 // ── FaceIdx ──
 
 #[test]

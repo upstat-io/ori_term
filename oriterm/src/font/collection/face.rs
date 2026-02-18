@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use swash::scale::{Render, ScaleContext, Source};
+use swash::scale::{image::Content, Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::Format;
 use swash::{CacheKey, FontRef};
 
@@ -77,8 +77,13 @@ pub(crate) fn glyph_id(fd: &FaceData, ch: char) -> u16 {
 
 /// Rasterize a glyph from face data into a bitmap.
 ///
-/// Returns `None` for empty glyphs (e.g. space) or [`GlyphFormat::Color`]
-/// (color emoji handled by skrifa in Section 6).
+/// Tries color sources first (COLR outlines, CBDT/sbix bitmaps), then falls
+/// back to the configured outline format. Returns `None` for empty glyphs.
+///
+/// When a color source produces output, the returned [`RasterizedGlyph`] has
+/// `format: GlyphFormat::Color` with RGBA premultiplied data regardless of
+/// the requested `format`. Callers must route color glyphs to a separate
+/// RGBA atlas.
 pub(crate) fn rasterize_from_face(
     fd: &FaceData,
     glyph_id: u16,
@@ -97,15 +102,24 @@ pub(crate) fn rasterize_from_face(
     };
 
     let zeno_fmt = match format {
-        GlyphFormat::Alpha => Format::Alpha,
         GlyphFormat::SubpixelRgb => Format::Subpixel,
         GlyphFormat::SubpixelBgr => Format::subpixel_bgra(),
-        GlyphFormat::Color => return None,
+        GlyphFormat::Alpha | GlyphFormat::Color => Format::Alpha,
     };
 
-    let image = Render::new(&[Source::Outline])
-        .format(zeno_fmt)
-        .render(&mut scaler, glyph_id)?;
+    // Try color sources first, then fall back to outline.
+    let image = Render::new(&[
+        Source::ColorOutline(0),
+        Source::ColorBitmap(StrikeWith::BestFit),
+        Source::Outline,
+    ])
+    .format(zeno_fmt)
+    .render(&mut scaler, glyph_id)?;
+
+    let out_format = match image.content {
+        Content::Color => GlyphFormat::Color,
+        Content::SubpixelMask | Content::Mask => format,
+    };
 
     Some(RasterizedGlyph {
         width: image.placement.width,
@@ -113,7 +127,7 @@ pub(crate) fn rasterize_from_face(
         bearing_x: image.placement.left,
         bearing_y: image.placement.top,
         advance,
-        format,
+        format: out_format,
         bitmap: image.data,
     })
 }

@@ -1,10 +1,12 @@
 //! GPU render pipelines: WGSL shaders, vertex layout, and pipeline factories.
 //!
-//! Two pipelines share a single 80-byte instance buffer layout:
+//! Three pipelines share a single 80-byte instance buffer layout:
 //! - **Background** ([`create_bg_pipeline`]): solid-color quads, no texture.
-//! - **Foreground** ([`create_fg_pipeline`]): atlas-sampled glyph quads.
+//! - **Foreground** ([`create_fg_pipeline`]): `R8Unorm` atlas-sampled glyph quads.
+//! - **Color foreground** ([`create_color_fg_pipeline`]): `Rgba8Unorm` atlas-sampled
+//!   color emoji quads (no `fg_color` tinting).
 //!
-//! Both use `TriangleStrip` topology with vertex pulling (`@builtin(vertex_index)`).
+//! All use `TriangleStrip` topology with vertex pulling (`@builtin(vertex_index)`).
 
 use wgpu::{
     BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendComponent,
@@ -24,6 +26,9 @@ const BG_SHADER_SRC: &str = include_str!("../shaders/bg.wgsl");
 
 /// Embedded WGSL source for the foreground shader.
 const FG_SHADER_SRC: &str = include_str!("../shaders/fg.wgsl");
+
+/// Embedded WGSL source for the color foreground shader.
+const COLOR_FG_SHADER_SRC: &str = include_str!("../shaders/color_fg.wgsl");
 
 /// Instance buffer stride in bytes.
 pub const INSTANCE_STRIDE: u64 = INSTANCE_SIZE as u64;
@@ -232,6 +237,57 @@ pub fn create_fg_pipeline(
     gpu.device
         .create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("fg_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[instance_buffer_layout()],
+            },
+            primitive: QUAD_PRIMITIVE,
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: gpu.render_format(),
+                    blend: Some(PREMUL_ALPHA_BLEND),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: gpu.pipeline_cache.as_ref(),
+        })
+}
+
+/// Create the color foreground render pipeline.
+///
+/// Uses bind groups 0 (uniforms) and 1 (color atlas texture + sampler).
+/// Samples RGBA color data directly from the atlas without `fg_color` tinting.
+/// Used for color emoji rendering.
+pub fn create_color_fg_pipeline(
+    gpu: &GpuState,
+    uniform_layout: &BindGroupLayout,
+    atlas_layout: &BindGroupLayout,
+) -> RenderPipeline {
+    let shader = gpu.device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("color_fg_shader"),
+        source: wgpu::ShaderSource::Wgsl(COLOR_FG_SHADER_SRC.into()),
+    });
+
+    let pipeline_layout = gpu
+        .device
+        .create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("color_fg_pipeline_layout"),
+            bind_group_layouts: &[uniform_layout, atlas_layout],
+            ..Default::default()
+        });
+
+    gpu.device
+        .create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("color_fg_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader,

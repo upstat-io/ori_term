@@ -37,7 +37,7 @@ fn atlas_creation_succeeds() {
         return;
     };
 
-    let atlas = GlyphAtlas::new(&gpu.device);
+    let atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     assert_eq!(atlas.page_count(), 1);
     assert!(atlas.is_empty());
@@ -51,7 +51,7 @@ fn insert_and_lookup_round_trip() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(65); // 'A'
     let glyph = test_glyph(8, 14);
 
@@ -76,7 +76,7 @@ fn insert_zero_size_returns_none_and_caches_as_empty() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(32); // space
     let glyph = test_glyph(0, 0);
 
@@ -93,7 +93,7 @@ fn insert_duplicate_returns_cached() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(65);
     let glyph = test_glyph(8, 14);
 
@@ -113,7 +113,7 @@ fn uv_coordinates_are_normalized() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(65);
     let glyph = test_glyph(8, 14);
 
@@ -137,7 +137,7 @@ fn clear_resets_atlas_state() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(65);
     let glyph = test_glyph(8, 14);
 
@@ -158,7 +158,7 @@ fn insert_many_glyphs_fits_on_one_page() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     // Insert 95 ASCII glyphs (0x20–0x7E), each 8×14. Guillotine packer
     // on a 2048×2048 page handles these easily.
@@ -179,7 +179,7 @@ fn insert_triggers_new_page_allocation() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     // Fill page 0 with 200×200 glyphs. Padded: 201×201.
     // Per row: floor(2048/201) = 10. Columns: floor(2048/201) = 10.
@@ -207,7 +207,7 @@ fn insert_oversized_glyph_returns_none() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(1);
     // Width exceeds max (PAGE_SIZE - GLYPH_PADDING = 2047).
     let glyph = test_glyph(PAGE_SIZE, 1);
@@ -222,7 +222,7 @@ fn view_returns_d2_array_view() {
         return;
     };
 
-    let atlas = GlyphAtlas::new(&gpu.device);
+    let atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     // Should not panic.
     let _view = atlas.view();
@@ -235,7 +235,7 @@ fn clear_after_multi_page_resets_to_one_page() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     // Trigger multi-page allocation.
     for i in 0..=100u16 {
@@ -258,7 +258,7 @@ fn glyphs_do_not_overlap() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let ps = PAGE_SIZE as f32;
 
     // Insert several glyphs of different sizes.
@@ -309,7 +309,7 @@ fn reinsert_after_clear_packs_from_origin() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     // Fill with some glyphs at various positions.
     for i in 0..10u16 {
@@ -340,7 +340,7 @@ fn insert_at_max_dimension_succeeds() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let max_dim = PAGE_SIZE - GLYPH_PADDING;
 
     let key = test_key(1);
@@ -357,7 +357,7 @@ fn insert_one_over_max_dimension_fails() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let over = PAGE_SIZE - GLYPH_PADDING + 1;
 
     // Width one pixel over the max should fail.
@@ -382,7 +382,7 @@ fn insert_zero_width_nonzero_height_returns_none() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(1);
     let glyph = test_glyph(0, 14);
 
@@ -398,7 +398,7 @@ fn insert_nonzero_width_zero_height_returns_none() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(1);
     let glyph = test_glyph(8, 0);
 
@@ -414,7 +414,7 @@ fn is_known_empty_false_for_unseen_key() {
         return;
     };
 
-    let atlas = GlyphAtlas::new(&gpu.device);
+    let atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     assert!(!atlas.is_known_empty(test_key(99)));
 }
@@ -426,7 +426,7 @@ fn is_known_empty_false_for_normal_glyph() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(65);
     let glyph = test_glyph(8, 14);
 
@@ -442,7 +442,7 @@ fn clear_resets_empty_keys() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(32);
     let glyph = test_glyph(0, 0);
 
@@ -461,7 +461,7 @@ fn repeated_insert_of_empty_glyph_is_idempotent() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let key = test_key(32);
     let glyph = test_glyph(0, 0);
 
@@ -484,7 +484,7 @@ fn begin_frame_increments_counter() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     assert_eq!(atlas.frame_counter(), 0);
     atlas.begin_frame();
@@ -500,7 +500,7 @@ fn lru_eviction_evicts_oldest_page() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     // Fill all 4 pages with large glyphs (one page-filling glyph each),
     // advancing the frame counter between pages.
@@ -539,7 +539,7 @@ fn lru_eviction_preserves_newer_pages() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
     let max_dim = PAGE_SIZE - GLYPH_PADDING;
 
     // Fill 4 pages.
@@ -576,7 +576,7 @@ fn q6_keying_distinct_sizes() {
         return;
     };
 
-    let mut atlas = GlyphAtlas::new(&gpu.device);
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
 
     // Same glyph_id but different size_q6 → different cache entries.
     let key_14 = RasterKey {

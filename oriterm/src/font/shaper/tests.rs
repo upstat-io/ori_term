@@ -178,6 +178,84 @@ fn prepare_line_reuses_scratch_buffer() {
     assert_eq!(runs.len(), 1, "scratch buffer should be cleared and reused");
 }
 
+// ── VS16 emoji presentation (Section 6.10) ──
+
+#[test]
+fn prepare_line_vs16_in_zerowidth() {
+    // A cell with VS16 (U+FE0F) in zerowidth should use emoji resolution.
+    // With system fonts, this may resolve to a different face than normal.
+    let fc = test_collection();
+    let cells = vec![
+        Cell {
+            ch: '\u{2764}', // ❤ (HEAVY BLACK HEART)
+            extra: Some(Arc::new(CellExtra {
+                underline_color: None,
+                hyperlink: None,
+                zerowidth: vec!['\u{FE0F}'], // VS16
+            })),
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'a',
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    // Should produce at least one run containing the heart character.
+    let has_heart = runs.iter().any(|r| r.text.contains('\u{2764}'));
+    assert!(has_heart, "heart should appear in a shaping run");
+
+    // VS16 should also be in the run text (passed to shaper for font handling).
+    let has_vs16 = runs.iter().any(|r| r.text.contains('\u{FE0F}'));
+    assert!(has_vs16, "VS16 should be in run text for shaper");
+}
+
+#[test]
+fn prepare_line_vs16_may_use_different_face() {
+    // With VS16, the heart should resolve preferring emoji fallback.
+    // Without VS16, it should use normal resolution order.
+    let fc = test_collection();
+
+    // Cell WITH VS16.
+    let with_vs16 = vec![Cell {
+        ch: '\u{2764}',
+        extra: Some(Arc::new(CellExtra {
+            underline_color: None,
+            hyperlink: None,
+            zerowidth: vec!['\u{FE0F}'],
+        })),
+        ..Cell::default()
+    }];
+    let mut runs_vs16 = Vec::new();
+    prepare_line(&with_vs16, with_vs16.len(), &fc, &mut runs_vs16);
+
+    // Cell WITHOUT VS16.
+    let without_vs16 = vec![Cell {
+        ch: '\u{2764}',
+        ..Cell::default()
+    }];
+    let mut runs_plain = Vec::new();
+    prepare_line(&without_vs16, without_vs16.len(), &fc, &mut runs_plain);
+
+    // Both should produce runs (the character exists in some font).
+    // The face_idx may differ if emoji fallback is available.
+    // Key invariant: no panics, valid runs produced.
+    if !runs_vs16.is_empty() && !runs_plain.is_empty() {
+        // If a color emoji font is in the fallback chain, VS16 version
+        // should use a fallback face (emoji font) while plain may use
+        // the primary font.
+        // This is a soft check — depends on system fonts.
+        let vs16_face = runs_vs16[0].face_idx;
+        let plain_face = runs_plain[0].face_idx;
+        // Log for diagnostic visibility; both outcomes are valid.
+        if vs16_face != plain_face {
+            // VS16 triggered emoji fallback — expected behavior.
+        }
+    }
+}
+
 // ── Phase 2: Shaping ──
 
 #[test]

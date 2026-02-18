@@ -4,6 +4,10 @@
 //! pages) using guillotine bin packing for mixed glyph sizes. Pages are
 //! evicted via LRU when all are full. Glyphs are inserted once and looked
 //! up by [`RasterKey`] on subsequent frames.
+//!
+//! Two atlas instances are used at runtime:
+//! - **Monochrome** (`R8Unorm`): standard glyph alpha masks.
+//! - **Color** (`Rgba8Unorm`): color emoji and bitmap glyphs.
 
 mod rect_packer;
 
@@ -16,7 +20,7 @@ use wgpu::{
 
 use self::rect_packer::RectPacker;
 use crate::font::collection::RasterizedGlyph;
-use crate::font::RasterKey;
+use crate::font::{GlyphFormat, RasterKey};
 
 /// Atlas page dimension (width = height).
 const PAGE_SIZE: u32 = 2048;
@@ -55,14 +59,18 @@ pub struct AtlasEntry {
     pub bearing_x: i32,
     /// Vertical bearing (pixels from baseline to top edge; positive = above).
     pub bearing_y: i32,
+    /// Whether this entry lives in the color (RGBA) atlas.
+    pub is_color: bool,
 }
 
 /// Texture atlas for glyph bitmaps using guillotine packing on a `Texture2DArray`.
 ///
-/// Manages a single pre-allocated `R8Unorm` texture array with up to
-/// [`MAX_PAGES`] layers. Glyphs are packed using guillotine best-short-side-fit,
-/// uploaded via `queue.write_texture`, and cached by [`RasterKey`] for O(1)
-/// lookup. When all pages are full, the least-recently-used page is evicted.
+/// Manages a single pre-allocated texture array with up to [`MAX_PAGES`]
+/// layers. The texture format is determined at construction: `R8Unorm` for
+/// monochrome glyphs, `Rgba8Unorm` for color emoji. Glyphs are packed using
+/// guillotine best-short-side-fit, uploaded via `queue.write_texture`, and
+/// cached by [`RasterKey`] for O(1) lookup. When all pages are full, the
+/// least-recently-used page is evicted.
 pub struct GlyphAtlas {
     /// Single pre-allocated `Texture2DArray`.
     texture: Texture,
@@ -78,12 +86,22 @@ pub struct GlyphAtlas {
     max_pages: u32,
     /// Monotonically increasing frame counter for LRU tracking.
     frame_counter: u64,
+    /// Pixel format of this atlas texture.
+    format: GlyphFormat,
 }
 
 impl GlyphAtlas {
     /// Create a new atlas with a pre-allocated texture array and one active page.
-    pub fn new(device: &Device) -> Self {
-        let (texture, view) = create_texture_array(device, PAGE_SIZE, MAX_PAGES);
+    ///
+    /// `format` determines the texture format:
+    /// - [`GlyphFormat::Alpha`] → `R8Unorm` (1 byte/pixel).
+    /// - [`GlyphFormat::Color`] → `Rgba8Unorm` (4 bytes/pixel).
+    pub fn new(device: &Device, format: GlyphFormat) -> Self {
+        let tex_format = match format {
+            GlyphFormat::Color => TextureFormat::Rgba8Unorm,
+            _ => TextureFormat::R8Unorm,
+        };
+        let (texture, view) = create_texture_array(device, PAGE_SIZE, MAX_PAGES, tex_format);
 
         Self {
             texture,
@@ -98,6 +116,7 @@ impl GlyphAtlas {
             page_size: PAGE_SIZE,
             max_pages: MAX_PAGES,
             frame_counter: 0,
+            format,
         }
     }
 
@@ -166,12 +185,6 @@ impl GlyphAtlas {
         glyph: &RasterizedGlyph,
         queue: &Queue,
     ) -> Option<AtlasEntry> {
-        debug_assert_eq!(
-            glyph.format,
-            crate::font::GlyphFormat::Alpha,
-            "GlyphAtlas only supports Alpha format (R8Unorm texture)",
-        );
-
         if let Some(&entry) = self.cache.get(&key) {
             return Some(entry);
         }
@@ -199,6 +212,7 @@ impl GlyphAtlas {
         self.pages[page_idx as usize].last_used_frame = self.frame_counter;
         self.pages[page_idx as usize].glyph_count += 1;
 
+        let is_color = self.format == GlyphFormat::Color;
         let ps = self.page_size as f32;
         let entry = AtlasEntry {
             page: page_idx,
@@ -210,6 +224,7 @@ impl GlyphAtlas {
             height: glyph.height,
             bearing_x: glyph.bearing_x,
             bearing_y: glyph.bearing_y,
+            is_color,
         };
 
         self.cache.insert(key, entry);
@@ -359,14 +374,19 @@ impl GlyphAtlas {
 
 // ── Free functions ──
 
-/// Create a pre-allocated `R8Unorm` texture array.
+/// Create a pre-allocated texture array with the given format.
 fn create_texture_array(
     device: &Device,
     size: u32,
     max_pages: u32,
+    format: TextureFormat,
 ) -> (Texture, TextureView) {
+    let label = match format {
+        TextureFormat::Rgba8Unorm => "color_glyph_atlas_array",
+        _ => "glyph_atlas_array",
+    };
     let texture = device.create_texture(&TextureDescriptor {
-        label: Some("glyph_atlas_array"),
+        label: Some(label),
         size: Extent3d {
             width: size,
             height: size,
@@ -375,7 +395,7 @@ fn create_texture_array(
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::R8Unorm,
+        format,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
@@ -390,8 +410,8 @@ fn create_texture_array(
 
 /// Upload a glyph bitmap to a position on a texture array layer.
 ///
-/// Assumes `R8Unorm` format (1 byte per pixel). The glyph must use
-/// [`GlyphFormat::Alpha`](crate::font::GlyphFormat::Alpha).
+/// Handles both `R8Unorm` (1 byte/pixel) and `Rgba8Unorm` (4 bytes/pixel)
+/// textures based on the glyph's format.
 fn upload_glyph(
     queue: &Queue,
     texture: &Texture,
@@ -400,6 +420,7 @@ fn upload_glyph(
     y: u32,
     glyph: &RasterizedGlyph,
 ) {
+    let bpp = glyph.format.bytes_per_pixel();
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -414,7 +435,7 @@ fn upload_glyph(
         &glyph.bitmap,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(glyph.width),
+            bytes_per_row: Some(glyph.width * bpp),
             rows_per_image: None,
         },
         Extent3d {

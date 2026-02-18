@@ -253,6 +253,10 @@ fn fill_frame_shaped(
 /// Starts at `start_idx` in `row_glyphs` (the base glyph from the col map),
 /// then iterates forward while subsequent glyphs share the same `col_start`
 /// (combining marks are contiguous in the shaper output).
+///
+/// Color emoji (entries with `is_color`) are routed to `frame.color_glyphs`
+/// instead of `frame.glyphs`, so they render via the RGBA pipeline without
+/// `fg_color` tinting.
 fn emit_shaped_glyphs(
     row_glyphs: &[ShapedGlyph],
     start_idx: usize,
@@ -284,7 +288,21 @@ fn emit_shaped_glyphs(
             let gx = x + entry.bearing_x as f32 + sg.x_offset;
             let gy = y + baseline - entry.bearing_y as f32 - sg.y_offset;
             let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
-            frame.glyphs.push_glyph(gx, gy, entry.width as f32, entry.height as f32, uv, fg, 1.0, entry.page);
+            let writer = if entry.is_color {
+                &mut frame.color_glyphs
+            } else {
+                &mut frame.glyphs
+            };
+            writer.push_glyph(
+                gx,
+                gy,
+                entry.width as f32,
+                entry.height as f32,
+                uv,
+                fg,
+                1.0,
+                entry.page,
+            );
         }
     }
 }

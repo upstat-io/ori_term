@@ -34,7 +34,7 @@ sections:
     status: complete
   - id: "6.10"
     title: Color Emoji
-    status: not-started
+    status: complete
   - id: "6.11"
     title: Font Synthesis (Bold + Italic)
     status: not-started
@@ -473,36 +473,36 @@ Support for color emoji rendering (CBDT/CBLC bitmap emoji or COLR/CPAL outline e
 
 **File:** `oriterm/src/font/collection.rs`, `oriterm/src/gpu/atlas.rs`
 
-- [ ] Rasterization with color source:
-  - [ ] Swash `Render::new(&[Source::ColorOutline, Source::ColorBitmap, Source::Outline])`
-  - [ ] `Format::Rgba` for color glyphs (4 bytes per pixel)
-  - [ ] `Format::Alpha` for non-color fallback (1 byte per pixel)
-  - [ ] Check render result: if RGBA → color glyph, if Alpha → normal glyph
-- [ ] Atlas support for color glyphs:
-  - [ ] Option A: Separate RGBA atlas (Rgba8Unorm texture) for color glyphs
-  - [ ] Option B: Single atlas with mixed formats (more complex shader)
-  - [ ] **Recommended: Option A** — separate atlas, separate pipeline pass
-  - [ ] Color atlas bind group separate from grayscale atlas
-- [ ] Rendering color glyphs:
-  - [ ] Color glyphs render with their own colors (not tinted by fg_color)
-  - [ ] Fragment shader: sample RGBA directly, blend with background
-  - [ ] No foreground color multiplication (unlike grayscale glyphs)
-- [ ] Emoji presentation:
-  - [ ] Characters like U+2764 (❤) can be text or emoji presentation
-  - [ ] VS15 (U+FE0E) forces text presentation
-  - [ ] VS16 (U+FE0F) forces emoji presentation
-  - [ ] Store variation selectors in cell's zerowidth list
-  - [ ] During face resolution: check for VS16 → prefer color emoji font
-- [ ] Fallback for emoji:
-  - [ ] Windows: Segoe UI Emoji
-  - [ ] Linux: Noto Color Emoji
-  - [ ] These should be high-priority in fallback chain for emoji codepoints
-- [ ] **Tests**:
-  - [ ] Emoji character rasterizes as RGBA bitmap
-  - [ ] Color glyph renders without fg tinting
-  - [ ] VS16 forces emoji presentation
-  - [ ] VS15 forces text presentation
-  - [ ] Emoji fallback resolves to color emoji font
+- [x] Rasterization with color source:
+  - [x] Swash `Render::new(&[Source::ColorOutline, Source::ColorBitmap, Source::Outline])`
+  - [x] `Format::Rgba` for color glyphs (4 bytes per pixel)
+  - [x] `Format::Alpha` for non-color fallback (1 byte per pixel)
+  - [x] Check render result: if RGBA → color glyph, if Alpha → normal glyph
+- [x] Atlas support for color glyphs:
+  - [x] Option A: Separate RGBA atlas (Rgba8Unorm texture) for color glyphs
+  - [x] ~~Option B: Single atlas with mixed formats (more complex shader)~~ (not needed — Option A chosen)
+  - [x] **Recommended: Option A** — separate atlas, separate pipeline pass
+  - [x] Color atlas bind group separate from grayscale atlas
+- [x] Rendering color glyphs:
+  - [x] Color glyphs render with their own colors (not tinted by fg_color)
+  - [x] Fragment shader: sample RGBA directly, blend with background
+  - [x] No foreground color multiplication (unlike grayscale glyphs)
+- [x] Emoji presentation:
+  - [x] Characters like U+2764 (❤) can be text or emoji presentation
+  - [x] VS15 (U+FE0E) forces text presentation
+  - [x] VS16 (U+FE0F) forces emoji presentation
+  - [x] Store variation selectors in cell's zerowidth list
+  - [x] During face resolution: check for VS16 → prefer color emoji font
+- [x] Fallback for emoji:
+  - [x] Windows: Segoe UI Emoji
+  - [x] Linux: Noto Color Emoji
+  - [x] These should be high-priority in fallback chain for emoji codepoints
+- [x] **Tests**:
+  - [x] Emoji character rasterizes as RGBA bitmap
+  - [x] Color glyph renders without fg tinting
+  - [x] VS16 forces emoji presentation
+  - [x] VS15 forces text presentation
+  - [x] Emoji fallback resolves to color emoji font
 
 ---
 

@@ -320,6 +320,29 @@ impl FontCollection {
         }
     }
 
+    /// Resolve preferring fallback fonts for emoji presentation (VS16).
+    ///
+    /// When VS16 (U+FE0F) forces emoji presentation, tries fallback fonts
+    /// first because color emoji fonts (Segoe UI Emoji, Noto Color Emoji)
+    /// are typically in the fallback chain, not the primary terminal font.
+    ///
+    /// Falls back to normal [`resolve`] if no fallback covers the character.
+    pub fn resolve_prefer_emoji(&self, ch: char, style: GlyphStyle) -> ResolvedGlyph {
+        // Try fallback fonts first (color emoji fonts are typically here).
+        for (i, fb) in self.fallbacks.iter().enumerate() {
+            let gid = glyph_id(fb, ch);
+            if gid != 0 {
+                return ResolvedGlyph {
+                    glyph_id: gid,
+                    face_idx: FaceIdx((4 + i) as u16),
+                    synthetic: SyntheticFlags::NONE,
+                };
+            }
+        }
+        // No fallback covers it — use normal resolution.
+        self.resolve(ch, style)
+    }
+
     // ── Rasterization ──
 
     /// Rasterize a glyph and cache the result.

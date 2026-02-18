@@ -77,14 +77,12 @@ pub enum GlyphFormat {
     /// 4 bytes/pixel RGBA per-channel subpixel coverage (B-G-R order).
     #[allow(dead_code, reason = "subpixel rendering in Section 6")]
     SubpixelBgr,
-    /// 4 bytes/pixel RGBA premultiplied color (for color emoji via skrifa in Section 6).
-    #[allow(dead_code, reason = "color emoji in Section 6")]
+    /// 4 bytes/pixel RGBA premultiplied color (for color emoji).
     Color,
 }
 
 impl GlyphFormat {
     /// Bytes per pixel for this format.
-    #[allow(dead_code, reason = "used by atlas upload in Section 6")]
     pub fn bytes_per_pixel(self) -> u32 {
         match self {
             Self::Alpha => 1,
