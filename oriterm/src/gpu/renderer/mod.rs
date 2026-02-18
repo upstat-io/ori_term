@@ -234,11 +234,11 @@ impl GpuRenderer {
             &self.shaping.frame,
             &mut self.atlas,
             &mut self.font_collection,
-            gpu,
+            &gpu.queue,
         );
 
         // Phase B2: Ensure built-in geometric glyphs cached.
-        super::builtin_glyphs::ensure_cached(input, self.shaping.frame.size_q6(), &mut self.atlas, gpu);
+        super::builtin_glyphs::ensure_cached(input, self.shaping.frame.size_q6(), &mut self.atlas, &gpu.queue);
 
         // Phase C: Fill prepared frame via atlas lookup bridge (reuses allocations).
         let bridge = RendererAtlas { atlas: &self.atlas };
@@ -434,7 +434,7 @@ fn ensure_shaped_glyphs_cached(
     shaped: &ShapedFrame,
     atlas: &mut GlyphAtlas,
     fonts: &mut FontCollection,
-    gpu: &GpuState,
+    queue: &wgpu::Queue,
 ) {
     let size_q6 = shaped.size_q6();
     for glyph in shaped.all_glyphs() {
@@ -450,7 +450,7 @@ fn ensure_shaped_glyphs_cached(
             continue;
         }
         if let Some(rasterized) = fonts.rasterize(key) {
-            atlas.insert(key, rasterized, &gpu.queue);
+            atlas.insert(key, rasterized, queue);
         }
     }
 }

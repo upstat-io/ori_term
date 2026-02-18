@@ -242,3 +242,20 @@ impl From<std::io::Error> for FontError {
         Self::Io(err)
     }
 }
+
+/// Whether a character should be rendered as a built-in geometric glyph.
+///
+/// O(1) range match covering box drawing, block elements, braille patterns,
+/// and powerline symbols. Lives here (not in `gpu::builtin_glyphs`) because
+/// the font shaper needs it to skip built-in chars during run segmentation,
+/// and the font module must not depend on the GPU module.
+pub(crate) fn is_builtin(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{2500}'..='\u{257F}'   // Box Drawing
+        | '\u{2580}'..='\u{259F}' // Block Elements
+        | '\u{2800}'..='\u{28FF}' // Braille Patterns
+        | '\u{E0B0}'..='\u{E0B4}' // Powerline separators (solid + outline triangles)
+        | '\u{E0B6}'              // Powerline left rounded separator
+    )
+}

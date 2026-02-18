@@ -219,7 +219,7 @@ fn fill_frame_shaped(
         frame.backgrounds.push_rect(x, y, bg_w, ch, cell.bg, 1.0);
 
         // Built-in geometric glyphs: bypass shaping, render from atlas.
-        if super::builtin_glyphs::is_builtin(cell.ch) {
+        if crate::font::is_builtin(cell.ch) {
             let key = super::builtin_glyphs::raster_key(cell.ch, shaped.size_q6());
             if let Some(entry) = atlas.lookup_key(key) {
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];

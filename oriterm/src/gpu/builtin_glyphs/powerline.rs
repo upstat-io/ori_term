@@ -1,7 +1,8 @@
-//! Powerline symbol rendering (U+E0A0–U+E0A3, U+E0B0–U+E0D4).
+//! Powerline symbol rendering (U+E0B0–U+E0B4, U+E0B6).
 //!
 //! Solid and outline triangles for powerline status line separators.
-//! Unrecognized codepoints return `false` to fall through to the font path.
+//! Only the 6 geometric separator codepoints are handled; icon glyphs
+//! (U+E0A0–U+E0A3 branch/lock) fall through to the font path.
 
 use super::Canvas;
 

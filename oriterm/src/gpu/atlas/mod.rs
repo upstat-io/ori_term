@@ -146,6 +146,15 @@ impl GlyphAtlas {
         self.empty_keys.contains(&key)
     }
 
+    /// Record that a key produces no visible glyph.
+    ///
+    /// Prevents repeated fruitless rasterization attempts on subsequent
+    /// frames for codepoints that are in a built-in range but have no
+    /// rendering path.
+    pub fn mark_empty(&mut self, key: RasterKey) {
+        self.empty_keys.insert(key);
+    }
+
     /// Insert a rasterized glyph into the atlas.
     ///
     /// Finds space via guillotine packing, uploads the bitmap to the GPU, and

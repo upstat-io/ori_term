@@ -153,7 +153,7 @@ fn segment_runs<C: ShapableCell>(
         }
 
         // Run boundaries: space, null, or built-in geometric glyphs.
-        if cell.ch() == ' ' || cell.ch() == '\0' || crate::gpu::builtin_glyphs::is_builtin(cell.ch()) {
+        if cell.ch() == ' ' || cell.ch() == '\0' || super::is_builtin(cell.ch()) {
             col += 1;
             continue;
         }

@@ -27,13 +27,25 @@ fn is_builtin_braille_range() {
 }
 
 #[test]
-fn is_builtin_powerline_range() {
+fn is_builtin_powerline_handled_codepoints() {
+    let handled = [
+        '\u{E0B0}', '\u{E0B1}', '\u{E0B2}', '\u{E0B3}', '\u{E0B4}', '\u{E0B6}',
+    ];
+    for &c in &handled {
+        assert!(is_builtin(c), "U+{:04X} should be builtin", c as u32);
+    }
+}
+
+#[test]
+fn is_builtin_excludes_powerline_icons() {
+    // Icon codepoints (branch, lock) should fall through to font rendering.
     for c in '\u{E0A0}'..='\u{E0A3}' {
-        assert!(is_builtin(c), "U+{:04X} should be builtin", c as u32);
+        assert!(!is_builtin(c), "U+{:04X} should NOT be builtin (icon)", c as u32);
     }
-    for c in '\u{E0B0}'..='\u{E0D4}' {
-        assert!(is_builtin(c), "U+{:04X} should be builtin", c as u32);
-    }
+    // Unhandled extras beyond E0B6.
+    assert!(!is_builtin('\u{E0B5}'), "U+E0B5 should NOT be builtin");
+    assert!(!is_builtin('\u{E0B7}'), "U+E0B7 should NOT be builtin");
+    assert!(!is_builtin('\u{E0D4}'), "U+E0D4 should NOT be builtin");
 }
 
 #[test]
@@ -52,9 +64,6 @@ fn is_builtin_excludes_gap_between_ranges() {
     assert!(!is_builtin('\u{27FF}'));
     // Gap between braille and powerline.
     assert!(!is_builtin('\u{2900}'));
-    assert!(!is_builtin('\u{E09F}'));
-    // Gap between powerline sub-ranges.
-    assert!(!is_builtin('\u{E0A4}'));
     assert!(!is_builtin('\u{E0AF}'));
 }
 

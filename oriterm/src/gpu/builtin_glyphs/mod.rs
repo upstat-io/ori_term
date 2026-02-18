@@ -11,29 +11,13 @@ mod box_drawing;
 mod braille;
 mod powerline;
 
+use wgpu::Queue;
+
 use crate::font::collection::RasterizedGlyph;
-use crate::font::{FaceIdx, GlyphFormat, RasterKey};
+use crate::font::{is_builtin, FaceIdx, GlyphFormat, RasterKey};
 
 use super::atlas::GlyphAtlas;
 use super::frame_input::FrameInput;
-use super::state::GpuState;
-
-// ── Public API ──
-
-/// Whether a character should be rendered as a built-in geometric glyph.
-///
-/// O(1) range match covering box drawing, block elements, braille patterns,
-/// and powerline symbols.
-pub(crate) fn is_builtin(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{2500}'..='\u{257F}'   // Box Drawing
-        | '\u{2580}'..='\u{259F}' // Block Elements
-        | '\u{2800}'..='\u{28FF}' // Braille Patterns
-        | '\u{E0A0}'..='\u{E0A3}' // Powerline
-        | '\u{E0B0}'..='\u{E0D4}' // Powerline Extra
-    )
-}
 
 /// Construct a [`RasterKey`] for a built-in glyph.
 ///
@@ -62,7 +46,7 @@ pub(crate) fn rasterize(ch: char, cell_w: u32, cell_h: u32) -> Option<Rasterized
         '\u{2500}'..='\u{257F}' => box_drawing::draw_box(&mut canvas, ch),
         '\u{2580}'..='\u{259F}' => blocks::draw_block(&mut canvas, ch),
         '\u{2800}'..='\u{28FF}' => braille::draw_braille(&mut canvas, ch),
-        '\u{E0A0}'..='\u{E0A3}' | '\u{E0B0}'..='\u{E0D4}' => {
+        '\u{E0B0}'..='\u{E0B4}' | '\u{E0B6}' => {
             powerline::draw_powerline(&mut canvas, ch)
         }
         _ => false,
@@ -84,7 +68,7 @@ pub(crate) fn ensure_cached(
     input: &FrameInput,
     size_q6: u32,
     atlas: &mut GlyphAtlas,
-    gpu: &GpuState,
+    queue: &Queue,
 ) {
     let cell_w = input.cell_size.width.round() as u32;
     let cell_h = input.cell_size.height.round() as u32;
@@ -101,7 +85,9 @@ pub(crate) fn ensure_cached(
             continue;
         }
         if let Some(glyph) = rasterize(cell.ch, cell_w, cell_h) {
-            atlas.insert(key, &glyph, &gpu.queue);
+            atlas.insert(key, &glyph, queue);
+        } else {
+            atlas.mark_empty(key);
         }
     }
 }
