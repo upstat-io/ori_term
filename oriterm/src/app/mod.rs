@@ -117,7 +117,9 @@ impl App {
                     Ok((fc, t0.elapsed()))
                 },
             )
-            .expect("failed to spawn font discovery thread");
+            .map_err(|e| -> Box<dyn std::error::Error> {
+                format!("failed to spawn font discovery thread: {e}").into()
+            })?;
 
         // 3. Init GPU on main thread (requires window Arc, runs concurrently with fonts).
         let t_gpu_start = std::time::Instant::now();
