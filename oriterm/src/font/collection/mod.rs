@@ -264,17 +264,19 @@ impl FontCollection {
                     &fd.axes,
                 );
                 if !vars.settings.is_empty() {
-                    let rb_vars: Vec<rustybuzz::Variation> = vars
-                        .settings
-                        .iter()
-                        .map(|(tag, val)| rustybuzz::Variation {
+                    let mut rb_vars = [rustybuzz::Variation {
+                        tag: rustybuzz::ttf_parser::Tag(0),
+                        value: 0.0,
+                    }; 2];
+                    for (i, (tag, val)) in vars.settings.iter().enumerate() {
+                        rb_vars[i] = rustybuzz::Variation {
                             tag: rustybuzz::ttf_parser::Tag::from_bytes(
                                 tag.as_bytes().first_chunk::<4>().expect("4-byte tag"),
                             ),
                             value: *val,
-                        })
-                        .collect();
-                    face.set_variations(&rb_vars);
+                        };
+                    }
+                    face.set_variations(&rb_vars[..vars.settings.len()]);
                 }
                 Some(face)
             }));

@@ -88,6 +88,43 @@ pub(super) fn effective_size_for(
     base_size
 }
 
+/// Inline storage for ≤2 variation axis settings (wght + slnt/ital).
+///
+/// Avoids heap allocation for the common case. Variable fonts set at most
+/// one weight axis and one slant/italic axis per face.
+pub(super) struct VarSettings {
+    entries: [(&'static str, f32); 2],
+    len: u8,
+}
+
+impl VarSettings {
+    /// Empty settings (no variation axes).
+    const fn new() -> Self {
+        Self {
+            entries: [("", 0.0); 2],
+            len: 0,
+        }
+    }
+
+    /// Add a variation setting. Max 2 entries (wght + slnt/ital).
+    fn push(&mut self, tag: &'static str, value: f32) {
+        debug_assert!(
+            (self.len as usize) < 2,
+            "VarSettings overflow: max 2 entries"
+        );
+        self.entries[self.len as usize] = (tag, value);
+        self.len += 1;
+    }
+}
+
+impl std::ops::Deref for VarSettings {
+    type Target = [(&'static str, f32)];
+
+    fn deref(&self) -> &Self::Target {
+        &self.entries[..self.len as usize]
+    }
+}
+
 /// Computed variation settings and synthetic flag suppression.
 ///
 /// When a font has variable axes that cover a requested style (e.g. `wght`
@@ -95,7 +132,7 @@ pub(super) fn effective_size_for(
 /// synthetic flag is suppressed — the real axis replaces outline manipulation.
 pub(super) struct FaceVariationResult {
     /// Variation settings to pass to swash (rasterization) and rustybuzz (shaping).
-    pub settings: Vec<(&'static str, f32)>,
+    pub settings: VarSettings,
     /// Synthetic flags to suppress because real axes handle them.
     pub suppress_synthetic: SyntheticFlags,
 }
@@ -117,12 +154,12 @@ pub(super) fn face_variations(
 ) -> FaceVariationResult {
     if face_idx.is_fallback() || axes.is_empty() {
         return FaceVariationResult {
-            settings: Vec::new(),
+            settings: VarSettings::new(),
             suppress_synthetic: SyntheticFlags::NONE,
         };
     }
 
-    let mut settings = Vec::with_capacity(2);
+    let mut settings = VarSettings::new();
     let mut suppress = SyntheticFlags::NONE;
     let i = face_idx.as_usize();
 
@@ -134,7 +171,7 @@ pub(super) fn face_variations(
         } else {
             weight as f32
         };
-        settings.push(("wght", clamp_to_axis(axes, *WGHT, target)));
+        settings.push("wght", clamp_to_axis(axes, *WGHT, target));
         if synthetic.contains(SyntheticFlags::BOLD) {
             suppress |= SyntheticFlags::BOLD;
         }
@@ -144,12 +181,12 @@ pub(super) fn face_variations(
     let wants_italic = i == 2 || i == 3 || synthetic.contains(SyntheticFlags::ITALIC);
     if wants_italic {
         if has_axis(axes, *SLNT) {
-            settings.push(("slnt", clamp_to_axis(axes, *SLNT, -12.0)));
+            settings.push("slnt", clamp_to_axis(axes, *SLNT, -12.0));
             if synthetic.contains(SyntheticFlags::ITALIC) {
                 suppress |= SyntheticFlags::ITALIC;
             }
         } else if has_axis(axes, *ITAL) {
-            settings.push(("ital", clamp_to_axis(axes, *ITAL, 1.0)));
+            settings.push("ital", clamp_to_axis(axes, *ITAL, 1.0));
             if synthetic.contains(SyntheticFlags::ITALIC) {
                 suppress |= SyntheticFlags::ITALIC;
             }
