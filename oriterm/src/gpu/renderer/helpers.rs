@@ -14,7 +14,7 @@ use super::super::frame_input::FrameInput;
 use super::super::prepare::ShapedFrame;
 use crate::font::{
     FontCollection, GlyphFormat, GlyphStyle, RasterKey, build_col_glyph_map, prepare_line,
-    shape_prepared_runs, size_key,
+    shape_prepared_runs, size_key, subpx_bin,
 };
 
 /// Reusable per-frame scratch buffers for the shaping pipeline.
@@ -109,6 +109,7 @@ pub(super) fn ensure_shaped_glyphs_cached(
             size_q6,
             synthetic: glyph.synthetic,
             hinted,
+            subpx_x: subpx_bin(glyph.x_offset),
         };
         // Check all three atlases for cache hit.
         if mono_atlas.lookup_touch(key).is_some()
@@ -214,7 +215,7 @@ pub(super) fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, q
     let hinted = fc.hinting_mode().hint_flag();
     for ch in ' '..='~' {
         let resolved = fc.resolve(ch, GlyphStyle::Regular);
-        let key = RasterKey::from_resolved(resolved, size_q6, hinted);
+        let key = RasterKey::from_resolved(resolved, size_q6, hinted, 0);
         if let Some(glyph) = fc.rasterize(key) {
             atlas.insert(key, glyph, queue);
         }
@@ -222,7 +223,7 @@ pub(super) fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, q
     if fc.has_bold() {
         for ch in ' '..='~' {
             let resolved = fc.resolve(ch, GlyphStyle::Bold);
-            let key = RasterKey::from_resolved(resolved, size_q6, hinted);
+            let key = RasterKey::from_resolved(resolved, size_q6, hinted, 0);
             if let Some(glyph) = fc.rasterize(key) {
                 atlas.insert(key, glyph, queue);
             }

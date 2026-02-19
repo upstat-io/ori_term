@@ -1,6 +1,6 @@
 //! Tests for font types defined in `font/mod.rs`.
 
-use super::{GlyphFormat, HintingMode, SubpixelMode};
+use super::{GlyphFormat, HintingMode, SubpixelMode, subpx_bin, subpx_offset};
 
 // ── SubpixelMode ──
 
@@ -236,4 +236,73 @@ fn hinting_mode_edge_cases() {
         HintingMode::None,
         "10x scale → None",
     );
+}
+
+// ── subpx_bin ──
+
+#[test]
+fn subpx_bin_exact_centers() {
+    assert_eq!(subpx_bin(0.0), 0, "0.00 → phase 0");
+    assert_eq!(subpx_bin(0.25), 1, "0.25 → phase 1");
+    assert_eq!(subpx_bin(0.50), 2, "0.50 → phase 2");
+    assert_eq!(subpx_bin(0.75), 3, "0.75 → phase 3");
+}
+
+#[test]
+fn subpx_bin_boundaries() {
+    // Just below 0.125 boundary → phase 0.
+    assert_eq!(subpx_bin(0.124), 0, "0.124 → phase 0");
+    // At 0.125 boundary → phase 1.
+    assert_eq!(subpx_bin(0.125), 1, "0.125 → phase 1");
+    // Just below 0.375 boundary → phase 1.
+    assert_eq!(subpx_bin(0.374), 1, "0.374 → phase 1");
+    // At 0.375 boundary → phase 2.
+    assert_eq!(subpx_bin(0.375), 2, "0.375 → phase 2");
+    // Just below 0.625 boundary → phase 2.
+    assert_eq!(subpx_bin(0.624), 2, "0.624 → phase 2");
+    // At 0.625 boundary → phase 3.
+    assert_eq!(subpx_bin(0.625), 3, "0.625 → phase 3");
+    // Just below 0.875 boundary → phase 3.
+    assert_eq!(subpx_bin(0.874), 3, "0.874 → phase 3");
+    // At 0.875 → wraps to phase 0 (next integer).
+    assert_eq!(subpx_bin(0.875), 0, "0.875 → phase 0 (wrap)");
+}
+
+#[test]
+fn subpx_bin_integer_values() {
+    assert_eq!(subpx_bin(1.0), 0, "1.0 → phase 0");
+    assert_eq!(subpx_bin(5.0), 0, "5.0 → phase 0");
+}
+
+#[test]
+fn subpx_bin_large_fractional_values() {
+    assert_eq!(subpx_bin(3.37), subpx_bin(0.37), "3.37 matches 0.37");
+    assert_eq!(subpx_bin(10.62), subpx_bin(0.62), "10.62 matches 0.62");
+}
+
+// ── subpx_offset ──
+
+#[test]
+fn subpx_offset_values() {
+    assert_eq!(subpx_offset(0), 0.0);
+    assert_eq!(subpx_offset(1), 0.25);
+    assert_eq!(subpx_offset(2), 0.50);
+    assert_eq!(subpx_offset(3), 0.75);
+}
+
+#[test]
+fn subpx_offset_out_of_range_defaults_to_zero() {
+    assert_eq!(subpx_offset(4), 0.0);
+    assert_eq!(subpx_offset(255), 0.0);
+}
+
+#[test]
+fn subpx_round_trip() {
+    for phase in 0..4u8 {
+        assert_eq!(
+            subpx_bin(subpx_offset(phase)),
+            phase,
+            "round-trip for phase {phase}",
+        );
+    }
 }

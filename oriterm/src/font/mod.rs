@@ -315,18 +315,47 @@ pub struct RasterKey {
     pub synthetic: SyntheticFlags,
     /// Whether this glyph was rasterized with hinting enabled.
     pub hinted: bool,
+    /// Horizontal subpixel phase (0–3). See [`subpx_bin`].
+    pub subpx_x: u8,
 }
 
 impl RasterKey {
-    /// Construct a raster key from a resolved glyph, size, and hinting state.
-    pub fn from_resolved(resolved: ResolvedGlyph, size_q6: u32, hinted: bool) -> Self {
+    /// Construct a raster key from a resolved glyph, size, hinting, and subpixel phase.
+    pub fn from_resolved(resolved: ResolvedGlyph, size_q6: u32, hinted: bool, subpx_x: u8) -> Self {
         Self {
             glyph_id: resolved.glyph_id,
             face_idx: resolved.face_idx,
             size_q6,
             synthetic: resolved.synthetic,
             hinted,
+            subpx_x,
         }
+    }
+}
+
+/// Quantize a fractional pixel offset to one of 4 horizontal phases.
+///
+/// Phases: 0 → 0.00, 1 → 0.25, 2 → 0.50, 3 → 0.75.
+/// Grid text at integer boundaries always returns 0.
+pub fn subpx_bin(offset: f32) -> u8 {
+    let fract = offset.fract().abs();
+    // 4 bins centered at 0.00, 0.25, 0.50, 0.75 with boundaries at
+    // 0.125, 0.375, 0.625, 0.875.
+    match (fract * 4.0 + 0.5) as u8 {
+        1 => 1,
+        2 => 2,
+        3 => 3,
+        _ => 0, // 0, 4+ (0.875+ wraps to next integer) → phase 0
+    }
+}
+
+/// Convert a subpixel bin (0–3) back to a fractional offset for rasterization.
+pub fn subpx_offset(bin: u8) -> f32 {
+    match bin {
+        1 => 0.25,
+        2 => 0.50,
+        3 => 0.75,
+        _ => 0.0, // 0 and out-of-range
     }
 }
 

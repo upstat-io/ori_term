@@ -17,7 +17,7 @@ use oriterm_core::{CellFlags, CursorShape, Rgb};
 use super::atlas::{AtlasEntry, AtlasKind};
 use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
-use crate::font::{GlyphStyle, RasterKey, ShapedGlyph};
+use crate::font::{GlyphStyle, RasterKey, ShapedGlyph, subpx_bin, subpx_offset};
 use crate::gpu::instance_writer::ScreenRect;
 
 pub(crate) use shaped_frame::ShapedFrame;
@@ -353,17 +353,22 @@ impl GlyphEmitter<'_> {
             }
             is_first = false;
 
+            let subpx = subpx_bin(sg.x_offset);
             let key = RasterKey {
                 glyph_id: sg.glyph_id,
                 face_idx: sg.face_idx,
                 size_q6: self.size_q6,
                 synthetic: sg.synthetic,
                 hinted: self.hinted,
+                subpx_x: subpx,
             };
             if let Some(entry) = self.atlas.lookup_key(key) {
                 // Apply shaper offsets: x_offset shifts horizontally,
                 // y_offset shifts vertically (positive = up in font coords = subtract in screen).
-                let gx = x + entry.bearing_x as f32 + sg.x_offset;
+                // Subtract the absorbed subpixel offset to avoid double-counting
+                // (once in the rasterized bitmap, once in positioning).
+                let absorbed = subpx_offset(subpx);
+                let gx = x + entry.bearing_x as f32 + sg.x_offset - absorbed;
                 let gy = y + self.baseline - entry.bearing_y as f32 - sg.y_offset;
                 let uv = [entry.uv_x, entry.uv_y, entry.uv_w, entry.uv_h];
                 let rect = ScreenRect {

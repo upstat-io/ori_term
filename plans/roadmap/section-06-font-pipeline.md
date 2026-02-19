@@ -785,36 +785,36 @@ Render glyphs at fractional pixel offsets for tighter, more natural spacing. Mos
 
 **Reference:** cosmic-text `src/swash.rs` (x_bin/y_bin cache key)
 
-- [ ] Fractional offset via swash:
-  - [ ] `Render::offset(Vector::new(x_fract, y_fract))` — shifts rasterization grid
-  - [ ] A glyph at x=10.3 is rasterized with `offset(0.3, 0.0)` and placed at integer x=10
-  - [ ] The rasterizer produces a slightly different bitmap for each fractional offset — the anti-aliasing pattern shifts to represent the true sub-pixel position
-- [ ] Quantization to reduce atlas explosion:
-  - [ ] 4 horizontal phases: 0.00, 0.25, 0.50, 0.75 (snap fractional part to nearest quarter)
-  - [ ] 1 vertical phase: 0.0 only (vertical subpixel rarely matters for horizontal text)
-  - [ ] `subpx_bin(fract: f32) -> u8` — returns 0, 1, 2, or 3
-  - [ ] 4x atlas entries per glyph shape (acceptable — most grid text hits phase 0)
-- [ ] Atlas key expansion:
-  - [ ] Add `subpx_x: u8` (0–3) to `RasterKey`
-  - [ ] Grid text at integer cell boundaries → always phase 0 (no extra atlas entries)
-  - [ ] Shaper x_offset/y_offset → quantized to nearest phase
-  - [ ] UI text → free-positioned, each glyph may hit any phase
-- [ ] Where subpixel positioning applies:
-  - [ ] **UI text** (tab titles, search bar, overlays): full subpixel positioning — glyphs placed at fractional advances from shaper. Biggest visual improvement.
-  - [ ] **Combining marks**: shaper x_offset/y_offset are fractional — rasterize at correct subpixel offset for precise diacritic placement
-  - [ ] **Ligature internals**: multi-glyph ligatures may have fractional internal offsets
-  - [ ] **Base grid text**: integer cell boundaries → phase 0. No extra atlas cost.
+- [x] Fractional offset via swash:
+  - [x] `Render::offset(Vector::new(x_fract, y_fract))` — shifts rasterization grid
+  - [x] A glyph at x=10.3 is rasterized with `offset(0.3, 0.0)` and placed at integer x=10
+  - [x] The rasterizer produces a slightly different bitmap for each fractional offset — the anti-aliasing pattern shifts to represent the true sub-pixel position
+- [x] Quantization to reduce atlas explosion:
+  - [x] 4 horizontal phases: 0.00, 0.25, 0.50, 0.75 (snap fractional part to nearest quarter)
+  - [x] 1 vertical phase: 0.0 only (vertical subpixel rarely matters for horizontal text)
+  - [x] `subpx_bin(fract: f32) -> u8` — returns 0, 1, 2, or 3
+  - [x] 4x atlas entries per glyph shape (acceptable — most grid text hits phase 0)
+- [x] Atlas key expansion:
+  - [x] Add `subpx_x: u8` (0–3) to `RasterKey`
+  - [x] Grid text at integer cell boundaries → always phase 0 (no extra atlas entries)
+  - [x] Shaper x_offset/y_offset → quantized to nearest phase
+  - [x] UI text → free-positioned, each glyph may hit any phase
+- [x] Where subpixel positioning applies:
+  - [x] **UI text** (tab titles, search bar, overlays): full subpixel positioning — glyphs placed at fractional advances from shaper. Biggest visual improvement.
+  - [x] **Combining marks**: shaper x_offset/y_offset are fractional — rasterize at correct subpixel offset for precise diacritic placement
+  - [x] **Ligature internals**: multi-glyph ligatures may have fractional internal offsets
+  - [x] **Base grid text**: integer cell boundaries → phase 0. No extra atlas cost.
 - [ ] Config:
   ```toml
   [font]
   subpixel_positioning = true  # default true; false snaps everything to integer
   ```
-- [ ] **Tests**:
-  - [ ] Phase 0 and phase 2 (0.5) produce different bitmaps for same glyph
-  - [ ] Quantization: 0.13 → phase 0, 0.37 → phase 1, 0.62 → phase 2, 0.88 → phase 3
-  - [ ] Grid text at integer position: always phase 0
+- [x] **Tests**:
+  - [x] Phase 0 and phase 2 (0.5) produce different bitmaps for same glyph
+  - [x] Quantization: 0.13 → phase 0, 0.37 → phase 1, 0.62 → phase 2, 0.88 → phase 3
+  - [x] Grid text at integer position: always phase 0
   - [ ] UI text: mixed phases across a shaped string
-  - [ ] Atlas key differs by subpx_x: cache stores separate entries
+  - [x] Atlas key differs by subpx_x: cache stores separate entries
 
 ---
 

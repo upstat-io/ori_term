@@ -878,6 +878,7 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
+            subpx_x: 0,
         };
         map.insert(key, test_entry_for_glyph(gid));
     }
@@ -983,9 +984,26 @@ fn shaped_combining_marks_two_fg_instances() {
 
 #[test]
 fn shaped_offset_applied_to_glyph_position() {
+    use crate::font::{subpx_bin, subpx_offset};
+
     let size_q6 = 768;
     let input = FrameInput::test_grid(1, 1, "X");
-    let atlas = key_atlas_with(&[60], size_q6);
+
+    // x_offset 1.5 → fract 0.5 → subpx phase 2.
+    let subpx = subpx_bin(1.5);
+    let mut map = HashMap::new();
+    map.insert(
+        RasterKey {
+            glyph_id: 60,
+            face_idx: FaceIdx::REGULAR,
+            size_q6,
+            synthetic: SyntheticFlags::NONE,
+            hinted: true,
+            subpx_x: subpx,
+        },
+        test_entry_for_glyph(60),
+    );
+    let atlas = KeyTestAtlas(map);
 
     let glyphs = vec![ShapedGlyph {
         glyph_id: 60,
@@ -1003,8 +1021,9 @@ fn shaped_offset_applied_to_glyph_position() {
     let fg = nth_instance(frame.glyphs.as_bytes(), 0);
     let entry = test_entry_for_glyph(60);
 
-    // glyph_x = 0.0 + bearing_x(1) + x_offset(1.5) = 2.5
-    let expected_x = 0.0 + entry.bearing_x as f32 + 1.5;
+    // glyph_x = 0.0 + bearing_x(1) + x_offset(1.5) - absorbed(0.5) = 2.0
+    let absorbed = subpx_offset(subpx);
+    let expected_x = 0.0 + entry.bearing_x as f32 + 1.5 - absorbed;
     // glyph_y = 0.0 + baseline(12.0) - bearing_y(12) - y_offset(2.0) = -2.0
     let expected_y = 0.0 + 12.0 - entry.bearing_y as f32 - 2.0;
     assert_eq!(fg.pos, (expected_x, expected_y));
@@ -1119,6 +1138,7 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
         size_q6,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
+        subpx_x: 0,
     };
     map.insert(
         key,
@@ -1177,6 +1197,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
+            subpx_x: 0,
         },
         test_entry_for_glyph(10),
     );
@@ -1188,6 +1209,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
+            subpx_x: 0,
         },
         AtlasEntry {
             kind: AtlasKind::Color,
@@ -1202,6 +1224,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
+            subpx_x: 0,
         },
         test_entry_for_glyph(11),
     );
@@ -1543,6 +1566,7 @@ fn subpixel_glyph_routes_to_subpixel_buffer() {
         size_q6,
         synthetic: SyntheticFlags::NONE,
         hinted: true,
+        subpx_x: 0,
     };
     map.insert(
         key,
@@ -1597,6 +1621,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
+            subpx_x: 0,
         },
         test_entry_for_glyph(10), // default: AtlasKind::Mono
     );
@@ -1608,6 +1633,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
+            subpx_x: 0,
         },
         AtlasEntry {
             kind: AtlasKind::Subpixel,
@@ -1622,6 +1648,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
             size_q6,
             synthetic: SyntheticFlags::NONE,
             hinted: true,
+            subpx_x: 0,
         },
         AtlasEntry {
             kind: AtlasKind::Color,

@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use swash::scale::{Render, ScaleContext, Source, StrikeWith, image::Content};
-use swash::zeno::{Angle, Format, Transform};
+use swash::zeno::{Angle, Format, Transform, Vector};
 use swash::{CacheKey, FontRef};
 
 use super::RasterizedGlyph;
@@ -101,6 +101,7 @@ pub(super) fn rasterize_from_face(
     cell_height: f32,
     format: GlyphFormat,
     hinted: bool,
+    subpx_x_offset: f32,
     ctx: &mut ScaleContext,
 ) -> Option<RasterizedGlyph> {
     let fr = font_ref(fd);
@@ -137,6 +138,11 @@ pub(super) fn rasterize_from_face(
             Angle::from_degrees(SYNTHETIC_ITALIC_ANGLE),
             Angle::from_degrees(0.0),
         )));
+    }
+
+    // Apply horizontal subpixel offset for sharper diacritic/UI text placement.
+    if subpx_x_offset > 0.0 {
+        render.offset(Vector::new(subpx_x_offset, 0.0));
     }
 
     let image = render.render(&mut scaler, glyph_id)?;

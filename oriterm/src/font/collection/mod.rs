@@ -460,6 +460,7 @@ impl FontCollection {
         };
         let size = effective_size_for(key.face_idx, self.size_px, &self.fallback_meta);
         let wght = weight_variation(key.face_idx, self.weight);
+        let subpx_x_offset = super::subpx_offset(key.subpx_x);
         let glyph = rasterize_from_face(
             fd,
             key.glyph_id,
@@ -469,6 +470,7 @@ impl FontCollection {
             self.cell_height,
             self.format,
             self.hinting.hint_flag(),
+            subpx_x_offset,
             &mut self.scale_context,
         )?;
 

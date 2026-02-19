@@ -26,6 +26,7 @@ pub(crate) fn decoration_key(glyph_id: u16, size_q6: u32) -> RasterKey {
         size_q6,
         synthetic: SyntheticFlags::NONE,
         hinted: false,
+        subpx_x: 0,
     }
 }
 
