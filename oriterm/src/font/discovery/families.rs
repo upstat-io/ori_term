@@ -28,6 +28,103 @@ pub(crate) struct FallbackSpec {
     pub filenames: &'static [&'static str],
 }
 
+// ── UI font families ──
+//
+// Proportional sans-serif fonts for tab bar, labels, and overlays.
+// Only Regular + Bold — no Italic for UI text.
+
+#[cfg(target_os = "windows")]
+#[allow(dead_code, reason = "UI font discovery wired in Section 07.2")]
+pub(crate) const UI_FONT_FAMILIES: &[FamilySpec] = &[
+    FamilySpec {
+        name: "Segoe UI",
+        regular: &[r"C:\Windows\Fonts\segoeui.ttf"],
+        bold: &[r"C:\Windows\Fonts\segoeuib.ttf"],
+        italic: &[],
+        bold_italic: &[],
+    },
+    FamilySpec {
+        name: "Tahoma",
+        regular: &[r"C:\Windows\Fonts\tahoma.ttf"],
+        bold: &[r"C:\Windows\Fonts\tahomabd.ttf"],
+        italic: &[],
+        bold_italic: &[],
+    },
+    FamilySpec {
+        name: "Arial",
+        regular: &[r"C:\Windows\Fonts\arial.ttf"],
+        bold: &[r"C:\Windows\Fonts\arialbd.ttf"],
+        italic: &[],
+        bold_italic: &[],
+    },
+];
+
+/// DirectWrite UI font family names, in priority order.
+#[cfg(target_os = "windows")]
+#[allow(dead_code, reason = "UI font discovery wired in Section 07.2")]
+pub(crate) const DWRITE_UI_FAMILY_NAMES: &[&str] = &["Segoe UI", "Tahoma", "Arial"];
+
+#[cfg(target_os = "linux")]
+#[allow(dead_code, reason = "UI font discovery wired in Section 07.2")]
+pub(crate) const UI_FONT_FAMILIES: &[FamilySpec] = &[
+    FamilySpec {
+        name: "Cantarell",
+        regular: &["Cantarell-Regular.otf", "Cantarell-VF.otf"],
+        bold: &["Cantarell-Bold.otf"],
+        italic: &[],
+        bold_italic: &[],
+    },
+    FamilySpec {
+        name: "Ubuntu",
+        regular: &["Ubuntu-Regular.ttf", "Ubuntu-R.ttf"],
+        bold: &["Ubuntu-Bold.ttf", "Ubuntu-B.ttf"],
+        italic: &[],
+        bold_italic: &[],
+    },
+    FamilySpec {
+        name: "DejaVu Sans",
+        regular: &["DejaVuSans.ttf"],
+        bold: &["DejaVuSans-Bold.ttf"],
+        italic: &[],
+        bold_italic: &[],
+    },
+    FamilySpec {
+        name: "Liberation Sans",
+        regular: &["LiberationSans-Regular.ttf"],
+        bold: &["LiberationSans-Bold.ttf"],
+        italic: &[],
+        bold_italic: &[],
+    },
+];
+
+#[cfg(target_os = "macos")]
+#[allow(dead_code, reason = "UI font discovery wired in Section 07.2")]
+pub(crate) const UI_FONT_FAMILIES: &[FamilySpec] = &[
+    FamilySpec {
+        name: "SF Pro Text",
+        regular: &["SFProText-Regular.otf", "SF-Pro-Text-Regular.otf"],
+        bold: &["SFProText-Bold.otf", "SF-Pro-Text-Bold.otf"],
+        italic: &[],
+        bold_italic: &[],
+    },
+    FamilySpec {
+        name: "Helvetica Neue",
+        regular: &["HelveticaNeue.ttc"],
+        bold: &["HelveticaNeue.ttc"],
+        italic: &[],
+        bold_italic: &[],
+    },
+    FamilySpec {
+        name: "Helvetica",
+        regular: &["Helvetica.ttc"],
+        bold: &["Helvetica.ttc"],
+        italic: &[],
+        bold_italic: &[],
+    },
+];
+
+// ── Terminal font families ──
+
 // Windows: full paths to C:\Windows\Fonts\.
 
 #[cfg(target_os = "windows")]

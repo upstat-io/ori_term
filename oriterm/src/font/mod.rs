@@ -298,6 +298,26 @@ impl FaceIdx {
     }
 }
 
+/// Distinguishes terminal grid fonts from UI fonts in atlas cache keys.
+///
+/// Terminal and UI text may use different font collections at different sizes.
+/// Including the realm in [`RasterKey`] ensures glyphs from different
+/// collections never collide in the atlas cache, even if they share the
+/// same glyph ID and face index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u8)]
+pub enum FontRealm {
+    /// Terminal grid text (monospace).
+    #[default]
+    Terminal = 0,
+    /// UI overlay text (tab bar, labels, dialogs).
+    #[allow(
+        dead_code,
+        reason = "used by draw_list_convert for UI text in Section 07.2"
+    )]
+    Ui = 1,
+}
+
 /// Cache key for rasterized glyphs — glyph-ID-based, not character-based.
 ///
 /// The `size_q6` field encodes size in 26.6 fixed-point: `(size_px * 64.0).round() as u32`.
@@ -319,10 +339,15 @@ pub struct RasterKey {
     pub hinted: bool,
     /// Horizontal subpixel phase (0–3). See [`subpx_bin`].
     pub subpx_x: u8,
+    /// Which font realm this glyph belongs to (terminal vs UI).
+    pub font_realm: FontRealm,
 }
 
 impl RasterKey {
     /// Construct a raster key from a resolved glyph, size, hinting, and subpixel phase.
+    ///
+    /// Defaults to [`FontRealm::Terminal`]. Use [`with_realm`](Self::with_realm)
+    /// for UI text glyphs.
     pub fn from_resolved(resolved: ResolvedGlyph, size_q6: u32, hinted: bool, subpx_x: u8) -> Self {
         Self {
             glyph_id: resolved.glyph_id,
@@ -331,7 +356,19 @@ impl RasterKey {
             synthetic: resolved.synthetic,
             hinted,
             subpx_x,
+            font_realm: FontRealm::Terminal,
         }
+    }
+
+    /// Return a copy with the given font realm.
+    #[must_use]
+    #[allow(
+        dead_code,
+        reason = "used by draw_list_convert for UI text in Section 07.2"
+    )]
+    pub fn with_realm(mut self, realm: FontRealm) -> Self {
+        self.font_realm = realm;
+        self
     }
 }
 

@@ -69,7 +69,7 @@ impl FontSet {
     }
 
     /// Build a `FontSet` from a discovery result.
-    fn from_discovery(result: &discovery::DiscoveryResult) -> Result<Self, FontError> {
+    pub(crate) fn from_discovery(result: &discovery::DiscoveryResult) -> Result<Self, FontError> {
         let primary = &result.primary;
 
         let regular = load_font_data(primary, 0)?;

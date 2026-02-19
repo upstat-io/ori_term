@@ -1,12 +1,18 @@
 //! Unit tests for DrawList → InstanceWriter conversion.
 
+use std::collections::HashMap;
+
 use oriterm_ui::color::Color;
 use oriterm_ui::draw::{DrawList, RectStyle, Shadow};
 use oriterm_ui::geometry::Logical;
+use oriterm_ui::text::{ShapedGlyph, ShapedText};
 
-use crate::gpu::instance_writer::InstanceWriter;
+use crate::font::{FaceIdx, FontRealm, GlyphStyle, RasterKey, SyntheticFlags};
+use crate::gpu::atlas::{AtlasEntry, AtlasKind};
+use crate::gpu::instance_writer::{INSTANCE_SIZE, InstanceWriter};
+use crate::gpu::prepare::AtlasLookup;
 
-use super::convert_draw_list;
+use super::{TextContext, convert_draw_list};
 
 type Rect = oriterm_ui::geometry::Rect<Logical>;
 type Point = oriterm_ui::geometry::Point<Logical>;
@@ -27,7 +33,7 @@ fn read_u32(buf: &[u8], offset: usize) -> u32 {
 fn empty_draw_list_produces_no_instances() {
     let dl = DrawList::new();
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
     assert!(writer.is_empty());
 }
 
@@ -40,7 +46,7 @@ fn filled_rect_produces_one_instance() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     assert_eq!(writer.len(), 1);
 
@@ -74,7 +80,7 @@ fn rect_with_border_writes_border_fields() {
     dl.push_rect(Rect::new(0.0, 0.0, 200.0, 100.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     assert_eq!(writer.len(), 1);
 
@@ -105,7 +111,7 @@ fn rect_with_shadow_produces_two_instances() {
     dl.push_rect(Rect::new(100.0, 100.0, 200.0, 150.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     // Shadow + main rect.
     assert_eq!(writer.len(), 2);
@@ -139,7 +145,7 @@ fn horizontal_line_converts_to_rect() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     assert_eq!(writer.len(), 1);
 
@@ -162,7 +168,7 @@ fn zero_length_line_produces_nothing() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     assert!(writer.is_empty());
 }
@@ -175,7 +181,7 @@ fn image_command_is_noop() {
     dl.push_image(Rect::new(0.0, 0.0, 64.0, 64.0), 1, [0.0, 0.0, 1.0, 1.0]);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     assert!(writer.is_empty());
 }
@@ -191,7 +197,7 @@ fn clip_commands_are_noop() {
     dl.pop_clip();
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     // Only the rect should produce an instance; clips are no-ops.
     assert_eq!(writer.len(), 1);
@@ -216,7 +222,7 @@ fn multiple_rects_accumulate() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     assert_eq!(writer.len(), 3);
 }
@@ -229,10 +235,380 @@ fn invisible_rect_still_writes_instance() {
     dl.push_rect(Rect::new(0.0, 0.0, 50.0, 50.0), RectStyle::default());
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer);
+    convert_draw_list(&dl, &mut writer, None);
 
     // An unstyled rect writes a transparent instance (the GPU will discard it).
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
     assert_eq!(read_f32(rec, 48), 0.0); // fill alpha = 0 (transparent)
+}
+
+// --- Text conversion ---
+
+/// Test atlas keyed by [`RasterKey`] for text glyph lookup.
+struct KeyTestAtlas(HashMap<RasterKey, AtlasEntry>);
+
+impl AtlasLookup for KeyTestAtlas {
+    fn lookup(&self, _ch: char, _style: GlyphStyle) -> Option<&AtlasEntry> {
+        None
+    }
+
+    fn lookup_key(&self, key: RasterKey) -> Option<&AtlasEntry> {
+        self.0.get(&key)
+    }
+}
+
+const TEST_SIZE_Q6: u32 = 896; // ~14px
+
+/// Create a deterministic atlas entry for a glyph ID.
+fn text_entry(glyph_id: u16) -> AtlasEntry {
+    AtlasEntry {
+        page: 0,
+        uv_x: (glyph_id % 16) as f32 / 16.0,
+        uv_y: (glyph_id / 16) as f32 / 16.0,
+        uv_w: 7.0 / 1024.0,
+        uv_h: 14.0 / 1024.0,
+        width: 7,
+        height: 14,
+        bearing_x: 1,
+        bearing_y: 12,
+        kind: AtlasKind::Mono,
+    }
+}
+
+/// Build a `KeyTestAtlas` with entries for the given glyph IDs using `FontRealm::Ui`.
+fn text_atlas_with(glyph_ids: &[u16]) -> KeyTestAtlas {
+    let mut map = HashMap::new();
+    for &gid in glyph_ids {
+        let key = RasterKey {
+            glyph_id: gid,
+            face_idx: FaceIdx::REGULAR,
+            size_q6: TEST_SIZE_Q6,
+            synthetic: SyntheticFlags::NONE,
+            hinted: true,
+            subpx_x: 0,
+            font_realm: FontRealm::Ui,
+        };
+        map.insert(key, text_entry(gid));
+    }
+    KeyTestAtlas(map)
+}
+
+/// Build a ShapedText with the given glyphs and a 14px line height / 12px baseline.
+fn shaped_text(glyphs: Vec<ShapedGlyph>) -> ShapedText {
+    let width: f32 = glyphs.iter().map(|g| g.x_advance).sum();
+    ShapedText::new(glyphs, width, 14.0, 12.0)
+}
+
+#[test]
+fn text_without_context_is_noop() {
+    let mut dl = DrawList::new();
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    // No text context → text is deferred, no instances.
+    assert!(writer.is_empty());
+}
+
+#[test]
+fn text_single_glyph_produces_one_instance() {
+    let atlas = text_atlas_with(&[42]);
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+
+    let mut ui_writer = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui_writer, Some(&mut ctx));
+
+    // No UI rect instances (only text).
+    assert!(ui_writer.is_empty());
+    // One mono glyph instance.
+    assert_eq!(mono.len(), 1);
+    assert!(subpx.is_empty());
+    assert!(color.is_empty());
+
+    // Verify position: x = 10.0 + bearing_x(1), y = 20.0 + baseline(12) - bearing_y(12).
+    let rec = mono.as_bytes();
+    let gx = read_f32(rec, 0);
+    let gy = read_f32(rec, 4);
+    assert!(
+        (gx - 11.0).abs() < 0.5,
+        "glyph x = 10 + bearing_x(1) = 11, got {gx}"
+    );
+    assert!(
+        (gy - 20.0).abs() < 0.5,
+        "glyph y = 20 + 12 - 12 = 20, got {gy}"
+    );
+
+    // Verify glyph instance kind.
+    assert_eq!(read_u32(rec, 64), 1); // InstanceKind::Glyph
+}
+
+#[test]
+fn text_spaces_are_advance_only() {
+    let atlas = text_atlas_with(&[65, 66]); // 'A' and 'B' glyphs
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color = InstanceWriter::new();
+
+    // "A B" — glyph 65, space (glyph_id=0), glyph 66.
+    let st = shaped_text(vec![
+        ShapedGlyph {
+            glyph_id: 65,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 0,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 66,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    // Only 2 glyph instances (space skipped).
+    assert_eq!(mono.len(), 2);
+
+    // Second glyph should be positioned after the space advance.
+    let bytes = mono.as_bytes();
+    let first_x = read_f32(bytes, 0);
+    let second_x = read_f32(&bytes[INSTANCE_SIZE..], 0);
+    assert!(
+        second_x > first_x + 7.0,
+        "second glyph should be after space: first_x={first_x}, second_x={second_x}",
+    );
+}
+
+#[test]
+fn text_mixed_with_rects() {
+    let atlas = text_atlas_with(&[42]);
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_rect(
+        Rect::new(0.0, 0.0, 50.0, 50.0),
+        RectStyle::filled(Color::BLACK),
+    );
+    dl.push_text(Point::new(60.0, 10.0), st, Color::WHITE);
+    dl.push_rect(
+        Rect::new(80.0, 0.0, 50.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    // 2 UI rect instances, 1 glyph instance.
+    assert_eq!(ui.len(), 2);
+    assert_eq!(mono.len(), 1);
+}
+
+#[test]
+fn text_color_conversion() {
+    // Verify color_to_rgb converts f32 RGBA to u8 RGB correctly.
+    let rgb = super::color_to_rgb(Color::rgba(1.0, 0.5, 0.0, 0.8));
+    assert_eq!(rgb.r, 255);
+    assert_eq!(rgb.g, 128);
+    assert_eq!(rgb.b, 0);
+}
+
+#[test]
+fn text_empty_shaped_produces_nothing() {
+    let atlas = text_atlas_with(&[]);
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = ShapedText::new(Vec::new(), 0.0, 14.0, 12.0);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    assert!(mono.is_empty());
+}
+
+#[test]
+fn text_atlas_miss_skips_glyph() {
+    // Atlas has no entry for glyph 99.
+    let atlas = text_atlas_with(&[42]);
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![
+        ShapedGlyph {
+            glyph_id: 42,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 99,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    // Only 1 instance (glyph 99 missed in atlas → skipped).
+    assert_eq!(mono.len(), 1);
+}
+
+#[test]
+fn text_color_glyph_routes_to_color_writer() {
+    // Create a color atlas entry.
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 50,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: TEST_SIZE_Q6,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Ui,
+    };
+    map.insert(
+        key,
+        AtlasEntry {
+            page: 1,
+            uv_x: 0.0,
+            uv_y: 0.0,
+            uv_w: 16.0 / 1024.0,
+            uv_h: 16.0 / 1024.0,
+            width: 16,
+            height: 16,
+            bearing_x: 0,
+            bearing_y: 14,
+            kind: AtlasKind::Color,
+        },
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 50,
+        face_index: 0,
+        x_advance: 16.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    // Color glyph routes to color writer.
+    assert!(mono.is_empty());
+    assert!(subpx.is_empty());
+    assert_eq!(color_w.len(), 1);
 }

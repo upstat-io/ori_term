@@ -9,6 +9,7 @@ pub mod draw;
 pub mod geometry;
 pub mod hit_test;
 pub mod scale;
+pub mod text;
 pub mod window;
 
 #[cfg(target_os = "linux")]

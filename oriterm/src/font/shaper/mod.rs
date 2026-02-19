@@ -16,7 +16,10 @@ mod ui_text;
     unused_imports,
     reason = "UI text shaping consumed by tab bar and overlays"
 )]
-pub use ui_text::{UiShapedGlyph, measure_text, shape_text_string, truncate_with_ellipsis};
+pub use ui_text::{
+    UiShapedGlyph, measure_text, measure_text_styled, shape_text, shape_text_string,
+    truncate_with_ellipsis,
+};
 
 use oriterm_core::{Cell, CellFlags, RenderableCell};
 

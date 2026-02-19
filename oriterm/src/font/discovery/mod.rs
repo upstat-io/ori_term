@@ -23,7 +23,7 @@ mod windows;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use families::{FALLBACK_FONTS, FamilySpec};
+use families::{FALLBACK_FONTS, FamilySpec, UI_FONT_FAMILIES};
 
 /// Embedded `JetBrains` Mono regular — guaranteed fallback that ships with the binary.
 pub(crate) const EMBEDDED_FONT_DATA: &[u8] =
@@ -145,6 +145,78 @@ pub fn discover_fonts(family_override: Option<&str>, weight: u16) -> DiscoveryRe
         primary: embedded_family(),
         fallbacks: Vec::new(),
     }
+}
+
+/// Discover UI fonts (proportional sans-serif) for tab bar, labels, and overlays.
+///
+/// Tries platform-specific UI font families in priority order. If no UI font
+/// is found, falls back to the terminal font discovery result (the terminal's
+/// monospace font is better than nothing).
+///
+/// This function always succeeds — the embedded fallback guarantees a result.
+#[allow(dead_code, reason = "wired when GpuRenderer loads UI fonts")]
+pub fn discover_ui_fonts() -> DiscoveryResult {
+    // Build the font index once for directory-scanning platforms.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let font_index = {
+        #[cfg(target_os = "linux")]
+        {
+            linux::build_font_index()
+        }
+        #[cfg(target_os = "macos")]
+        {
+            macos::build_font_index()
+        }
+    };
+
+    let result = {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            try_ui_fonts_with_index(&font_index)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            try_ui_fonts()
+        }
+    };
+    if let Some(result) = result {
+        return result;
+    }
+
+    // Fall back to terminal font discovery.
+    log::info!("UI font discovery: no UI font found, falling back to terminal font");
+    discover_fonts(None, 400)
+}
+
+/// Try UI font families using a pre-built font index (Linux/macOS).
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn try_ui_fonts_with_index(index: &HashMap<String, PathBuf>) -> Option<DiscoveryResult> {
+    let lookup = |name: &str| index.get(name).cloned();
+    let primary = try_families_from_specs(UI_FONT_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
+    let fallbacks = Vec::new(); // UI text doesn't need glyph fallbacks.
+    log::info!(
+        "UI font discovery: found {:?} (origin={:?})",
+        primary.family_name,
+        primary.origin,
+    );
+    Some(DiscoveryResult { primary, fallbacks })
+}
+
+/// Try UI font families via DirectWrite (Windows).
+#[cfg(target_os = "windows")]
+fn try_ui_fonts() -> Option<DiscoveryResult> {
+    let lookup = |name: &str| {
+        let path = PathBuf::from(name);
+        path.exists().then_some(path)
+    };
+    let primary = try_families_from_specs(UI_FONT_FAMILIES, &lookup, FontOrigin::DirectoryScan)?;
+    let fallbacks = Vec::new();
+    log::info!(
+        "UI font discovery: found {:?} (origin={:?})",
+        primary.family_name,
+        primary.origin,
+    );
+    Some(DiscoveryResult { primary, fallbacks })
 }
 
 /// Resolve a user-configured fallback font name to a path.

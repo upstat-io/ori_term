@@ -5,6 +5,7 @@
 
 use crate::color::Color;
 use crate::geometry::{Point, Rect};
+use crate::text::ShapedText;
 
 use super::rect_style::RectStyle;
 
@@ -37,6 +38,15 @@ pub enum DrawCommand {
         texture_id: u32,
         /// UV coordinates `[u_left, v_top, u_right, v_bottom]`.
         uv: [f32; 4],
+    },
+    /// A pre-shaped text block.
+    Text {
+        /// Top-left position of the text block in logical pixels.
+        position: Point,
+        /// Shaped glyphs with layout metrics.
+        shaped: ShapedText,
+        /// Text color (overrides the color in the original [`TextStyle`]).
+        color: Color,
     },
     /// Push a clip rectangle onto the clip stack.
     PushClip {
@@ -78,6 +88,15 @@ impl DrawList {
             from,
             to,
             width,
+            color,
+        });
+    }
+
+    /// Appends a pre-shaped text block.
+    pub fn push_text(&mut self, position: Point, shaped: ShapedText, color: Color) {
+        self.commands.push(DrawCommand::Text {
+            position,
+            shaped,
             color,
         });
     }

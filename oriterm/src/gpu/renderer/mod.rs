@@ -118,6 +118,11 @@ pub struct GpuRenderer {
     /// all three atlases share a single authoritative set.
     empty_keys: HashSet<RasterKey>,
     font_collection: FontCollection,
+    /// UI font collection (proportional sans-serif) for tab bar, labels, and overlays.
+    ///
+    /// `None` if no UI font was found — falls back to terminal font.
+    #[allow(dead_code, reason = "wired when widgets produce DrawLists with text")]
+    ui_font_collection: Option<FontCollection>,
 
     // Per-frame reusable scratch buffers.
     shaping: ShapingScratch,
@@ -179,8 +184,12 @@ impl GpuRenderer {
             AtlasBindGroup::new(device, &atlas_layout, subpixel_atlas.view());
         let color_atlas_bind_group = AtlasBindGroup::new(device, &atlas_layout, color_atlas.view());
 
+        // UI font collection (proportional sans-serif for overlays).
+        let ui_font_collection = load_ui_font_collection(&font_collection);
+        let t_uifont = t0.elapsed();
+
         log::info!(
-            "renderer init: pipelines={t_pipelines:?} precache={t_precache:?} total={:?}",
+            "renderer init: pipelines={t_pipelines:?} precache={t_precache:?} uifont={t_uifont:?} total={:?}",
             t0.elapsed(),
         );
 
@@ -199,6 +208,7 @@ impl GpuRenderer {
             color_atlas,
             empty_keys: HashSet::new(),
             font_collection,
+            ui_font_collection,
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             bg_buffer: None,
@@ -468,6 +478,32 @@ impl GpuRenderer {
         output.present();
         Ok(())
     }
+}
+
+/// Try to load a UI font collection for overlays and labels.
+///
+/// Uses [`discover_ui_fonts`](crate::font::discovery::discover_ui_fonts) to
+/// find a proportional sans-serif font, then builds a [`FontCollection`] at
+/// the same format and hinting settings as the terminal font. Returns `None`
+/// if loading fails (the renderer falls back to the terminal font).
+fn load_ui_font_collection(terminal_fc: &FontCollection) -> Option<FontCollection> {
+    use crate::font::FontSet;
+
+    let discovery = crate::font::discovery::discover_ui_fonts();
+    let font_set = FontSet::from_discovery(&discovery).ok()?;
+    let fc = FontCollection::new(
+        font_set,
+        11.0,
+        96.0,
+        terminal_fc.format(),
+        400,
+        terminal_fc.hinting_mode(),
+    )
+    .ok();
+    if fc.is_some() {
+        log::info!("UI font loaded: {:?}", discovery.primary.family_name,);
+    }
+    fc
 }
 
 #[cfg(test)]

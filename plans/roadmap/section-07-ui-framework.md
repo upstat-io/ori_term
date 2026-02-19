@@ -10,7 +10,7 @@ sections:
     status: complete
   - id: "07.2"
     title: Text Rendering Integration
-    status: not-started
+    status: complete
   - id: "07.3"
     title: Layout Engine
     status: not-started
@@ -74,7 +74,7 @@ The low-level 2D drawing API. Everything visible on screen is drawn through thes
 
 - [x] `DrawList` — ordered list of draw commands, batched into GPU instance buffers
   - [x] `push_rect(rect: Rect, style: RectStyle)` — filled rectangle
-  - [ ] `push_text(pos: Point, shaped: &ShapedText, color: Color)` — pre-shaped text run <!-- blocked-by:07.2 -->
+  - [x] `push_text(pos: Point, shaped: &ShapedText, color: Color)` — pre-shaped text run
   - [x] `push_line(from: Point, to: Point, width: f32, color: Color)` — line segment
   - [x] `push_image(rect: Rect, texture: TextureId, uv: UvRect)` — textured quad
   - [x] `push_clip(rect: Rect)` / `pop_clip()` — scissor rect stack
@@ -125,34 +125,34 @@ Bridge between the font pipeline (Section 06) and the UI framework.
 
 **File:** `oriterm_ui/src/text.rs`
 
-- [ ] `ShapedText` — pre-shaped, ready-to-draw text
-  - [ ] `glyphs: Vec<ShapedGlyph>` — positioned glyphs from rustybuzz
-  - [ ] `width: f32` — total advance width
-  - [ ] `height: f32` — line height
-  - [ ] `baseline: f32` — baseline offset
+- [x] `ShapedText` — pre-shaped, ready-to-draw text
+  - [x] `glyphs: Vec<ShapedGlyph>` — positioned glyphs from rustybuzz
+  - [x] `width: f32` — total advance width
+  - [x] `height: f32` — line height
+  - [x] `baseline: f32` — baseline offset
 
-- [ ] `TextStyle` — how to render text
-  - [ ] `font_family: Option<String>` — override font (default: UI font)
-  - [ ] `size: f32` — font size in points
-  - [ ] `weight: FontWeight` — Regular, Bold, etc.
-  - [ ] `color: Color`
-  - [ ] `align: TextAlign` — Left, Center, Right
-  - [ ] `overflow: TextOverflow` — Clip, Ellipsis, Wrap
+- [x] `TextStyle` — how to render text
+  - [x] `font_family: Option<String>` — override font (default: UI font)
+  - [x] `size: f32` — font size in points
+  - [x] `weight: FontWeight` — Regular, Bold, etc.
+  - [x] `color: Color`
+  - [x] `align: TextAlign` — Left, Center, Right
+  - [x] `overflow: TextOverflow` — Clip, Ellipsis, Wrap
 
-- [ ] `measure_text(text: &str, style: &TextStyle, max_width: f32) -> TextMetrics`
-  - [ ] Returns width, height, line count — used by layout engine
-  - [ ] Does NOT rasterize — only measures
+- [x] `measure_text(text: &str, style: &TextStyle, max_width: f32) -> TextMetrics`
+  - [x] Returns width, height, line count — used by layout engine
+  - [x] Does NOT rasterize — only measures
 
-- [ ] `shape_text(text: &str, style: &TextStyle, max_width: f32) -> ShapedText`
-  - [ ] Full shaping via rustybuzz
-  - [ ] Handles wrapping at word boundaries if `overflow == Wrap`
-  - [ ] Handles ellipsis truncation if `overflow == Ellipsis`
+- [x] `shape_text(text: &str, style: &TextStyle, max_width: f32) -> ShapedText`
+  - [x] Full shaping via rustybuzz
+  - [x] Handles wrapping at word boundaries if `overflow == Wrap`
+  - [x] Handles ellipsis truncation if `overflow == Ellipsis`
 
-- [ ] UI font vs terminal font:
-  - [ ] Terminal grid uses the configured monospace font
-  - [ ] UI elements (buttons, labels, menus) use a proportional UI font
-  - [ ] Default UI font: system sans-serif (Segoe UI / SF Pro / Cantarell)
-  - [ ] Both go through the same atlas and shaping pipeline
+- [x] UI font vs terminal font:
+  - [x] Terminal grid uses the configured monospace font
+  - [x] UI elements (buttons, labels, menus) use a proportional UI font
+  - [x] Default UI font: system sans-serif (Segoe UI / SF Pro / Cantarell)
+  - [x] Both go through the same atlas and shaping pipeline
 
 ---
 

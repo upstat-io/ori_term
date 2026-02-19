@@ -8,7 +8,7 @@ use super::{
     AtlasLookup, ShapedFrame, prepare_frame, prepare_frame_into, prepare_frame_shaped,
     prepare_frame_shaped_into,
 };
-use crate::font::{FaceIdx, GlyphStyle, RasterKey, ShapedGlyph, SyntheticFlags};
+use crate::font::{FaceIdx, FontRealm, GlyphStyle, RasterKey, ShapedGlyph, SyntheticFlags};
 use crate::gpu::atlas::{AtlasEntry, AtlasKind};
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
@@ -879,6 +879,7 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
             synthetic: SyntheticFlags::NONE,
             hinted: true,
             subpx_x: 0,
+            font_realm: FontRealm::Terminal,
         };
         map.insert(key, test_entry_for_glyph(gid));
     }
@@ -1000,6 +1001,7 @@ fn shaped_offset_applied_to_glyph_position() {
             synthetic: SyntheticFlags::NONE,
             hinted: true,
             subpx_x: subpx,
+            font_realm: FontRealm::Terminal,
         },
         test_entry_for_glyph(60),
     );
@@ -1139,6 +1141,7 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     map.insert(
         key,
@@ -1198,6 +1201,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             synthetic: SyntheticFlags::NONE,
             hinted: true,
             subpx_x: 0,
+            font_realm: FontRealm::Terminal,
         },
         test_entry_for_glyph(10),
     );
@@ -1210,6 +1214,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             synthetic: SyntheticFlags::NONE,
             hinted: true,
             subpx_x: 0,
+            font_realm: FontRealm::Terminal,
         },
         AtlasEntry {
             kind: AtlasKind::Color,
@@ -1225,6 +1230,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             synthetic: SyntheticFlags::NONE,
             hinted: true,
             subpx_x: 0,
+            font_realm: FontRealm::Terminal,
         },
         test_entry_for_glyph(11),
     );
@@ -1567,6 +1573,7 @@ fn subpixel_glyph_routes_to_subpixel_buffer() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     map.insert(
         key,
@@ -1622,6 +1629,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
             synthetic: SyntheticFlags::NONE,
             hinted: true,
             subpx_x: 0,
+            font_realm: FontRealm::Terminal,
         },
         test_entry_for_glyph(10), // default: AtlasKind::Mono
     );
@@ -1634,6 +1642,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
             synthetic: SyntheticFlags::NONE,
             hinted: true,
             subpx_x: 0,
+            font_realm: FontRealm::Terminal,
         },
         AtlasEntry {
             kind: AtlasKind::Subpixel,
@@ -1649,6 +1658,7 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
             synthetic: SyntheticFlags::NONE,
             hinted: true,
             subpx_x: 0,
+            font_realm: FontRealm::Terminal,
         },
         AtlasEntry {
             kind: AtlasKind::Color,

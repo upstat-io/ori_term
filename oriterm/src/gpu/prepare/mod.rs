@@ -17,7 +17,7 @@ use oriterm_core::{CellFlags, CursorShape, Rgb};
 use super::atlas::{AtlasEntry, AtlasKind};
 use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
-use crate::font::{GlyphStyle, RasterKey, ShapedGlyph, subpx_bin, subpx_offset};
+use crate::font::{FontRealm, GlyphStyle, RasterKey, ShapedGlyph, subpx_bin, subpx_offset};
 use crate::gpu::instance_writer::ScreenRect;
 
 pub(crate) use shaped_frame::ShapedFrame;
@@ -361,6 +361,7 @@ impl GlyphEmitter<'_> {
                 synthetic: sg.synthetic,
                 hinted: self.hinted,
                 subpx_x: subpx,
+                font_realm: FontRealm::Terminal,
             };
             if let Some(entry) = self.atlas.lookup_key(key) {
                 // Apply shaper offsets: x_offset shifts horizontally,

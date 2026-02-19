@@ -15,8 +15,8 @@ use super::super::atlas::GlyphAtlas;
 use super::super::frame_input::FrameInput;
 use super::super::prepare::ShapedFrame;
 use crate::font::{
-    FontCollection, GlyphFormat, GlyphStyle, RasterKey, build_col_glyph_map, prepare_line,
-    shape_prepared_runs, size_key, subpx_bin,
+    FontCollection, FontRealm, GlyphFormat, GlyphStyle, RasterKey, build_col_glyph_map,
+    prepare_line, shape_prepared_runs, size_key, subpx_bin,
 };
 
 /// Reusable per-frame scratch buffers for the shaping pipeline.
@@ -117,6 +117,7 @@ pub(super) fn ensure_shaped_glyphs_cached(
             synthetic: glyph.synthetic,
             hinted,
             subpx_x: subpx_bin(glyph.x_offset),
+            font_realm: FontRealm::Terminal,
         };
         // Check all three atlases for cache hit.
         if mono_atlas.lookup_touch(key).is_some()

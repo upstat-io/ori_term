@@ -9,7 +9,9 @@ use super::face::{
 };
 use super::{FontCollection, FontSet};
 use crate::font::discovery::EMBEDDED_FONT_DATA;
-use crate::font::{FaceIdx, GlyphFormat, GlyphStyle, HintingMode, RasterKey, SyntheticFlags};
+use crate::font::{
+    FaceIdx, FontRealm, GlyphFormat, GlyphStyle, HintingMode, RasterKey, SyntheticFlags,
+};
 
 /// Helper: build a FontCollection from system discovery with default settings.
 fn system_collection(format: GlyphFormat) -> FontCollection {
@@ -308,6 +310,7 @@ fn raster_key_equality() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     let k2 = RasterKey {
         glyph_id: 42,
@@ -316,6 +319,7 @@ fn raster_key_equality() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     let k3 = RasterKey {
         glyph_id: 43,
@@ -324,6 +328,7 @@ fn raster_key_equality() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     assert_eq!(k1, k2);
     assert_ne!(k1, k3);
@@ -338,6 +343,7 @@ fn raster_key_hash_consistency() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     let k2 = RasterKey {
         glyph_id: 42,
@@ -346,6 +352,7 @@ fn raster_key_hash_consistency() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     let h1 = {
         let mut h = DefaultHasher::new();
@@ -808,6 +815,7 @@ fn rasterize_with_synthesis(
         synthetic,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     fc.rasterize(key).cloned()
 }
@@ -1145,6 +1153,7 @@ fn raster_key_hinting_distinguishes_cache() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     let k_unhinted = RasterKey {
         glyph_id: 42,
@@ -1153,6 +1162,7 @@ fn raster_key_hinting_distinguishes_cache() {
         synthetic: SyntheticFlags::NONE,
         hinted: false,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     assert_ne!(
         k_hinted, k_unhinted,
@@ -1399,6 +1409,7 @@ fn raster_key_subpx_x_distinguishes_cache() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     let k_phase2 = RasterKey {
         glyph_id: 42,
@@ -1407,6 +1418,7 @@ fn raster_key_subpx_x_distinguishes_cache() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 2,
+        font_realm: FontRealm::Terminal,
     };
     assert_ne!(
         k_phase0, k_phase2,

@@ -5,7 +5,7 @@
 //! prepare phase emits 1 glyph instance per decorated cell instead of O(w)
 //! rect instances.
 
-use crate::font::{CellMetrics, FaceIdx, RasterKey, RasterizedGlyph, SyntheticFlags};
+use crate::font::{CellMetrics, FaceIdx, FontRealm, RasterKey, RasterizedGlyph, SyntheticFlags};
 
 use super::Canvas;
 
@@ -27,6 +27,7 @@ pub(crate) fn decoration_key(glyph_id: u16, size_q6: u32) -> RasterKey {
         synthetic: SyntheticFlags::NONE,
         hinted: false,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     }
 }
 

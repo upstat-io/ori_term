@@ -19,7 +19,8 @@ use wgpu::Queue;
 use oriterm_core::CellFlags;
 
 use crate::font::{
-    CellMetrics, FaceIdx, GlyphFormat, RasterKey, RasterizedGlyph, SyntheticFlags, is_builtin,
+    CellMetrics, FaceIdx, FontRealm, GlyphFormat, RasterKey, RasterizedGlyph, SyntheticFlags,
+    is_builtin,
 };
 
 use super::atlas::GlyphAtlas;
@@ -37,6 +38,7 @@ pub(crate) fn raster_key(ch: char, size_q6: u32) -> RasterKey {
         synthetic: SyntheticFlags::NONE,
         hinted: false,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     }
 }
 

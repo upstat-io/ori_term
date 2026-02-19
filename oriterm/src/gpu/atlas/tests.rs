@@ -1,6 +1,6 @@
 //! Tests for the glyph atlas.
 
-use crate::font::{FaceIdx, GlyphFormat, RasterKey, RasterizedGlyph, SyntheticFlags};
+use crate::font::{FaceIdx, FontRealm, GlyphFormat, RasterKey, RasterizedGlyph, SyntheticFlags};
 use crate::gpu::state::GpuState;
 
 use super::{AtlasKind, GLYPH_PADDING, GlyphAtlas, PAGE_SIZE};
@@ -27,6 +27,7 @@ fn test_key(glyph_id: u16) -> RasterKey {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     }
 }
 
@@ -532,6 +533,7 @@ fn q6_keying_distinct_sizes() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
     let key_16 = RasterKey {
         glyph_id: 65,
@@ -540,6 +542,7 @@ fn q6_keying_distinct_sizes() {
         synthetic: SyntheticFlags::NONE,
         hinted: true,
         subpx_x: 0,
+        font_realm: FontRealm::Terminal,
     };
 
     let glyph_14 = test_glyph(8, 14);
