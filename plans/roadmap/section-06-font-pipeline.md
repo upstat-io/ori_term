@@ -52,7 +52,7 @@ sections:
     status: in-progress
   - id: "6.16"
     title: Subpixel Rendering (LCD)
-    status: not-started
+    status: in-progress
   - id: "6.17"
     title: Subpixel Glyph Positioning
     status: not-started
@@ -726,28 +726,28 @@ LCD subpixel rendering uses the physical R/G/B subpixels of the display to achie
 
 **Reference:** WezTerm `wezterm-font/src/rasterizer/freetype.rs` (LCD rendering), WezTerm `wezterm-gui/src/glyph-frag.glsl` (dual-source blending)
 
-- [ ] Subpixel rasterization via swash:
-  - [ ] `Render::format(Format::Subpixel)` — produces RGBA subpixel mask
-  - [ ] Output: 4 bytes per pixel. R/G/B channels contain per-subpixel coverage. A channel contains overall coverage.
-  - [ ] `Format::Subpixel` uses standard RGB subpixel order (1/3 pixel offsets for R and B)
-  - [ ] `zeno::Format::subpixel_bgra()` for BGR panel layouts
-  - [ ] `Content::SubpixelMask` indicates subpixel output (vs `Content::Mask` for grayscale)
-- [ ] Pixel geometry detection and configuration:
+- [x] Subpixel rasterization via swash:
+  - [x] `Render::format(Format::Subpixel)` — produces RGBA subpixel mask
+  - [x] Output: 4 bytes per pixel. R/G/B channels contain per-subpixel coverage. A channel contains overall coverage.
+  - [x] `Format::Subpixel` uses standard RGB subpixel order (1/3 pixel offsets for R and B)
+  - [x] `zeno::Format::subpixel_bgra()` for BGR panel layouts
+  - [x] `Content::SubpixelMask` indicates subpixel output (vs `Content::Mask` for grayscale)
+- [x] Pixel geometry detection and configuration:
   ```toml
   [font]
   lcd_filter = "rgb"   # "rgb", "bgr", or "none" (disable subpixel)
   ```
-  - [ ] Default: `"rgb"` (vast majority of displays)
-  - [ ] `"none"` falls back to grayscale alpha rendering
-  - [ ] Auto-disable on HiDPI (scale >= 2.0) — Retina displays don't have visible subpixels
-- [ ] Separate atlas storage for subpixel glyphs:
-  - [ ] Grayscale glyphs: `R8Unorm` texture (1 byte/pixel) — existing path
-  - [ ] Subpixel glyphs: `Rgba8Unorm` texture (4 bytes/pixel) — new
-  - [ ] Atlas tracks per-entry format: `AtlasEntry.subpixel: bool`
-  - [ ] Color emoji always rasterized as `Format::Alpha` → `Rgba8Unorm` (no subpixel for bitmaps)
-- [ ] Shader changes for per-channel alpha blending:
-  - [ ] Grayscale path (existing): `output.rgb = fg_color.rgb; output.a = texture_sample.r * fg_color.a`
-  - [ ] Subpixel path (new): each color channel blended independently:
+  - [x] Default: `"rgb"` (vast majority of displays)
+  - [x] `"none"` falls back to grayscale alpha rendering
+  - [x] Auto-disable on HiDPI (scale >= 2.0) — Retina displays don't have visible subpixels
+- [x] Separate atlas storage for subpixel glyphs:
+  - [x] Grayscale glyphs: `R8Unorm` texture (1 byte/pixel) — existing path
+  - [x] Subpixel glyphs: `Rgba8Unorm` texture (4 bytes/pixel) — new
+  - [x] Atlas tracks per-entry format: `AtlasEntry.subpixel: bool`
+  - [x] Color emoji always rasterized as `Format::Alpha` → `Rgba8Unorm` (no subpixel for bitmaps)
+- [x] Shader changes for per-channel alpha blending:
+  - [x] Grayscale path (existing): `output.rgb = fg_color.rgb; output.a = texture_sample.r * fg_color.a`
+  - [x] Subpixel path (new): each color channel blended independently:
     ```wgsl
     let mask = textureSample(atlas, sampler, uv);  // RGBA subpixel mask
     output.r = mix(bg.r, fg.r, mask.r);
@@ -755,22 +755,22 @@ LCD subpixel rendering uses the physical R/G/B subpixels of the display to achie
     output.b = mix(bg.b, fg.b, mask.b);
     output.a = max(mask.r, max(mask.g, mask.b));
     ```
-  - [ ] Alternative: dual-source blending (WezTerm approach) — more correct but requires `DUAL_SOURCE_BLENDING` wgpu feature
-  - [ ] Decision: start with the `mix()` approach (simpler, no feature requirement), upgrade to dual-source if quality demands it
-- [ ] Rendering pipeline integration:
-  - [ ] Subpixel glyphs need the background color at render time (for the `mix()`)
-  - [ ] Two approaches:
-    - [ ] **Read-back**: sample the current framebuffer at the glyph position (expensive)
-    - [ ] **Pass bg_color as uniform/instance data**: the Prepare phase already computes bg_color per cell — pass it to the fg shader as an instance attribute
-  - [ ] **Recommended**: pass bg_color in the fg instance buffer (add 4 bytes per glyph instance)
+  - [x] Alternative: dual-source blending (WezTerm approach) — more correct but requires `DUAL_SOURCE_BLENDING` wgpu feature
+  - [x] Decision: start with the `mix()` approach (simpler, no feature requirement), upgrade to dual-source if quality demands it
+- [x] Rendering pipeline integration:
+  - [x] Subpixel glyphs need the background color at render time (for the `mix()`)
+  - [x] Two approaches:
+    - [x] **Read-back**: sample the current framebuffer at the glyph position (expensive)
+    - [x] **Pass bg_color as uniform/instance data**: the Prepare phase already computes bg_color per cell — pass it to the fg shader as an instance attribute
+  - [x] **Recommended**: pass bg_color in the fg instance buffer (add 4 bytes per glyph instance)
 - [ ] Interaction with other features:
   - [ ] Transparent backgrounds: subpixel rendering over transparency produces color fringing — fall back to grayscale alpha for cells with non-opaque backgrounds
   - [ ] Selection highlighting: when selection inverts colors, subpixel glyphs must be re-resolved or fall back to grayscale
-  - [ ] Color emoji: always grayscale alpha path (no subpixel for pre-colored bitmaps)
-- [ ] **Tests**:
+  - [x] Color emoji: always grayscale alpha path (no subpixel for pre-colored bitmaps)
+- [x] **Tests**:
   - [ ] Subpixel-rasterized glyph has wider bitmap than grayscale equivalent (3x horizontal)
   - [ ] RGB vs BGR: channel order swapped correctly
-  - [ ] Auto-disable: scale 2.0+ renders grayscale
+  - [x] Auto-disable: scale 2.0+ renders grayscale
   - [ ] Config "none": forces grayscale regardless of scale
   - [ ] Transparent cell: falls back to grayscale (no color fringing)
   - [ ] Visual regression: compare subpixel vs grayscale rendering of reference string

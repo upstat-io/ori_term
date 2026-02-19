@@ -201,7 +201,6 @@ impl FontCollection {
     }
 
     /// Rasterization format.
-    #[allow(dead_code, reason = "font fields consumed in later sections")]
     pub fn format(&self) -> GlyphFormat {
         self.format
     }
@@ -333,6 +332,22 @@ impl FontCollection {
             return false;
         }
         self.hinting = mode;
+        self.glyph_cache.clear();
+        true
+    }
+
+    /// Change rasterization format and clear the glyph cache.
+    ///
+    /// No-ops if the format is unchanged. The caller
+    /// (`GpuRenderer::set_glyph_format`) is responsible for clearing GPU
+    /// atlases and re-populating afterward.
+    ///
+    /// Returns `true` if the format actually changed.
+    pub fn set_format(&mut self, format: GlyphFormat) -> bool {
+        if self.format == format {
+            return false;
+        }
+        self.format = format;
         self.glyph_cache.clear();
         true
     }

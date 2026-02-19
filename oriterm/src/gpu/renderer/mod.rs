@@ -10,7 +10,7 @@ mod helpers;
 use std::fmt;
 
 use wgpu::{
-    BindGroupLayout, Buffer, Color, CommandEncoderDescriptor, LoadOp, Operations, Queue,
+    BindGroupLayout, Buffer, Color, CommandEncoderDescriptor, LoadOp, Operations,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, StoreOp, TextureView,
     TextureViewDescriptor,
 };
@@ -22,15 +22,16 @@ use super::bind_groups::{AtlasBindGroup, UniformBuffer};
 use super::frame_input::FrameInput;
 use super::pipeline::{
     create_atlas_bind_group_layout, create_bg_pipeline, create_color_fg_pipeline,
-    create_fg_pipeline, create_uniform_bind_group_layout,
+    create_fg_pipeline, create_subpixel_fg_pipeline, create_uniform_bind_group_layout,
 };
 use super::prepare::{self, AtlasLookup};
 use super::prepared_frame::PreparedFrame;
 use super::state::GpuState;
-use crate::font::{CellMetrics, FontCollection, GlyphFormat, GlyphStyle, RasterKey, size_key};
+use crate::font::{CellMetrics, FontCollection, GlyphFormat, RasterKey};
 use crate::gpu::frame_input::ViewportSize;
 use helpers::{
-    ShapingScratch, ensure_shaped_glyphs_cached, record_draw, shape_frame, upload_buffer,
+    ShapingScratch, ensure_shaped_glyphs_cached, pre_cache_atlas, record_draw, shape_frame,
+    upload_buffer,
 };
 
 // ── Error type ──
@@ -63,20 +64,24 @@ impl std::error::Error for SurfaceError {}
 
 // ── Atlas lookup bridge ──
 
-/// Bridges both monochrome and color atlases into the [`AtlasLookup`] trait.
+/// Bridges all atlases (mono, subpixel, color) into the [`AtlasLookup`] trait.
 ///
 /// During the Prepare phase, glyph lookups check the color atlas first (for
-/// color emoji), then the monochrome atlas. Entries from the color atlas
-/// have `is_color = true`, enabling the prepare phase to route them to the
-/// correct instance buffer.
+/// color emoji), then the subpixel atlas, then the monochrome atlas. Each
+/// entry carries an [`AtlasKind`](super::atlas::AtlasKind) that the prepare
+/// phase uses to route glyphs to the correct instance buffer.
 struct CombinedAtlasLookup<'a> {
     mono: &'a GlyphAtlas,
+    subpixel: &'a GlyphAtlas,
     color: &'a GlyphAtlas,
 }
 
 impl AtlasLookup for CombinedAtlasLookup<'_> {
     fn lookup_key(&self, key: RasterKey) -> Option<&super::atlas::AtlasEntry> {
-        self.color.lookup(key).or_else(|| self.mono.lookup(key))
+        self.color
+            .lookup(key)
+            .or_else(|| self.subpixel.lookup(key))
+            .or_else(|| self.mono.lookup(key))
     }
 }
 
@@ -85,23 +90,26 @@ impl AtlasLookup for CombinedAtlasLookup<'_> {
 /// Owns all GPU rendering resources and executes the Render phase.
 ///
 /// Created once at startup, reused every frame. Holds the render pipelines,
-/// glyph atlases (monochrome + color), font collection, bind groups, and
-/// per-frame GPU buffers.
+/// glyph atlases (monochrome + subpixel + color), font collection, bind
+/// groups, and per-frame GPU buffers.
 pub struct GpuRenderer {
     // Pipelines
     bg_pipeline: RenderPipeline,
     fg_pipeline: RenderPipeline,
+    subpixel_fg_pipeline: RenderPipeline,
     color_fg_pipeline: RenderPipeline,
 
     // Bind groups + layouts
     uniform_buffer: UniformBuffer,
     atlas_bind_group: AtlasBindGroup,
+    subpixel_atlas_bind_group: AtlasBindGroup,
     color_atlas_bind_group: AtlasBindGroup,
     #[allow(dead_code, reason = "retained for atlas rebuild on font change")]
     atlas_layout: BindGroupLayout,
 
     // Atlases + fonts
     atlas: GlyphAtlas,
+    subpixel_atlas: GlyphAtlas,
     color_atlas: GlyphAtlas,
     font_collection: FontCollection,
 
@@ -112,6 +120,7 @@ pub struct GpuRenderer {
     // Per-frame GPU instance buffers (grow-only, never shrink).
     bg_buffer: Option<Buffer>,
     fg_buffer: Option<Buffer>,
+    subpixel_fg_buffer: Option<Buffer>,
     color_fg_buffer: Option<Buffer>,
     cursor_buffer: Option<Buffer>,
 }
@@ -130,6 +139,7 @@ impl GpuRenderer {
         // Pipelines.
         let bg_pipeline = create_bg_pipeline(gpu, &uniform_layout);
         let fg_pipeline = create_fg_pipeline(gpu, &uniform_layout, &atlas_layout);
+        let subpixel_fg_pipeline = create_subpixel_fg_pipeline(gpu, &uniform_layout, &atlas_layout);
         let color_fg_pipeline = create_color_fg_pipeline(gpu, &uniform_layout, &atlas_layout);
         let t_pipelines = t0.elapsed();
 
@@ -137,8 +147,19 @@ impl GpuRenderer {
         let uniform_buffer = UniformBuffer::new(device, &uniform_layout);
 
         // Monochrome atlas + pre-cache printable ASCII (0x20–0x7E).
-        let mut atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
-        pre_cache_atlas(&mut atlas, &mut font_collection, queue);
+        // When subpixel is enabled, ASCII goes into the subpixel atlas instead.
+        let format = font_collection.format();
+        let (atlas, subpixel_atlas) = if format.is_subpixel() {
+            let atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
+            let mut sp_atlas = GlyphAtlas::new(device, format);
+            pre_cache_atlas(&mut sp_atlas, &mut font_collection, queue);
+            (atlas, sp_atlas)
+        } else {
+            let mut atlas = GlyphAtlas::new(device, GlyphFormat::Alpha);
+            let sp_atlas = GlyphAtlas::new(device, GlyphFormat::SubpixelRgb);
+            pre_cache_atlas(&mut atlas, &mut font_collection, queue);
+            (atlas, sp_atlas)
+        };
         let t_precache = t0.elapsed();
 
         // Color atlas (starts empty — emoji cached on first use).
@@ -146,6 +167,8 @@ impl GpuRenderer {
 
         // Bind groups.
         let atlas_bind_group = AtlasBindGroup::new(device, &atlas_layout, atlas.view());
+        let subpixel_atlas_bind_group =
+            AtlasBindGroup::new(device, &atlas_layout, subpixel_atlas.view());
         let color_atlas_bind_group = AtlasBindGroup::new(device, &atlas_layout, color_atlas.view());
 
         log::info!(
@@ -156,18 +179,22 @@ impl GpuRenderer {
         Self {
             bg_pipeline,
             fg_pipeline,
+            subpixel_fg_pipeline,
             color_fg_pipeline,
             uniform_buffer,
             atlas_bind_group,
+            subpixel_atlas_bind_group,
             color_atlas_bind_group,
             atlas_layout,
             atlas,
+            subpixel_atlas,
             color_atlas,
             font_collection,
             shaping: ShapingScratch::new(),
             prepared: PreparedFrame::new(ViewportSize::new(1, 1), Rgb { r: 0, g: 0, b: 0 }, 1.0),
             bg_buffer: None,
             fg_buffer: None,
+            subpixel_fg_buffer: None,
             color_fg_buffer: None,
             cursor_buffer: None,
         }
@@ -204,21 +231,24 @@ impl GpuRenderer {
     /// 3. **Prepare** — emit GPU instances from shaped glyph positions.
     pub fn prepare(&mut self, input: &FrameInput, gpu: &GpuState) {
         self.atlas.begin_frame();
+        self.subpixel_atlas.begin_frame();
         self.color_atlas.begin_frame();
 
         // Phase A: Shape all rows.
         shape_frame(input, &self.font_collection, &mut self.shaping);
 
-        // Phase B: Ensure shaped glyphs cached (routes to mono or color atlas).
+        // Phase B: Ensure shaped glyphs cached (routes to mono, subpixel, or color atlas).
         ensure_shaped_glyphs_cached(
             &self.shaping.frame,
             &mut self.atlas,
+            &mut self.subpixel_atlas,
             &mut self.color_atlas,
             &mut self.font_collection,
             &gpu.queue,
         );
 
         // Phase B2: Ensure built-in geometric glyphs + decoration patterns cached.
+        // Built-ins always go to the mono atlas (alpha-only bitmaps).
         super::builtin_glyphs::ensure_builtins_cached(
             input,
             self.shaping.frame.size_q6(),
@@ -229,6 +259,7 @@ impl GpuRenderer {
         // Phase C: Fill prepared frame via combined atlas lookup bridge.
         let bridge = CombinedAtlasLookup {
             mono: &self.atlas,
+            subpixel: &self.subpixel_atlas,
             color: &self.color_atlas,
         };
         prepare::prepare_frame_shaped_into(input, &bridge, &self.shaping.frame, &mut self.prepared);
@@ -255,35 +286,8 @@ impl GpuRenderer {
         self.uniform_buffer
             .write_screen_size(queue, vp.width as f32, vp.height as f32);
 
-        // Upload instance data to GPU buffers (ensure + write in one call).
-        upload_buffer(
-            device,
-            queue,
-            &mut self.bg_buffer,
-            self.prepared.backgrounds.as_bytes(),
-            "bg_instance_buffer",
-        );
-        upload_buffer(
-            device,
-            queue,
-            &mut self.fg_buffer,
-            self.prepared.glyphs.as_bytes(),
-            "fg_instance_buffer",
-        );
-        upload_buffer(
-            device,
-            queue,
-            &mut self.color_fg_buffer,
-            self.prepared.color_glyphs.as_bytes(),
-            "color_fg_instance_buffer",
-        );
-        upload_buffer(
-            device,
-            queue,
-            &mut self.cursor_buffer,
-            self.prepared.cursors.as_bytes(),
-            "cursor_instance_buffer",
-        );
+        // Upload instance data to GPU buffers.
+        self.upload_instance_buffers(device, queue);
 
         // Encode render commands.
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -312,49 +316,103 @@ impl GpuRenderer {
                 ..Default::default()
             });
 
-            let uniform_bg = self.uniform_buffer.bind_group();
-            let mono_atlas = Some(self.atlas_bind_group.bind_group());
-            let color_atlas = Some(self.color_atlas_bind_group.bind_group());
-
-            // Draw 1: Backgrounds (solid-color cell rects).
-            record_draw(
-                &mut pass,
-                &self.bg_pipeline,
-                uniform_bg,
-                None,
-                self.bg_buffer.as_ref(),
-                self.prepared.backgrounds.len() as u32,
-            );
-            // Draw 2: Monochrome glyphs (R8Unorm atlas, tinted by fg_color).
-            record_draw(
-                &mut pass,
-                &self.fg_pipeline,
-                uniform_bg,
-                mono_atlas,
-                self.fg_buffer.as_ref(),
-                self.prepared.glyphs.len() as u32,
-            );
-            // Draw 3: Color glyphs (Rgba8Unorm atlas, rendered as-is).
-            record_draw(
-                &mut pass,
-                &self.color_fg_pipeline,
-                uniform_bg,
-                color_atlas,
-                self.color_fg_buffer.as_ref(),
-                self.prepared.color_glyphs.len() as u32,
-            );
-            // Draw 4: Cursors (solid-color rects via bg pipeline).
-            record_draw(
-                &mut pass,
-                &self.bg_pipeline,
-                uniform_bg,
-                None,
-                self.cursor_buffer.as_ref(),
-                self.prepared.cursors.len() as u32,
-            );
+            self.record_draw_passes(&mut pass);
         }
 
         queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Upload all instance buffers to the GPU.
+    fn upload_instance_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        upload_buffer(
+            device,
+            queue,
+            &mut self.bg_buffer,
+            self.prepared.backgrounds.as_bytes(),
+            "bg_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.fg_buffer,
+            self.prepared.glyphs.as_bytes(),
+            "fg_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.subpixel_fg_buffer,
+            self.prepared.subpixel_glyphs.as_bytes(),
+            "subpixel_fg_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.color_fg_buffer,
+            self.prepared.color_glyphs.as_bytes(),
+            "color_fg_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.cursor_buffer,
+            self.prepared.cursors.as_bytes(),
+            "cursor_instance_buffer",
+        );
+    }
+
+    /// Record the five draw passes into the render pass.
+    fn record_draw_passes<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+        let uniform_bg = self.uniform_buffer.bind_group();
+        let mono_atlas = Some(self.atlas_bind_group.bind_group());
+        let subpixel_atlas = Some(self.subpixel_atlas_bind_group.bind_group());
+        let color_atlas = Some(self.color_atlas_bind_group.bind_group());
+
+        // Draw 1: Backgrounds (solid-color cell rects).
+        record_draw(
+            pass,
+            &self.bg_pipeline,
+            uniform_bg,
+            None,
+            self.bg_buffer.as_ref(),
+            self.prepared.backgrounds.len() as u32,
+        );
+        // Draw 2: Monochrome glyphs (R8Unorm atlas, tinted by `fg_color`).
+        record_draw(
+            pass,
+            &self.fg_pipeline,
+            uniform_bg,
+            mono_atlas,
+            self.fg_buffer.as_ref(),
+            self.prepared.glyphs.len() as u32,
+        );
+        // Draw 3: Subpixel glyphs (Rgba8Unorm atlas, per-channel blend).
+        record_draw(
+            pass,
+            &self.subpixel_fg_pipeline,
+            uniform_bg,
+            subpixel_atlas,
+            self.subpixel_fg_buffer.as_ref(),
+            self.prepared.subpixel_glyphs.len() as u32,
+        );
+        // Draw 4: Color glyphs (Rgba8Unorm atlas, rendered as-is).
+        record_draw(
+            pass,
+            &self.color_fg_pipeline,
+            uniform_bg,
+            color_atlas,
+            self.color_fg_buffer.as_ref(),
+            self.prepared.color_glyphs.len() as u32,
+        );
+        // Draw 5: Cursors (solid-color rects via bg pipeline).
+        record_draw(
+            pass,
+            &self.bg_pipeline,
+            uniform_bg,
+            None,
+            self.cursor_buffer.as_ref(),
+            self.prepared.cursors.len() as u32,
+        );
     }
 
     /// Acquire a surface texture, render the stored prepared frame, and present.
@@ -388,24 +446,12 @@ impl GpuRenderer {
     /// Change font size, recomputing metrics, clearing atlases, and re-caching.
     ///
     /// Delegates to [`FontCollection::set_size`] for metrics + glyph cache,
-    /// then clears both GPU atlases, re-populates the monochrome atlas with
+    /// then clears all GPU atlases, re-populates the appropriate atlas with
     /// ASCII glyphs, and rebuilds bind groups for the new texture state.
     #[allow(dead_code, reason = "font size change wired in later section")]
     pub fn set_font_size(&mut self, size_pt: f32, dpi: f32, gpu: &GpuState) {
         self.font_collection.set_size(size_pt, dpi);
-
-        self.atlas.clear();
-        self.color_atlas.clear();
-
-        pre_cache_atlas(&mut self.atlas, &mut self.font_collection, &gpu.queue);
-
-        self.atlas_bind_group
-            .rebuild(&gpu.device, &self.atlas_layout, self.atlas.view());
-        self.color_atlas_bind_group.rebuild(
-            &gpu.device,
-            &self.atlas_layout,
-            self.color_atlas.view(),
-        );
+        self.clear_and_recache(gpu);
     }
 
     /// Change hinting mode, clearing atlases and re-caching.
@@ -418,46 +464,51 @@ impl GpuRenderer {
         if !self.font_collection.set_hinting(mode) {
             return;
         }
+        self.clear_and_recache(gpu);
+    }
 
+    /// Change rasterization format (e.g. `Alpha` → `SubpixelRgb`), clearing
+    /// atlases and re-caching.
+    ///
+    /// No-ops if the format is unchanged. Typically called once at startup
+    /// after the display scale factor is known to enable LCD subpixel
+    /// rendering on non-high-DPI displays.
+    pub fn set_glyph_format(&mut self, format: GlyphFormat, gpu: &GpuState) {
+        if !self.font_collection.set_format(format) {
+            return;
+        }
+        self.clear_and_recache(gpu);
+    }
+
+    /// Clear all atlases, re-cache ASCII, and rebuild bind groups.
+    fn clear_and_recache(&mut self, gpu: &GpuState) {
         self.atlas.clear();
+        self.subpixel_atlas.clear();
         self.color_atlas.clear();
 
-        pre_cache_atlas(&mut self.atlas, &mut self.font_collection, &gpu.queue);
+        let format = self.font_collection.format();
+        if format.is_subpixel() {
+            pre_cache_atlas(
+                &mut self.subpixel_atlas,
+                &mut self.font_collection,
+                &gpu.queue,
+            );
+        } else {
+            pre_cache_atlas(&mut self.atlas, &mut self.font_collection, &gpu.queue);
+        }
 
         self.atlas_bind_group
             .rebuild(&gpu.device, &self.atlas_layout, self.atlas.view());
+        self.subpixel_atlas_bind_group.rebuild(
+            &gpu.device,
+            &self.atlas_layout,
+            self.subpixel_atlas.view(),
+        );
         self.color_atlas_bind_group.rebuild(
             &gpu.device,
             &self.atlas_layout,
             self.color_atlas.view(),
         );
-    }
-}
-
-// ── Free functions ──
-
-/// Pre-cache printable ASCII glyphs (Regular + Bold) into the monochrome atlas.
-///
-/// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has
-/// a real Bold face. Used by both `GpuRenderer::new()` and `set_font_size()`.
-fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, queue: &Queue) {
-    let size_q6 = size_key(fc.size_px());
-    let hinted = fc.hinting_mode().hint_flag();
-    for ch in ' '..='~' {
-        let resolved = fc.resolve(ch, GlyphStyle::Regular);
-        let key = RasterKey::from_resolved(resolved, size_q6, hinted);
-        if let Some(glyph) = fc.rasterize(key) {
-            atlas.insert(key, glyph, queue);
-        }
-    }
-    if fc.has_bold() {
-        for ch in ' '..='~' {
-            let resolved = fc.resolve(ch, GlyphStyle::Bold);
-            let key = RasterKey::from_resolved(resolved, size_q6, hinted);
-            if let Some(glyph) = fc.rasterize(key) {
-                atlas.insert(key, glyph, queue);
-            }
-        }
     }
 }
 

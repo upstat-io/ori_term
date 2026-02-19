@@ -14,7 +14,7 @@ pub(crate) mod shaped_frame;
 
 use oriterm_core::{CellFlags, CursorShape, Rgb};
 
-use super::atlas::AtlasEntry;
+use super::atlas::{AtlasEntry, AtlasKind};
 use super::frame_input::FrameInput;
 use super::prepared_frame::PreparedFrame;
 use crate::font::{GlyphStyle, RasterKey, ShapedGlyph};
@@ -288,7 +288,7 @@ fn fill_frame_shaped(
                 atlas,
                 frame,
             }
-            .emit(row_glyphs, start_idx, col, x, y, cell.fg);
+            .emit(row_glyphs, start_idx, col, x, y, cell.fg, cell.bg);
         }
     }
 
@@ -327,9 +327,10 @@ impl GlyphEmitter<'_> {
     /// then iterates forward while subsequent glyphs share the same `col_start`
     /// (combining marks are contiguous in the shaper output).
     ///
-    /// Color emoji (entries with `is_color`) are routed to `frame.color_glyphs`
-    /// instead of `frame.glyphs`, so they render via the RGBA pipeline without
-    /// `fg_color` tinting.
+    /// Routing by [`AtlasKind`]:
+    /// - `Mono` → `frame.glyphs` (R8 atlas, tinted by `fg_color`).
+    /// - `Subpixel` → `frame.subpixel_glyphs` (RGBA atlas, per-channel blend).
+    /// - `Color` → `frame.color_glyphs` (RGBA atlas, rendered as-is).
     #[expect(
         clippy::too_many_arguments,
         reason = "per-cell shaped glyph params: glyph source, grid column, screen position, color"
@@ -342,6 +343,7 @@ impl GlyphEmitter<'_> {
         x: f32,
         y: f32,
         fg: Rgb,
+        bg: Rgb,
     ) {
         let mut is_first = true;
         for sg in &row_glyphs[start_idx..] {
@@ -370,12 +372,12 @@ impl GlyphEmitter<'_> {
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                let writer = if entry.is_color {
-                    &mut self.frame.color_glyphs
-                } else {
-                    &mut self.frame.glyphs
+                let writer = match entry.kind {
+                    AtlasKind::Color => &mut self.frame.color_glyphs,
+                    AtlasKind::Subpixel => &mut self.frame.subpixel_glyphs,
+                    AtlasKind::Mono => &mut self.frame.glyphs,
                 };
-                writer.push_glyph(rect, uv, fg, 1.0, entry.page);
+                writer.push_glyph_with_bg(rect, uv, fg, bg, 1.0, entry.page);
             }
         }
     }

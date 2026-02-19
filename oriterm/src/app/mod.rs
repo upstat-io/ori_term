@@ -16,7 +16,7 @@ use oriterm_core::{Event, TermMode};
 use oriterm_ui::window::WindowConfig;
 
 use self::cursor_blink::CursorBlink;
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
+use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, SubpixelMode};
 use crate::gpu::{GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame};
 use crate::tab::{Tab, TabId, TermEvent};
 use crate::window::TermWindow;
@@ -136,10 +136,14 @@ impl App {
             Err(_) => return Err("font discovery thread panicked".into()),
         };
 
-        // 5b. Adjust hinting mode for the actual display scale factor.
-        // The font thread used Full as default; HiDPI displays (2x+) prefer None.
-        let hinting = HintingMode::from_scale_factor(window.scale_factor().factor());
+        // 5b. Adjust hinting and subpixel mode for the actual display scale factor.
+        // The font thread used Full hinting + Alpha format as defaults; HiDPI
+        // displays (2x+) disable hinting and subpixel rendering.
+        let scale = window.scale_factor().factor();
+        let hinting = HintingMode::from_scale_factor(scale);
         font_collection.set_hinting(hinting);
+        let subpixel_format = SubpixelMode::from_scale_factor(scale).glyph_format();
+        font_collection.set_format(subpixel_format);
 
         // 6. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
         let t_renderer_start = std::time::Instant::now();
@@ -321,10 +325,12 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(window) = &mut self.window {
                     if window.update_scale_factor(scale_factor) {
-                        // Re-evaluate hinting mode for the new scale factor.
+                        // Re-evaluate hinting and subpixel mode for the new scale.
                         let hinting = HintingMode::from_scale_factor(scale_factor);
+                        let format = SubpixelMode::from_scale_factor(scale_factor).glyph_format();
                         if let (Some(renderer), Some(gpu)) = (&mut self.renderer, &self.gpu) {
                             renderer.set_hinting_mode(hinting, gpu);
+                            renderer.set_glyph_format(format, gpu);
                         }
                         self.dirty = true;
                     }

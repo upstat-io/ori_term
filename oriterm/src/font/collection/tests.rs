@@ -1152,3 +1152,56 @@ fn raster_key_hinting_distinguishes_cache() {
         "same glyph with different hinting should have different keys",
     );
 }
+
+// ── set_format ──
+
+#[test]
+fn set_format_clears_cache() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    assert_eq!(fc.format(), GlyphFormat::Alpha);
+
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
+    let _ = fc.rasterize(key);
+    assert!(
+        fc.cache_len() > 0,
+        "cache should have entries after rasterize",
+    );
+
+    let changed = fc.set_format(GlyphFormat::SubpixelRgb);
+    assert!(changed, "set_format should return true when format changes");
+    assert_eq!(fc.cache_len(), 0, "set_format should clear the glyph cache",);
+    assert_eq!(fc.format(), GlyphFormat::SubpixelRgb);
+}
+
+#[test]
+fn set_format_noop_when_unchanged() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
+    let _ = fc.rasterize(key);
+    let before = fc.cache_len();
+
+    let changed = fc.set_format(GlyphFormat::Alpha);
+    assert!(
+        !changed,
+        "set_format should return false when format unchanged",
+    );
+    assert_eq!(fc.cache_len(), before, "cache should not be cleared");
+}
+
+#[test]
+fn set_format_alpha_to_subpixel_changes_rasterization() {
+    let mut fc = embedded_only_collection(GlyphFormat::SubpixelRgb);
+    let resolved = fc.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
+    let glyph = fc
+        .rasterize(key)
+        .expect("'H' should rasterize in subpixel mode");
+    assert_eq!(glyph.format, GlyphFormat::SubpixelRgb);
+    // Subpixel bitmaps are 4 bytes per pixel.
+    assert_eq!(
+        glyph.bitmap.len(),
+        (glyph.width * glyph.height * 4) as usize,
+    );
+}

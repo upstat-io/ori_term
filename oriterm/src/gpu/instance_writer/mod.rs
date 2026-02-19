@@ -163,6 +163,38 @@ impl InstanceWriter {
         );
     }
 
+    /// Push a texture-sampled glyph instance with background color.
+    ///
+    /// Like [`push_glyph`](Self::push_glyph) but also writes the cell's
+    /// background color into the `bg_color` instance field. The subpixel
+    /// fragment shader reads `bg_color` for per-channel `mix()` blending.
+    /// Mono and color pipelines ignore the `bg_color` field.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "glyph instance: screen rect, UV coords, fg/bg colors, atlas page"
+    )]
+    pub fn push_glyph_with_bg(
+        &mut self,
+        rect: ScreenRect,
+        uv: [f32; 4],
+        fg: Rgb,
+        bg: Rgb,
+        alpha: f32,
+        atlas_page: u32,
+    ) {
+        self.push_instance(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            uv,
+            rgb_to_floats(fg, alpha),
+            rgb_to_floats(bg, 1.0),
+            InstanceKind::Glyph,
+            atlas_page,
+        );
+    }
+
     /// Push a cursor rectangle instance.
     ///
     /// Color is written to the `bg_color` field (same as rects) so cursors

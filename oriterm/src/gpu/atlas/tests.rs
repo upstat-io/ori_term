@@ -3,7 +3,7 @@
 use crate::font::{FaceIdx, GlyphFormat, RasterKey, RasterizedGlyph, SyntheticFlags};
 use crate::gpu::state::GpuState;
 
-use super::{GLYPH_PADDING, GlyphAtlas, PAGE_SIZE};
+use super::{AtlasKind, GLYPH_PADDING, GlyphAtlas, PAGE_SIZE};
 
 // ── Helpers ──
 
@@ -599,4 +599,76 @@ fn q6_keying_distinct_sizes() {
     assert_ne!(e14.uv_x, e16.uv_x);
     assert_eq!(e14.width, 8);
     assert_eq!(e16.width, 9);
+}
+
+// ── Subpixel atlas ──
+
+fn subpixel_glyph(width: u32, height: u32) -> RasterizedGlyph {
+    RasterizedGlyph {
+        width,
+        height,
+        bearing_x: 0,
+        bearing_y: height as i32,
+        advance: width as f32,
+        format: GlyphFormat::SubpixelRgb,
+        bitmap: vec![0xFF; (width * height * 4) as usize],
+    }
+}
+
+#[test]
+fn subpixel_atlas_creation() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::SubpixelRgb);
+    assert_eq!(atlas.page_count(), 1);
+    assert!(atlas.is_empty());
+}
+
+#[test]
+fn subpixel_atlas_insert_produces_subpixel_kind() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::SubpixelRgb);
+    let key = test_key(65);
+    let glyph = subpixel_glyph(8, 14);
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
+    assert_eq!(entry.kind, AtlasKind::Subpixel);
+}
+
+#[test]
+fn mono_atlas_insert_produces_mono_kind() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+    let key = test_key(65);
+    let glyph = test_glyph(8, 14);
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
+    assert_eq!(entry.kind, AtlasKind::Mono);
+}
+
+#[test]
+fn color_atlas_insert_produces_color_kind() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Color);
+    let key = test_key(65);
+    let glyph = RasterizedGlyph {
+        width: 16,
+        height: 16,
+        bearing_x: 0,
+        bearing_y: 16,
+        advance: 16.0,
+        format: GlyphFormat::Color,
+        bitmap: vec![0xFF; 16 * 16 * 4],
+    };
+    let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
+    assert_eq!(entry.kind, AtlasKind::Color);
 }

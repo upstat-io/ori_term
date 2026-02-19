@@ -9,7 +9,7 @@ use super::{
     prepare_frame_shaped_into,
 };
 use crate::font::{FaceIdx, GlyphStyle, RasterKey, ShapedGlyph, SyntheticFlags};
-use crate::gpu::atlas::AtlasEntry;
+use crate::gpu::atlas::{AtlasEntry, AtlasKind};
 use crate::gpu::frame_input::{FrameInput, ViewportSize};
 use crate::gpu::instance_writer::INSTANCE_SIZE;
 use crate::gpu::prepared_frame::PreparedFrame;
@@ -44,7 +44,7 @@ fn test_entry(ch: char) -> AtlasEntry {
         height: 14,
         bearing_x: 1,
         bearing_y: 12,
-        is_color: false,
+        kind: AtlasKind::Mono,
     }
 }
 
@@ -864,7 +864,7 @@ fn test_entry_for_glyph(glyph_id: u16) -> AtlasEntry {
         height: 14,
         bearing_x: 1,
         bearing_y: 12,
-        is_color: false,
+        kind: AtlasKind::Mono,
     }
 }
 
@@ -1107,7 +1107,7 @@ fn shaped_empty_glyphs_produces_bg_only() {
 
 #[test]
 fn color_glyph_routes_to_color_glyphs_buffer() {
-    // A shaped glyph with is_color=true should go to frame.color_glyphs,
+    // A shaped glyph with AtlasKind::Color should go to frame.color_glyphs,
     // not frame.glyphs.
     let size_q6 = 768;
     let input = FrameInput::test_grid(1, 1, "E"); // emoji placeholder
@@ -1132,7 +1132,7 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
             height: 14,
             bearing_x: 0,
             bearing_y: 12,
-            is_color: true, // Color emoji!
+            kind: AtlasKind::Color, // Color emoji!
         },
     );
     let atlas = KeyTestAtlas(map);
@@ -1190,7 +1190,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             hinted: true,
         },
         AtlasEntry {
-            is_color: true,
+            kind: AtlasKind::Color,
             ..test_entry_for_glyph(200)
         },
     );

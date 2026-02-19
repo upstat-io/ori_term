@@ -5,8 +5,9 @@
 //! evicted via LRU when all are full. Glyphs are inserted once and looked
 //! up by [`RasterKey`] on subsequent frames.
 //!
-//! Two atlas instances are used at runtime:
+//! Three atlas instances are used at runtime:
 //! - **Monochrome** (`R8Unorm`): standard glyph alpha masks.
+//! - **Subpixel** (`Rgba8Unorm`): LCD subpixel coverage masks (RGB/BGR).
 //! - **Color** (`Rgba8Unorm`): color emoji and bitmap glyphs.
 
 mod rect_packer;
@@ -37,6 +38,20 @@ struct AtlasPage {
     glyph_count: u32,
 }
 
+/// Which atlas an entry resides in.
+///
+/// Determines pipeline routing during the prepare phase: each kind maps
+/// to a different fragment shader and blend mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtlasKind {
+    /// Monochrome glyph: `R8Unorm` atlas, tinted by `fg_color`.
+    Mono,
+    /// LCD subpixel glyph: `Rgba8Unorm` atlas, per-channel `mix(bg, fg, mask)`.
+    Subpixel,
+    /// Color bitmap: `Rgba8Unorm` atlas, rendered as-is (no tinting).
+    Color,
+}
+
 /// Location and metrics of a cached glyph in the atlas.
 #[derive(Debug, Clone, Copy)]
 pub struct AtlasEntry {
@@ -58,8 +73,18 @@ pub struct AtlasEntry {
     pub bearing_x: i32,
     /// Vertical bearing (pixels from baseline to top edge; positive = above).
     pub bearing_y: i32,
+    /// Which atlas this entry resides in (determines pipeline routing).
+    pub kind: AtlasKind,
+}
+
+impl AtlasEntry {
     /// Whether this entry lives in the color (RGBA) atlas.
-    pub is_color: bool,
+    ///
+    /// Convenience for code that only needs the mono/non-mono distinction.
+    #[allow(dead_code, reason = "convenience accessor for future use")]
+    pub fn is_color(&self) -> bool {
+        matches!(self.kind, AtlasKind::Color)
+    }
 }
 
 /// Texture atlas for glyph bitmaps using guillotine packing on a `Texture2DArray`.
@@ -94,11 +119,12 @@ impl GlyphAtlas {
     ///
     /// `format` determines the texture format:
     /// - [`GlyphFormat::Alpha`] → `R8Unorm` (1 byte/pixel).
+    /// - [`GlyphFormat::SubpixelRgb`] / [`GlyphFormat::SubpixelBgr`] → `Rgba8Unorm` (4 bytes/pixel).
     /// - [`GlyphFormat::Color`] → `Rgba8Unorm` (4 bytes/pixel).
     pub fn new(device: &Device, format: GlyphFormat) -> Self {
         let tex_format = match format {
-            GlyphFormat::Color => TextureFormat::Rgba8Unorm,
-            _ => TextureFormat::R8Unorm,
+            GlyphFormat::Alpha => TextureFormat::R8Unorm,
+            _ => TextureFormat::Rgba8Unorm,
         };
         let (texture, view) = create_texture_array(device, PAGE_SIZE, MAX_PAGES, tex_format);
 
@@ -211,7 +237,11 @@ impl GlyphAtlas {
         self.pages[page_idx as usize].last_used_frame = self.frame_counter;
         self.pages[page_idx as usize].glyph_count += 1;
 
-        let is_color = self.format == GlyphFormat::Color;
+        let kind = match self.format {
+            GlyphFormat::Color => AtlasKind::Color,
+            GlyphFormat::SubpixelRgb | GlyphFormat::SubpixelBgr => AtlasKind::Subpixel,
+            GlyphFormat::Alpha => AtlasKind::Mono,
+        };
         let ps = self.page_size as f32;
         let entry = AtlasEntry {
             page: page_idx,
@@ -223,7 +253,7 @@ impl GlyphAtlas {
             height: glyph.height,
             bearing_x: glyph.bearing_x,
             bearing_y: glyph.bearing_y,
-            is_color,
+            kind,
         };
 
         self.cache.insert(key, entry);
@@ -381,8 +411,8 @@ fn create_texture_array(
     format: TextureFormat,
 ) -> (Texture, TextureView) {
     let label = match format {
-        TextureFormat::Rgba8Unorm => "color_glyph_atlas_array",
-        _ => "glyph_atlas_array",
+        TextureFormat::R8Unorm => "glyph_atlas_array",
+        _ => "rgba_glyph_atlas_array",
     };
     let texture = device.create_texture(&TextureDescriptor {
         label: Some(label),

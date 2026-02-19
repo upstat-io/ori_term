@@ -1,8 +1,10 @@
 //! GPU render pipelines: WGSL shaders, vertex layout, and pipeline factories.
 //!
-//! Three pipelines share a single 80-byte instance buffer layout:
+//! Four pipelines share a single 80-byte instance buffer layout:
 //! - **Background** ([`create_bg_pipeline`]): solid-color quads, no texture.
 //! - **Foreground** ([`create_fg_pipeline`]): `R8Unorm` atlas-sampled glyph quads.
+//! - **Subpixel foreground** ([`create_subpixel_fg_pipeline`]): `Rgba8Unorm`
+//!   atlas-sampled LCD subpixel quads (per-channel `mix(bg, fg, mask)`).
 //! - **Color foreground** ([`create_color_fg_pipeline`]): `Rgba8Unorm` atlas-sampled
 //!   color emoji quads (no `fg_color` tinting).
 //!
@@ -26,6 +28,9 @@ const BG_SHADER_SRC: &str = include_str!("../shaders/bg.wgsl");
 
 /// Embedded WGSL source for the foreground shader.
 const FG_SHADER_SRC: &str = include_str!("../shaders/fg.wgsl");
+
+/// Embedded WGSL source for the subpixel foreground shader.
+const SUBPIXEL_FG_SHADER_SRC: &str = include_str!("../shaders/subpixel_fg.wgsl");
 
 /// Embedded WGSL source for the color foreground shader.
 const COLOR_FG_SHADER_SRC: &str = include_str!("../shaders/color_fg.wgsl");
@@ -237,6 +242,57 @@ pub fn create_fg_pipeline(
     gpu.device
         .create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("fg_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[instance_buffer_layout()],
+            },
+            primitive: QUAD_PRIMITIVE,
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: gpu.render_format(),
+                    blend: Some(PREMUL_ALPHA_BLEND),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: gpu.pipeline_cache.as_ref(),
+        })
+}
+
+/// Create the subpixel foreground render pipeline.
+///
+/// Uses bind groups 0 (uniforms) and 1 (subpixel atlas texture + sampler).
+/// Samples per-channel coverage from the RGBA atlas and composites with
+/// `mix(bg, fg, mask)` for LCD subpixel rendering. Premultiplied alpha.
+pub fn create_subpixel_fg_pipeline(
+    gpu: &GpuState,
+    uniform_layout: &BindGroupLayout,
+    atlas_layout: &BindGroupLayout,
+) -> RenderPipeline {
+    let shader = gpu.device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("subpixel_fg_shader"),
+        source: wgpu::ShaderSource::Wgsl(SUBPIXEL_FG_SHADER_SRC.into()),
+    });
+
+    let pipeline_layout = gpu
+        .device
+        .create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("subpixel_fg_pipeline_layout"),
+            bind_group_layouts: &[uniform_layout, atlas_layout],
+            ..Default::default()
+        });
+
+    gpu.device
+        .create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("subpixel_fg_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader,

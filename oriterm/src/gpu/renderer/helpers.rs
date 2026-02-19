@@ -13,8 +13,8 @@ use super::super::atlas::GlyphAtlas;
 use super::super::frame_input::FrameInput;
 use super::super::prepare::ShapedFrame;
 use crate::font::{
-    FontCollection, GlyphFormat, RasterKey, build_col_glyph_map, prepare_line, shape_prepared_runs,
-    size_key,
+    FontCollection, GlyphFormat, GlyphStyle, RasterKey, build_col_glyph_map, prepare_line,
+    shape_prepared_runs, size_key,
 };
 
 /// Reusable per-frame scratch buffers for the shaping pipeline.
@@ -84,11 +84,18 @@ pub(super) fn shape_frame(
 
 /// Ensure all shaped glyphs are cached in the appropriate atlas.
 ///
-/// Routes color glyphs ([`GlyphFormat::Color`]) to `color_atlas` and all
-/// others to `mono_atlas`.
+/// Routes glyphs by format:
+/// - [`GlyphFormat::Color`] → `color_atlas`.
+/// - [`GlyphFormat::SubpixelRgb`] / [`GlyphFormat::SubpixelBgr`] → `subpixel_atlas`.
+/// - [`GlyphFormat::Alpha`] → `mono_atlas`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "three atlases + fonts + queue for glyph routing"
+)]
 pub(super) fn ensure_shaped_glyphs_cached(
     shaped: &ShapedFrame,
     mono_atlas: &mut GlyphAtlas,
+    subpixel_atlas: &mut GlyphAtlas,
     color_atlas: &mut GlyphAtlas,
     fonts: &mut FontCollection,
     queue: &Queue,
@@ -103,18 +110,27 @@ pub(super) fn ensure_shaped_glyphs_cached(
             synthetic: glyph.synthetic,
             hinted,
         };
-        // Check both atlases for cache hit.
-        if mono_atlas.lookup_touch(key).is_some() || color_atlas.lookup_touch(key).is_some() {
+        // Check all three atlases for cache hit.
+        if mono_atlas.lookup_touch(key).is_some()
+            || subpixel_atlas.lookup_touch(key).is_some()
+            || color_atlas.lookup_touch(key).is_some()
+        {
             continue;
         }
         if mono_atlas.is_known_empty(key) {
             continue;
         }
         if let Some(rasterized) = fonts.rasterize(key) {
-            if rasterized.format == GlyphFormat::Color {
-                color_atlas.insert(key, rasterized, queue);
-            } else {
-                mono_atlas.insert(key, rasterized, queue);
+            match rasterized.format {
+                GlyphFormat::Color => {
+                    color_atlas.insert(key, rasterized, queue);
+                }
+                GlyphFormat::SubpixelRgb | GlyphFormat::SubpixelBgr => {
+                    subpixel_atlas.insert(key, rasterized, queue);
+                }
+                GlyphFormat::Alpha => {
+                    mono_atlas.insert(key, rasterized, queue);
+                }
             }
         } else {
             mono_atlas.mark_empty(key);
@@ -187,4 +203,29 @@ pub(super) fn record_draw(
     }
     pass.set_vertex_buffer(0, buf.slice(..));
     pass.draw(0..4, 0..instance_count);
+}
+
+/// Pre-cache printable ASCII glyphs (Regular + Bold) into the given atlas.
+///
+/// Iterates 0x20–0x7E for Regular, then again for Bold if the collection has
+/// a real Bold face. Used by both `GpuRenderer::new()` and `clear_and_recache()`.
+pub(super) fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, queue: &Queue) {
+    let size_q6 = size_key(fc.size_px());
+    let hinted = fc.hinting_mode().hint_flag();
+    for ch in ' '..='~' {
+        let resolved = fc.resolve(ch, GlyphStyle::Regular);
+        let key = RasterKey::from_resolved(resolved, size_q6, hinted);
+        if let Some(glyph) = fc.rasterize(key) {
+            atlas.insert(key, glyph, queue);
+        }
+    }
+    if fc.has_bold() {
+        for ch in ' '..='~' {
+            let resolved = fc.resolve(ch, GlyphStyle::Bold);
+            let key = RasterKey::from_resolved(resolved, size_q6, hinted);
+            if let Some(glyph) = fc.rasterize(key) {
+                atlas.insert(key, glyph, queue);
+            }
+        }
+    }
 }

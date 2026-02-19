@@ -140,10 +140,9 @@ pub enum GlyphFormat {
     /// 1 byte/pixel grayscale alpha coverage.
     Alpha,
     /// 4 bytes/pixel RGBA per-channel subpixel coverage (R-G-B order).
-    #[allow(dead_code, reason = "subpixel rendering in Section 6")]
     SubpixelRgb,
     /// 4 bytes/pixel RGBA per-channel subpixel coverage (B-G-R order).
-    #[allow(dead_code, reason = "subpixel rendering in Section 6")]
+    #[allow(dead_code, reason = "BGR display support — config in Section 13")]
     SubpixelBgr,
     /// 4 bytes/pixel RGBA premultiplied color (for color emoji).
     Color,
@@ -156,6 +155,60 @@ impl GlyphFormat {
             Self::Alpha => 1,
             Self::SubpixelRgb | Self::SubpixelBgr | Self::Color => 4,
         }
+    }
+
+    /// Whether this format is a subpixel variant.
+    pub fn is_subpixel(self) -> bool {
+        matches!(self, Self::SubpixelRgb | Self::SubpixelBgr)
+    }
+}
+
+/// LCD subpixel rendering mode.
+///
+/// Controls whether glyphs are rasterized with per-channel coverage for
+/// ~3x effective horizontal resolution on LCD displays. Automatically
+/// disabled on high-DPI (scale >= 2.0) where subpixels are invisible.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum SubpixelMode {
+    /// RGB subpixel order (vast majority of displays).
+    #[default]
+    Rgb,
+    /// BGR subpixel order (rare panels).
+    #[allow(dead_code, reason = "BGR display support — config in Section 13")]
+    Bgr,
+    /// Disabled — grayscale alpha rendering only.
+    None,
+}
+
+impl SubpixelMode {
+    /// Auto-detect subpixel mode from display scale factor.
+    ///
+    /// `scale_factor < 2.0` → `Rgb` (subpixels visible on non-HiDPI).
+    /// `scale_factor >= 2.0` → `None` (Retina/4K — subpixels invisible).
+    pub fn from_scale_factor(scale_factor: f64) -> Self {
+        if scale_factor < 2.0 {
+            Self::Rgb
+        } else {
+            Self::None
+        }
+    }
+
+    /// Convert to the [`GlyphFormat`] used for rasterization.
+    ///
+    /// Returns `Alpha` when subpixel is disabled, otherwise the matching
+    /// subpixel format.
+    pub fn glyph_format(self) -> GlyphFormat {
+        match self {
+            Self::Rgb => GlyphFormat::SubpixelRgb,
+            Self::Bgr => GlyphFormat::SubpixelBgr,
+            Self::None => GlyphFormat::Alpha,
+        }
+    }
+
+    /// Whether subpixel rendering is enabled.
+    #[allow(dead_code, reason = "convenience predicate — config in Section 13")]
+    pub fn is_enabled(self) -> bool {
+        !matches!(self, Self::None)
     }
 }
 
@@ -333,3 +386,6 @@ pub(crate) fn is_builtin(ch: char) -> bool {
         | '\u{E0B6}'              // Powerline left rounded separator
     )
 }
+
+#[cfg(test)]
+mod tests;
