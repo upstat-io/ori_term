@@ -404,6 +404,123 @@ fn rasterize_powerline_thin_triangle() {
     );
 }
 
+// ── Powerline edge stagger tests ──
+//
+// A smooth diagonal edge must never jump by more than 1 pixel between
+// consecutive scanlines. Larger jumps produce visible "shelves" that
+// look distorted. These tests verify the invariant across a range of
+// cell aspect ratios.
+
+/// Rightmost filled pixel + 1 per row (the "right edge" of the triangle).
+fn right_edges(glyph: &RasterizedGlyph) -> Vec<u32> {
+    (0..glyph.height)
+        .map(|y| {
+            let start = (y * glyph.width) as usize;
+            let row = &glyph.bitmap[start..start + glyph.width as usize];
+            row.iter().rposition(|&b| b > 0).map_or(0, |x| x as u32 + 1)
+        })
+        .collect()
+}
+
+/// Leftmost filled pixel per row (the "left edge" of the triangle).
+fn left_edges(glyph: &RasterizedGlyph) -> Vec<u32> {
+    (0..glyph.height)
+        .map(|y| {
+            let start = (y * glyph.width) as usize;
+            let row = &glyph.bitmap[start..start + glyph.width as usize];
+            row.iter()
+                .position(|&b| b > 0)
+                .map_or(glyph.width, |x| x as u32)
+        })
+        .collect()
+}
+
+/// Assert no consecutive edge values differ by more than 1 pixel.
+fn assert_max_stagger_1(edges: &[u32], label: &str, w: u32, h: u32) {
+    for i in 1..edges.len() {
+        let delta = edges[i].abs_diff(edges[i - 1]);
+        assert!(
+            delta <= 1,
+            "{label} at {w}x{h}: stagger of {delta} between rows {} and {} \
+             (edge {} \u{2192} {})",
+            i - 1,
+            i,
+            edges[i - 1],
+            edges[i],
+        );
+    }
+}
+
+/// Cell sizes covering typical terminal font metrics.
+///
+/// Max stagger of 1 is geometrically guaranteed when `2 * w <= h`
+/// (the edge step per scanline is ≤ 1.0). All common monospace fonts
+/// at standard DPI settings fall within this ratio.
+const STAGGER_TEST_SIZES: &[(u32, u32)] = &[
+    (6, 12),
+    (6, 14),
+    (6, 16),
+    (7, 14),
+    (7, 16),
+    (7, 17),
+    (8, 16),
+    (8, 17),
+    (8, 18),
+    (8, 20),
+    (9, 18),
+    (9, 20),
+    (10, 20),
+    (10, 22),
+    (10, 24),
+    (12, 24),
+    (12, 26),
+    (14, 28),
+    (14, 30),
+    (16, 32),
+    (16, 34),
+    (20, 40),
+];
+
+#[test]
+fn powerline_right_triangle_max_stagger_1() {
+    for &(w, h) in STAGGER_TEST_SIZES {
+        let glyph = rasterize('\u{E0B0}', w, h)
+            .unwrap_or_else(|| panic!("E0B0 should rasterize at {w}x{h}"));
+        let edges = right_edges(&glyph);
+        assert_max_stagger_1(&edges, "E0B0 right edge", w, h);
+    }
+}
+
+#[test]
+fn powerline_left_triangle_max_stagger_1() {
+    for &(w, h) in STAGGER_TEST_SIZES {
+        let glyph = rasterize('\u{E0B2}', w, h)
+            .unwrap_or_else(|| panic!("E0B2 should rasterize at {w}x{h}"));
+        let edges = left_edges(&glyph);
+        assert_max_stagger_1(&edges, "E0B2 left edge", w, h);
+    }
+}
+
+#[test]
+fn powerline_right_thin_max_stagger_1() {
+    for &(w, h) in STAGGER_TEST_SIZES {
+        let glyph = rasterize('\u{E0B1}', w, h)
+            .unwrap_or_else(|| panic!("E0B1 should rasterize at {w}x{h}"));
+        let edges = right_edges(&glyph);
+        assert_max_stagger_1(&edges, "E0B1 right edge", w, h);
+    }
+}
+
+#[test]
+fn powerline_left_thin_max_stagger_1() {
+    for &(w, h) in STAGGER_TEST_SIZES {
+        let glyph = rasterize('\u{E0B3}', w, h)
+            .unwrap_or_else(|| panic!("E0B3 should rasterize at {w}x{h}"));
+        let edges = left_edges(&glyph);
+        assert_max_stagger_1(&edges, "E0B3 left edge", w, h);
+    }
+}
+
 // ── Canvas tests ──
 
 #[test]
