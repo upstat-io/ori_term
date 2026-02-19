@@ -380,7 +380,7 @@ impl GpuRenderer {
         );
     }
 
-    /// Record the five draw passes into the render pass.
+    /// Record the six draw passes into the render pass.
     fn record_draw_passes<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         let uniform_bg = self.uniform_buffer.bind_group();
         let mono_atlas = Some(self.atlas_bind_group.bind_group());
