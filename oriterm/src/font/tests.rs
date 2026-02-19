@@ -131,6 +131,68 @@ fn glyph_format_is_subpixel() {
     assert!(!GlyphFormat::Color.is_subpixel());
 }
 
+// ── SubpixelMode::for_display edge cases ──
+
+#[test]
+fn subpixel_for_display_opacity_boundary() {
+    // opacity 0.999 is below 1.0 → None (transparent bg disables subpixel).
+    assert_eq!(
+        SubpixelMode::for_display(1.0, 0.999),
+        SubpixelMode::None,
+        "opacity < 1.0 → None",
+    );
+    // opacity exactly 1.0 → delegates to scale factor.
+    assert_eq!(
+        SubpixelMode::for_display(1.0, 1.0),
+        SubpixelMode::Rgb,
+        "opacity 1.0 + 1x scale → Rgb",
+    );
+}
+
+#[test]
+fn subpixel_mode_edge_cases() {
+    // Very low scale → subpixel enabled.
+    assert_eq!(
+        SubpixelMode::from_scale_factor(0.5),
+        SubpixelMode::Rgb,
+        "0.5x scale → Rgb",
+    );
+    // Very high scale → subpixel disabled.
+    assert_eq!(
+        SubpixelMode::from_scale_factor(10.0),
+        SubpixelMode::None,
+        "10x scale → None",
+    );
+}
+
+#[test]
+fn subpixel_for_display_high_dpi_opaque() {
+    // High DPI with opaque bg → None (HiDPI wins even when opaque).
+    assert_eq!(
+        SubpixelMode::for_display(3.0, 1.0),
+        SubpixelMode::None,
+        "3x scale + opaque → None (HiDPI)",
+    );
+}
+
+// ── SubpixelMode threshold boundary ──
+
+#[test]
+fn subpixel_mode_threshold_boundary() {
+    // Just below threshold → Rgb.
+    assert_eq!(
+        SubpixelMode::from_scale_factor(1.99),
+        SubpixelMode::Rgb,
+        "1.99x scale → Rgb (just below 2.0 threshold)",
+    );
+    // Exactly at threshold → None.
+    assert_eq!(
+        SubpixelMode::from_scale_factor(2.0),
+        SubpixelMode::None,
+        "2.0x scale → None (at threshold)",
+    );
+}
+
 // ── HintingMode ──
 
 #[test]
@@ -142,4 +204,36 @@ fn hinting_mode_default_is_full() {
 fn hinting_mode_hint_flag() {
     assert!(HintingMode::Full.hint_flag());
     assert!(!HintingMode::None.hint_flag());
+}
+
+#[test]
+fn hinting_mode_threshold_boundary() {
+    // Just below threshold → Full.
+    assert_eq!(
+        HintingMode::from_scale_factor(1.99),
+        HintingMode::Full,
+        "1.99x scale → Full (just below 2.0 threshold)",
+    );
+    // Exactly at threshold → None.
+    assert_eq!(
+        HintingMode::from_scale_factor(2.0),
+        HintingMode::None,
+        "2.0x scale → None (at threshold)",
+    );
+}
+
+#[test]
+fn hinting_mode_edge_cases() {
+    // Very low scale → Full.
+    assert_eq!(
+        HintingMode::from_scale_factor(0.5),
+        HintingMode::Full,
+        "0.5x scale → Full",
+    );
+    // Very high scale → None.
+    assert_eq!(
+        HintingMode::from_scale_factor(10.0),
+        HintingMode::None,
+        "10x scale → None",
+    );
 }

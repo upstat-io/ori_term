@@ -66,10 +66,10 @@ impl std::error::Error for SurfaceError {}
 
 /// Bridges all atlases (mono, subpixel, color) into the [`AtlasLookup`] trait.
 ///
-/// During the Prepare phase, glyph lookups check the color atlas first (for
-/// color emoji), then the subpixel atlas, then the monochrome atlas. Each
-/// entry carries an [`AtlasKind`](super::atlas::AtlasKind) that the prepare
-/// phase uses to route glyphs to the correct instance buffer.
+/// During the Prepare phase, glyph lookups probe the monochrome atlas first
+/// (most glyphs are mono text), then the subpixel atlas, then the color atlas.
+/// Each entry carries an [`AtlasKind`](super::atlas::AtlasKind) that the
+/// prepare phase uses to route glyphs to the correct instance buffer.
 struct CombinedAtlasLookup<'a> {
     mono: &'a GlyphAtlas,
     subpixel: &'a GlyphAtlas,

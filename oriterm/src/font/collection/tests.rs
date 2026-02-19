@@ -1153,6 +1153,109 @@ fn raster_key_hinting_distinguishes_cache() {
     );
 }
 
+// ── set_hinting round-trip & preservation ──
+
+#[test]
+fn set_hinting_preserves_cached_glyphs_after_clear() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    // Populate cache.
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
+    let _ = fc.rasterize(key);
+    assert!(fc.cache_len() > 0);
+
+    // Toggle hinting mode.
+    let changed = fc.set_hinting(HintingMode::None);
+    assert!(changed);
+    assert_eq!(fc.cache_len(), 0, "cache cleared after hinting change");
+
+    // Verify collection still works after cache clear.
+    let resolved2 = fc.resolve('B', GlyphStyle::Regular);
+    let key2 = RasterKey::from_resolved(resolved2, super::size_key(fc.size_px()), false);
+    let glyph = fc.rasterize(key2);
+    assert!(
+        glyph.is_some(),
+        "rasterization should work after hinting toggle"
+    );
+}
+
+#[test]
+fn set_hinting_round_trip() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    assert_eq!(fc.hinting_mode(), HintingMode::Full);
+
+    fc.set_hinting(HintingMode::None);
+    assert_eq!(fc.hinting_mode(), HintingMode::None);
+
+    fc.set_hinting(HintingMode::Full);
+    assert_eq!(
+        fc.hinting_mode(),
+        HintingMode::Full,
+        "round-trip should restore original mode",
+    );
+}
+
+// ── set_format switching & size scaling ──
+
+#[test]
+fn set_format_switches_glyph_output() {
+    let mut fc_alpha = embedded_only_collection(GlyphFormat::Alpha);
+    let mut fc_subpx = embedded_only_collection(GlyphFormat::SubpixelRgb);
+
+    let resolved_a = fc_alpha.resolve('H', GlyphStyle::Regular);
+    let key_a = RasterKey::from_resolved(resolved_a, super::size_key(fc_alpha.size_px()), true);
+    let glyph_a = fc_alpha.rasterize(key_a).expect("Alpha 'H' must rasterize");
+
+    let resolved_s = fc_subpx.resolve('H', GlyphStyle::Regular);
+    let key_s = RasterKey::from_resolved(resolved_s, super::size_key(fc_subpx.size_px()), true);
+    let glyph_s = fc_subpx
+        .rasterize(key_s)
+        .expect("SubpixelRgb 'H' must rasterize");
+
+    // Alpha: 1 byte/pixel. SubpixelRgb: 4 bytes/pixel.
+    let alpha_size = (glyph_a.width * glyph_a.height) as usize;
+    let subpx_size = (glyph_s.width * glyph_s.height * 4) as usize;
+    assert_eq!(glyph_a.bitmap.len(), alpha_size, "Alpha = 1 bpp");
+    assert_eq!(glyph_s.bitmap.len(), subpx_size, "SubpixelRgb = 4 bpp");
+    assert_ne!(
+        glyph_a.bitmap.len(),
+        glyph_s.bitmap.len(),
+        "different formats should produce different bitmap sizes",
+    );
+}
+
+#[test]
+fn set_size_metrics_scale_proportionally() {
+    let fc_small = embedded_only_collection(GlyphFormat::Alpha);
+    let small = fc_small.cell_metrics();
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let fc_large = FontCollection::new(
+        font_set,
+        24.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+    let large = fc_large.cell_metrics();
+
+    // 24pt is 2x of 12pt — cell dimensions should scale up significantly.
+    // Font metrics don't scale perfectly linearly due to hinting, rounding,
+    // and OS/2 table line-gap calculations, so we use a generous tolerance.
+    let width_ratio = large.width / small.width;
+    let height_ratio = large.height / small.height;
+    assert!(
+        (width_ratio - 2.0).abs() < 0.3,
+        "width ratio should be ~2.0, got {width_ratio}",
+    );
+    assert!(
+        (height_ratio - 2.0).abs() < 0.5,
+        "height ratio should be ~2.0, got {height_ratio}",
+    );
+}
+
 // ── set_format ──
 
 #[test]

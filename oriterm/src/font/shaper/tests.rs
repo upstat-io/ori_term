@@ -598,3 +598,80 @@ fn ui_truncate_exact_fit() {
     let result = super::truncate_with_ellipsis("Hello", 5.0 * cell_w, &fc);
     assert_eq!(result.as_ref(), "Hello", "exact fit should not truncate");
 }
+
+// ── UI Text Measurement: Unicode Width ──
+
+#[test]
+fn measure_text_cjk_double_width() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    // "A你好B" → 1 + 2 + 2 + 1 = 6 display columns.
+    let width = super::measure_text("A\u{4F60}\u{597D}B", &fc);
+    let expected = 6.0 * cell_w;
+    assert!(
+        (width - expected).abs() < f32::EPSILON,
+        "CJK width should be 6 cells: {width} vs {expected}",
+    );
+}
+
+#[test]
+fn measure_text_combining_marks_zero_width() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    // "e\u{0301}" (é composed) → base 'e' is width 1, combining accent is width 0.
+    let width = super::measure_text("e\u{0301}", &fc);
+    let expected = 1.0 * cell_w;
+    assert!(
+        (width - expected).abs() < f32::EPSILON,
+        "combining mark should add zero width: {width} vs {expected}",
+    );
+}
+
+#[test]
+fn measure_text_zwj_sequence() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    // ZWJ emoji: family sequence (👨‍👩‍👧).
+    // unicode-width treats each codepoint individually:
+    // 👨 (width 2) + ZWJ (width 0) + 👩 (width 0 or 2) + ZWJ + 👧
+    // Exact width depends on unicode-width version; just verify >= 2 cells.
+    let width = super::measure_text("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}", &fc);
+    assert!(
+        width >= 2.0 * cell_w,
+        "ZWJ sequence should be at least 2 cells wide: {width}",
+    );
+}
+
+#[test]
+fn truncate_with_ellipsis_cjk_boundary() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    // CJK string: each char is width 2. Budget for 3 cells + 1 for ellipsis = 4 cells.
+    // "你好世界" = 8 cells total. Max 4 cells → fits 1 CJK char (2 cells) + "…" (1 cell).
+    let result =
+        super::truncate_with_ellipsis("\u{4F60}\u{597D}\u{4E16}\u{754C}", 4.0 * cell_w, &fc);
+    assert!(
+        result.ends_with('\u{2026}'),
+        "truncated CJK should end with ellipsis: {result:?}",
+    );
+    // Should not exceed the max width.
+    let result_width = super::measure_text(&result, &fc);
+    assert!(
+        result_width <= 4.0 * cell_w + f32::EPSILON,
+        "truncated result should fit in budget: {result_width} vs {}",
+        4.0 * cell_w,
+    );
+}
+
+#[test]
+fn truncate_with_ellipsis_shorter_than_max() {
+    let fc = test_collection();
+    let cell_w = fc.cell_metrics().width;
+    // String is 2 cells, max is 10 cells → returned unchanged.
+    let result = super::truncate_with_ellipsis("AB", 10.0 * cell_w, &fc);
+    assert_eq!(
+        result.as_ref(),
+        "AB",
+        "short string should be returned unchanged",
+    );
+}

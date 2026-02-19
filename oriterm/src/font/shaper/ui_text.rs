@@ -180,7 +180,7 @@ fn shape_ui_run(
 pub fn measure_text(text: &str, collection: &FontCollection) -> f32 {
     let cell_w = collection.cell_metrics().width;
     text.chars()
-        .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w)
+        .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0) as f32 * cell_w)
         .sum()
 }
 
@@ -203,7 +203,7 @@ pub fn truncate_with_ellipsis<'a>(
     // Sum unicode widths for exact cell count in monospace.
     let total_cells: usize = text
         .chars()
-        .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1))
+        .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0))
         .sum();
     if total_cells as f32 * cell_w <= max_width {
         return Cow::Borrowed(text);
@@ -218,7 +218,7 @@ pub fn truncate_with_ellipsis<'a>(
     let mut used = 0.0_f32;
     let mut end_byte = 0;
     for (byte_idx, ch) in text.char_indices() {
-        let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w;
+        let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0) as f32 * cell_w;
         if used + w > budget {
             break;
         }

@@ -176,6 +176,59 @@ fn push_cursor_field_offsets() {
     assert_eq!(read_u32(rec, 64), 2);
 }
 
+// --- push_glyph_with_bg ---
+
+#[test]
+fn push_glyph_with_bg_field_offsets() {
+    let mut w = InstanceWriter::new();
+    let uv = [0.1, 0.2, 0.3, 0.4];
+    w.push_glyph_with_bg(
+        ScreenRect {
+            x: 10.0,
+            y: 20.0,
+            w: 8.0,
+            h: 16.0,
+        },
+        uv,
+        WHITE, // fg
+        RED,   // bg
+        0.9,
+        3,
+    );
+
+    let rec = w.as_bytes();
+
+    // Position.
+    assert_eq!(read_f32(rec, 0), 10.0);
+    assert_eq!(read_f32(rec, 4), 20.0);
+    assert_eq!(read_f32(rec, 8), 8.0);
+    assert_eq!(read_f32(rec, 12), 16.0);
+
+    // UV.
+    assert!((read_f32(rec, 16) - 0.1).abs() < 1e-6);
+    assert!((read_f32(rec, 20) - 0.2).abs() < 1e-6);
+    assert!((read_f32(rec, 24) - 0.3).abs() < 1e-6);
+    assert!((read_f32(rec, 28) - 0.4).abs() < 1e-6);
+
+    // FG = WHITE at alpha 0.9.
+    assert_eq!(read_f32(rec, 32), 1.0);
+    assert_eq!(read_f32(rec, 36), 1.0);
+    assert_eq!(read_f32(rec, 40), 1.0);
+    assert!((read_f32(rec, 44) - 0.9).abs() < 1e-6);
+
+    // BG = RED at alpha 1.0 (push_glyph_with_bg always writes bg at alpha 1.0).
+    assert_eq!(read_f32(rec, 48), 1.0); // R
+    assert_eq!(read_f32(rec, 52), 0.0); // G
+    assert_eq!(read_f32(rec, 56), 0.0); // B
+    assert_eq!(read_f32(rec, 60), 1.0); // A
+
+    // Kind = Glyph (1).
+    assert_eq!(read_u32(rec, 64), 1);
+
+    // Atlas page = 3.
+    assert_eq!(read_u32(rec, 68), 3);
+}
+
 // --- Color conversion ---
 
 #[test]
