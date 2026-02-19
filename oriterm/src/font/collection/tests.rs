@@ -10,12 +10,13 @@ use super::face::{
 };
 use super::{FontCollection, FontData, FontSet};
 use crate::font::discovery::EMBEDDED_FONT_DATA;
-use crate::font::{FaceIdx, GlyphFormat, GlyphStyle, RasterKey, SyntheticFlags};
+use crate::font::{FaceIdx, GlyphFormat, GlyphStyle, HintingMode, RasterKey, SyntheticFlags};
 
 /// Helper: build a FontCollection from system discovery with default settings.
 fn system_collection(format: GlyphFormat) -> FontCollection {
     let font_set = FontSet::load(None, 400).expect("font must load");
-    FontCollection::new(font_set, 12.0, 96.0, format, 400).expect("collection must build")
+    FontCollection::new(font_set, 12.0, 96.0, format, 400, HintingMode::Full)
+        .expect("collection must build")
 }
 
 /// Helper: build a FontCollection from ONLY the embedded Regular font.
@@ -35,7 +36,8 @@ fn embedded_only_collection(format: GlyphFormat) -> FontCollection {
         has_variant: [true, false, false, false],
         fallbacks: Vec::new(),
     };
-    FontCollection::new(font_set, 12.0, 96.0, format, 400).expect("collection must build")
+    FontCollection::new(font_set, 12.0, 96.0, format, 400, HintingMode::Full)
+        .expect("collection must build")
 }
 
 // ── Face helpers ──
@@ -217,7 +219,7 @@ fn resolve_bold_with_system_fonts() {
 fn rasterize_alpha_produces_bitmap() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('A', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     let glyph = fc.rasterize(key).expect("'A' must rasterize");
     assert!(glyph.width > 0, "bitmap width must be positive");
     assert!(glyph.height > 0, "bitmap height must be positive");
@@ -229,7 +231,7 @@ fn rasterize_alpha_produces_bitmap() {
 fn rasterize_alpha_bitmap_size() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     let glyph = fc.rasterize(key).expect("'H' must rasterize");
     let expected_len = (glyph.width * glyph.height) as usize;
     assert_eq!(
@@ -243,7 +245,7 @@ fn rasterize_alpha_bitmap_size() {
 fn rasterize_subpixel_rgb_bitmap_size() {
     let mut fc = embedded_only_collection(GlyphFormat::SubpixelRgb);
     let resolved = fc.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     let glyph = fc.rasterize(key).expect("'H' must rasterize");
     let expected_len = (glyph.width * glyph.height * 4) as usize;
     assert_eq!(
@@ -257,7 +259,7 @@ fn rasterize_subpixel_rgb_bitmap_size() {
 fn rasterize_bitmap_has_nonzero_pixels() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     let glyph = fc.rasterize(key).expect("'H' must rasterize");
     assert!(
         glyph.bitmap.iter().any(|&b| b > 0),
@@ -269,7 +271,7 @@ fn rasterize_bitmap_has_nonzero_pixels() {
 fn rasterize_cache_hit() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('B', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
 
     let first = fc.rasterize(key).expect("first rasterize");
     let first_bitmap = first.bitmap.clone();
@@ -290,7 +292,7 @@ fn rasterize_cache_hit() {
 fn rasterize_space_has_no_outline() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve(' ', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     // Space typically has no outline, so rasterize returns None. But some
     // fonts may define an outline; either result is acceptable.
     let result = fc.rasterize(key);
@@ -309,18 +311,21 @@ fn raster_key_equality() {
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
+        hinted: true,
     };
     let k2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
+        hinted: true,
     };
     let k3 = RasterKey {
         glyph_id: 43,
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
+        hinted: true,
     };
     assert_eq!(k1, k2);
     assert_ne!(k1, k3);
@@ -333,12 +338,14 @@ fn raster_key_hash_consistency() {
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
+        hinted: true,
     };
     let k2 = RasterKey {
         glyph_id: 42,
         face_idx: FaceIdx::REGULAR,
         size_q6: 1024,
         synthetic: SyntheticFlags::NONE,
+        hinted: true,
     };
     let h1 = {
         let mut h = DefaultHasher::new();
@@ -434,7 +441,7 @@ fn new_collection_has_empty_cache() {
 fn rasterize_uppercase_has_positive_top_bearing() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('H', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     let glyph = fc.rasterize(key).expect("'H' must rasterize");
     assert!(
         glyph.bearing_y > 0,
@@ -447,7 +454,7 @@ fn rasterize_uppercase_has_positive_top_bearing() {
 fn rasterize_advance_positive() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     let resolved = fc.resolve('M', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     let glyph = fc.rasterize(key).expect("'M' must rasterize");
     assert!(
         glyph.advance > 0.0,
@@ -461,7 +468,7 @@ fn rasterize_advance_positive() {
 fn rasterized_glyph_carries_format_tag() {
     let mut fc = embedded_only_collection(GlyphFormat::SubpixelRgb);
     let resolved = fc.resolve('A', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     let glyph = fc.rasterize(key).expect("'A' must rasterize");
     assert_eq!(
         glyph.format,
@@ -535,7 +542,7 @@ fn rasterize_emoji_as_color_format() {
     if resolved.glyph_id == 0 {
         return; // No emoji font available.
     }
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     if let Some(glyph) = fc.rasterize(key) {
         if glyph.format == GlyphFormat::Color {
             // Color emoji: RGBA bitmap, 4 bytes per pixel.
@@ -796,6 +803,7 @@ fn rasterize_with_synthesis(
         face_idx: resolved.face_idx,
         size_q6: super::size_key(fc.size_px()),
         synthetic,
+        hinted: true,
     };
     fc.rasterize(key).cloned()
 }
@@ -948,7 +956,7 @@ fn bold_rasterization_works_when_available() {
     let mut system = system_collection(GlyphFormat::Alpha);
     if system.has_bold() {
         let resolved = system.resolve('A', GlyphStyle::Bold);
-        let key = RasterKey::from_resolved(resolved, super::size_key(system.size_px()));
+        let key = RasterKey::from_resolved(resolved, super::size_key(system.size_px()), true);
         let glyph = system.rasterize(key);
         assert!(
             glyph.is_some(),
@@ -992,7 +1000,7 @@ fn set_size_clears_cache() {
     let mut fc = embedded_only_collection(GlyphFormat::Alpha);
     // Manually rasterize a glyph to populate the cache.
     let resolved = fc.resolve('A', GlyphStyle::Regular);
-    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()));
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
     let _ = fc.rasterize(key);
     assert!(
         fc.cache_len() > 0,
@@ -1013,5 +1021,134 @@ fn set_size_updates_size_px() {
         (fc.size_px() - expected).abs() < f32::EPSILON,
         "size_px should reflect new size (expected {expected}, got {})",
         fc.size_px(),
+    );
+}
+
+// ── Hinting ──
+
+#[test]
+fn hinting_mode_auto_detection() {
+    assert_eq!(
+        HintingMode::from_scale_factor(1.0),
+        HintingMode::Full,
+        "1x scale → Full hinting",
+    );
+    assert_eq!(
+        HintingMode::from_scale_factor(1.5),
+        HintingMode::Full,
+        "1.5x scale → Full hinting",
+    );
+    assert_eq!(
+        HintingMode::from_scale_factor(2.0),
+        HintingMode::None,
+        "2x scale → no hinting",
+    );
+    assert_eq!(
+        HintingMode::from_scale_factor(3.0),
+        HintingMode::None,
+        "3x scale → no hinting",
+    );
+}
+
+#[test]
+fn hinting_mode_hint_flag() {
+    assert!(HintingMode::Full.hint_flag(), "Full → hint(true)");
+    assert!(!HintingMode::None.hint_flag(), "None → hint(false)");
+}
+
+#[test]
+fn hinting_mode_default_is_full() {
+    assert_eq!(HintingMode::default(), HintingMode::Full);
+}
+
+#[test]
+fn set_hinting_clears_cache() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    assert_eq!(fc.hinting_mode(), HintingMode::Full);
+
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
+    let _ = fc.rasterize(key);
+    assert!(
+        fc.cache_len() > 0,
+        "cache should have entries after rasterize"
+    );
+
+    let changed = fc.set_hinting(HintingMode::None);
+    assert!(changed, "set_hinting should return true when mode changes");
+    assert_eq!(
+        fc.cache_len(),
+        0,
+        "set_hinting should clear the glyph cache"
+    );
+    assert_eq!(fc.hinting_mode(), HintingMode::None);
+}
+
+#[test]
+fn set_hinting_noop_when_unchanged() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true);
+    let _ = fc.rasterize(key);
+    let before = fc.cache_len();
+
+    let changed = fc.set_hinting(HintingMode::Full);
+    assert!(
+        !changed,
+        "set_hinting should return false when mode unchanged"
+    );
+    assert_eq!(fc.cache_len(), before, "cache should not be cleared");
+}
+
+#[test]
+fn hinted_glyph_differs_from_unhinted() {
+    let mut fc_hinted = embedded_only_collection(GlyphFormat::Alpha);
+    assert_eq!(fc_hinted.hinting_mode(), HintingMode::Full);
+
+    let mut fc_unhinted = embedded_only_collection(GlyphFormat::Alpha);
+    fc_unhinted.set_hinting(HintingMode::None);
+
+    let resolved_h = fc_hinted.resolve('A', GlyphStyle::Regular);
+    let key_h = RasterKey::from_resolved(resolved_h, super::size_key(fc_hinted.size_px()), true);
+    let glyph_h = fc_hinted
+        .rasterize(key_h)
+        .expect("hinted 'A' should rasterize");
+
+    let resolved_u = fc_unhinted.resolve('A', GlyphStyle::Regular);
+    let key_u = RasterKey::from_resolved(resolved_u, super::size_key(fc_unhinted.size_px()), false);
+    let glyph_u = fc_unhinted
+        .rasterize(key_u)
+        .expect("unhinted 'A' should rasterize");
+
+    // At 12pt/96dpi (16px), hinted and unhinted bitmaps should differ.
+    // They may have different dimensions or different pixel values.
+    let differs = glyph_h.width != glyph_u.width
+        || glyph_h.height != glyph_u.height
+        || glyph_h.bitmap != glyph_u.bitmap;
+    assert!(
+        differs,
+        "hinted and unhinted glyphs should produce different bitmaps at 12pt",
+    );
+}
+
+#[test]
+fn raster_key_hinting_distinguishes_cache() {
+    let k_hinted = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: 1024,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+    };
+    let k_unhinted = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: 1024,
+        synthetic: SyntheticFlags::NONE,
+        hinted: false,
+    };
+    assert_ne!(
+        k_hinted, k_unhinted,
+        "same glyph with different hinting should have different keys",
     );
 }

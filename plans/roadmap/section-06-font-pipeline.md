@@ -49,7 +49,7 @@ sections:
     status: complete
   - id: "6.15"
     title: Hinting
-    status: not-started
+    status: in-progress
   - id: "6.16"
     title: Subpixel Rendering (LCD)
     status: not-started
@@ -677,7 +677,7 @@ Control over glyph hinting — the grid-fitting process that snaps outlines to p
 
 **Reference:** WezTerm `wezterm-font/src/ftwrap.rs` (load targets), Ghostty `src/font/face/freetype.zig` (hinting flags)
 
-- [ ] Hinting mode enum:
+- [x] Hinting mode enum:
   ```rust
   pub enum HintingMode {
       /// Full hinting (snaps to pixel grid). Crispest text on non-HiDPI.
@@ -687,34 +687,34 @@ Control over glyph hinting — the grid-fitting process that snaps outlines to p
       None,
   }
   ```
-  - [ ] swash only supports `.hint(bool)` — no "light" mode. Two modes is honest.
-- [ ] Auto-detection based on display scale:
-  - [ ] `scale_factor < 2.0` → `HintingMode::Full` (non-HiDPI needs grid-fitting)
-  - [ ] `scale_factor >= 2.0` → `HintingMode::None` (Retina/4K has enough pixels)
-  - [ ] Re-evaluate on `ScaleFactorChanged` events
-- [ ] User override via config:
+  - [x] swash only supports `.hint(bool)` — no "light" mode. Two modes is honest.
+- [x] Auto-detection based on display scale:
+  - [x] `scale_factor < 2.0` → `HintingMode::Full` (non-HiDPI needs grid-fitting)
+  - [x] `scale_factor >= 2.0` → `HintingMode::None` (Retina/4K has enough pixels)
+  - [x] Re-evaluate on `ScaleFactorChanged` events
+- [ ] User override via config: <!-- blocked-by:13 -->
   ```toml
   [font]
   hinting = "full"  # or "none"
   ```
-  - [ ] Config value overrides auto-detection
-- [ ] Integration with rasterization:
-  - [ ] `ScalerBuilder::hint(mode == HintingMode::Full)` applied when building scaler
-  - [ ] Hinted glyphs produce different bitmaps — atlas key must include hinting state
-  - [ ] `RasterKey` expanded: add `hinted: bool` field
-- [ ] Grid-fitted cell metrics:
-  - [ ] When hinting is Full: compute cell_width/cell_height from hinted advances
-  - [ ] When hinting is None: use unhinted metric (floating-point, rounded)
-  - [ ] Hinted metrics are more consistent across glyphs (less cumulative rounding error)
-- [ ] Font size change or hinting mode change:
-  - [ ] Clear entire atlas (all cached glyphs are now wrong)
-  - [ ] Recompute cell metrics
-  - [ ] Re-pre-cache ASCII
-- [ ] **Tests**:
-  - [ ] Hinted glyph bitmap differs from unhinted at same size
-  - [ ] Auto-detection: scale 1.0 → Full, scale 2.0 → None
-  - [ ] Config override: explicit "none" at scale 1.0 disables hinting
-  - [ ] Atlas invalidated on hinting mode change
+  - [ ] Config value overrides auto-detection <!-- blocked-by:13 -->
+- [x] Integration with rasterization:
+  - [x] `ScalerBuilder::hint(mode == HintingMode::Full)` applied when building scaler
+  - [x] Hinted glyphs produce different bitmaps — atlas key must include hinting state
+  - [x] `RasterKey` expanded: add `hinted: bool` field
+- [x] Grid-fitted cell metrics:
+  - [x] When hinting is Full: compute cell_width/cell_height from hinted advances — swash metrics use `.ceil()` which provides integer snapping; no separate "hinted metrics" API in swash
+  - [x] When hinting is None: use unhinted metric (floating-point, rounded)
+  - [x] Hinted metrics are more consistent across glyphs (less cumulative rounding error)
+- [x] Font size change or hinting mode change:
+  - [x] Clear entire atlas (all cached glyphs are now wrong)
+  - [x] Recompute cell metrics
+  - [x] Re-pre-cache ASCII
+- [x] **Tests**:
+  - [x] Hinted glyph bitmap differs from unhinted at same size
+  - [x] Auto-detection: scale 1.0 → Full, scale 2.0 → None
+  - [ ] Config override: explicit "none" at scale 1.0 disables hinting <!-- blocked-by:13 -->
+  - [x] Atlas invalidated on hinting mode change
 
 ---
 

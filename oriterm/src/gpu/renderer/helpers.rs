@@ -54,7 +54,8 @@ pub(super) fn shape_frame(
 ) {
     let cols = input.columns();
     let size_q6 = size_key(fonts.size_px());
-    scratch.frame.clear(cols, size_q6);
+    let hinted = fonts.hinting_mode().hint_flag();
+    scratch.frame.clear(cols, size_q6, hinted);
     if cols == 0 {
         return;
     }
@@ -93,12 +94,14 @@ pub(super) fn ensure_shaped_glyphs_cached(
     queue: &Queue,
 ) {
     let size_q6 = shaped.size_q6();
+    let hinted = fonts.hinting_mode().hint_flag();
     for glyph in shaped.all_glyphs() {
         let key = RasterKey {
             glyph_id: glyph.glyph_id,
             face_idx: glyph.face_idx,
             size_q6,
             synthetic: glyph.synthetic,
+            hinted,
         };
         // Check both atlases for cache hit.
         if mono_atlas.lookup_touch(key).is_some() || color_atlas.lookup_touch(key).is_some() {

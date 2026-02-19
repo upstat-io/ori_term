@@ -407,6 +407,31 @@ impl GpuRenderer {
             self.color_atlas.view(),
         );
     }
+
+    /// Change hinting mode, clearing atlases and re-caching.
+    ///
+    /// No-ops if the mode is unchanged. Mirrors [`set_font_size`] but only
+    /// invalidates the glyph cache and atlases — cell metrics are unaffected
+    /// because swash's `Metrics` API (used for cell dimensions) is independent
+    /// of the hint flag.
+    pub fn set_hinting_mode(&mut self, mode: crate::font::HintingMode, gpu: &GpuState) {
+        if !self.font_collection.set_hinting(mode) {
+            return;
+        }
+
+        self.atlas.clear();
+        self.color_atlas.clear();
+
+        pre_cache_atlas(&mut self.atlas, &mut self.font_collection, &gpu.queue);
+
+        self.atlas_bind_group
+            .rebuild(&gpu.device, &self.atlas_layout, self.atlas.view());
+        self.color_atlas_bind_group.rebuild(
+            &gpu.device,
+            &self.atlas_layout,
+            self.color_atlas.view(),
+        );
+    }
 }
 
 // ── Free functions ──
@@ -417,9 +442,10 @@ impl GpuRenderer {
 /// a real Bold face. Used by both `GpuRenderer::new()` and `set_font_size()`.
 fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, queue: &Queue) {
     let size_q6 = size_key(fc.size_px());
+    let hinted = fc.hinting_mode().hint_flag();
     for ch in ' '..='~' {
         let resolved = fc.resolve(ch, GlyphStyle::Regular);
-        let key = RasterKey::from_resolved(resolved, size_q6);
+        let key = RasterKey::from_resolved(resolved, size_q6, hinted);
         if let Some(glyph) = fc.rasterize(key) {
             atlas.insert(key, glyph, queue);
         }
@@ -427,7 +453,7 @@ fn pre_cache_atlas(atlas: &mut GlyphAtlas, fc: &mut FontCollection, queue: &Queu
     if fc.has_bold() {
         for ch in ' '..='~' {
             let resolved = fc.resolve(ch, GlyphStyle::Bold);
-            let key = RasterKey::from_resolved(resolved, size_q6);
+            let key = RasterKey::from_resolved(resolved, size_q6, hinted);
             if let Some(glyph) = fc.rasterize(key) {
                 atlas.insert(key, glyph, queue);
             }

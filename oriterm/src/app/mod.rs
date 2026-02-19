@@ -16,7 +16,7 @@ use oriterm_core::{Event, TermMode};
 use oriterm_ui::window::WindowConfig;
 
 use self::cursor_blink::CursorBlink;
-use crate::font::{FontCollection, FontSet, GlyphFormat};
+use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::{GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame};
 use crate::tab::{Tab, TabId, TermEvent};
 use crate::window::TermWindow;
@@ -104,12 +104,15 @@ impl App {
                 move || -> Result<(FontCollection, std::time::Duration), crate::font::FontError> {
                     let t0 = std::time::Instant::now();
                     let font_set = FontSet::load(None, font_weight)?;
+                    // Default to Full hinting; adjusted after window creation
+                    // once the actual display scale factor is known.
                     let fc = FontCollection::new(
                         font_set,
                         font_size_pt,
                         font_dpi,
                         GlyphFormat::Alpha,
                         font_weight,
+                        HintingMode::Full,
                     )?;
                     Ok((fc, t0.elapsed()))
                 },
@@ -125,11 +128,16 @@ impl App {
         let window = TermWindow::from_window(window_arc, &self.window_config, &gpu)?;
 
         // 5. Join font thread (GPU init + surface setup ran concurrently).
-        let (font_collection, t_fonts) = match font_handle.join() {
+        let (mut font_collection, t_fonts) = match font_handle.join() {
             Ok(Ok(result)) => result,
             Ok(Err(e)) => return Err(e.into()),
             Err(_) => return Err("font discovery thread panicked".into()),
         };
+
+        // 5b. Adjust hinting mode for the actual display scale factor.
+        // The font thread used Full as default; HiDPI displays (2x+) prefer None.
+        let hinting = HintingMode::from_scale_factor(window.scale_factor().factor());
+        font_collection.set_hinting(hinting);
 
         // 6. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
         let t_renderer_start = std::time::Instant::now();
@@ -177,6 +185,77 @@ impl App {
         self.dirty = true;
         Ok(())
     }
+
+    /// Execute the three-phase rendering pipeline: Extract → Prepare → Render.
+    fn handle_redraw(&mut self) {
+        log::trace!("RedrawRequested");
+        let render_result = {
+            let Some(gpu) = self.gpu.as_ref() else {
+                log::warn!("redraw: no gpu");
+                return;
+            };
+            let Some(renderer) = self.renderer.as_mut() else {
+                log::warn!("redraw: no renderer");
+                return;
+            };
+            let Some(window) = self.window.as_ref() else {
+                log::warn!("redraw: no window");
+                return;
+            };
+            let Some(tab) = self.tab.as_ref() else {
+                log::warn!("redraw: no tab");
+                return;
+            };
+
+            if !window.has_surface_area() {
+                log::warn!("redraw: no surface area");
+                return;
+            }
+
+            let (w, h) = window.size_px();
+            let viewport = ViewportSize::new(w, h);
+            let cell = renderer.cell_metrics();
+
+            let mut frame = extract_frame(tab.terminal(), viewport, cell);
+
+            // Cache blinking mode for about_to_wait gating.
+            // Reset blink phase on false→true transition so the
+            // cursor starts visible when blinking is first enabled.
+            let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
+            if blinking_now && !self.blinking_active {
+                self.cursor_blink.reset();
+            }
+            self.blinking_active = blinking_now;
+
+            // Apply cursor blink: hide cursor during the "off" phase
+            // when the terminal has requested blinking.
+            if blinking_now && !self.cursor_blink.is_visible() {
+                frame.content.cursor.visible = false;
+            }
+
+            renderer.prepare(&frame, gpu);
+            log::trace!(
+                "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
+                frame.content.cells.len(),
+                renderer.prepared().backgrounds.len(),
+                renderer.prepared().glyphs.len(),
+                renderer.prepared().cursors.len(),
+            );
+            renderer.render_to_surface(gpu, window.surface())
+        };
+
+        match render_result {
+            Ok(()) => log::trace!("render ok"),
+            Err(SurfaceError::Lost) => {
+                log::warn!("surface lost, reconfiguring");
+                if let (Some(window), Some(gpu)) = (self.window.as_mut(), self.gpu.as_ref()) {
+                    let (w, h) = window.size_px();
+                    window.resize_surface(w, h, gpu);
+                }
+            }
+            Err(e) => log::error!("render error: {e}"),
+        }
+    }
 }
 
 impl ApplicationHandler<TermEvent> for App {
@@ -222,77 +301,7 @@ impl ApplicationHandler<TermEvent> for App {
                 }
             }
 
-            WindowEvent::RedrawRequested => {
-                log::trace!("RedrawRequested");
-                // Three-phase pipeline: Extract → Prepare → Render.
-                let render_result = {
-                    let Some(gpu) = self.gpu.as_ref() else {
-                        log::warn!("redraw: no gpu");
-                        return;
-                    };
-                    let Some(renderer) = self.renderer.as_mut() else {
-                        log::warn!("redraw: no renderer");
-                        return;
-                    };
-                    let Some(window) = self.window.as_ref() else {
-                        log::warn!("redraw: no window");
-                        return;
-                    };
-                    let Some(tab) = self.tab.as_ref() else {
-                        log::warn!("redraw: no tab");
-                        return;
-                    };
-
-                    if !window.has_surface_area() {
-                        log::warn!("redraw: no surface area");
-                        return;
-                    }
-
-                    let (w, h) = window.size_px();
-                    let viewport = ViewportSize::new(w, h);
-                    let cell = renderer.cell_metrics();
-
-                    let mut frame = extract_frame(tab.terminal(), viewport, cell);
-
-                    // Cache blinking mode for about_to_wait gating.
-                    // Reset blink phase on false→true transition so the
-                    // cursor starts visible when blinking is first enabled.
-                    let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
-                    if blinking_now && !self.blinking_active {
-                        self.cursor_blink.reset();
-                    }
-                    self.blinking_active = blinking_now;
-
-                    // Apply cursor blink: hide cursor during the "off" phase
-                    // when the terminal has requested blinking.
-                    if blinking_now && !self.cursor_blink.is_visible() {
-                        frame.content.cursor.visible = false;
-                    }
-
-                    renderer.prepare(&frame, gpu);
-                    log::trace!(
-                        "frame: cells={} bg_inst={} glyph_inst={} cursor_inst={}",
-                        frame.content.cells.len(),
-                        renderer.prepared().backgrounds.len(),
-                        renderer.prepared().glyphs.len(),
-                        renderer.prepared().cursors.len(),
-                    );
-                    renderer.render_to_surface(gpu, window.surface())
-                };
-
-                match render_result {
-                    Ok(()) => log::trace!("render ok"),
-                    Err(SurfaceError::Lost) => {
-                        log::warn!("surface lost, reconfiguring");
-                        if let (Some(window), Some(gpu)) = (self.window.as_mut(), self.gpu.as_ref())
-                        {
-                            let (w, h) = window.size_px();
-                            window.resize_surface(w, h, gpu);
-                        }
-                    }
-                    Err(e) => log::error!("render error: {e}"),
-                }
-            }
+            WindowEvent::RedrawRequested => self.handle_redraw(),
 
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
@@ -310,6 +319,11 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(window) = &mut self.window {
                     if window.update_scale_factor(scale_factor) {
+                        // Re-evaluate hinting mode for the new scale factor.
+                        let hinting = HintingMode::from_scale_factor(scale_factor);
+                        if let (Some(renderer), Some(gpu)) = (&mut self.renderer, &self.gpu) {
+                            renderer.set_hinting_mode(hinting, gpu);
+                        }
                         self.dirty = true;
                     }
                 }

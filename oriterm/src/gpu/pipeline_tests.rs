@@ -12,7 +12,7 @@ use oriterm_core::{Column, CursorShape, Rgb};
 use super::frame_input::{FrameInput, ViewportSize};
 use super::renderer::GpuRenderer;
 use super::state::GpuState;
-use crate::font::{FontCollection, FontSet, GlyphFormat};
+use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 
 /// Default font weight for tests.
 const TEST_FONT_WEIGHT: u16 = 400;
@@ -33,6 +33,7 @@ fn headless_env() -> Option<(GpuState, GpuRenderer)> {
         TEST_DPI,
         GlyphFormat::Alpha,
         TEST_FONT_WEIGHT,
+        HintingMode::Full,
     )
     .ok()?;
     let renderer = GpuRenderer::new(&gpu, font_collection);

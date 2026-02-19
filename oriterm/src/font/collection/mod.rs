@@ -14,8 +14,8 @@ use std::sync::Arc;
 use swash::scale::ScaleContext;
 
 use super::{
-    CellMetrics, FaceIdx, FontError, GlyphFormat, GlyphStyle, RasterKey, ResolvedGlyph,
-    SyntheticFlags,
+    CellMetrics, FaceIdx, FontError, GlyphFormat, GlyphStyle, HintingMode, RasterKey,
+    ResolvedGlyph, SyntheticFlags,
 };
 pub use face::size_key;
 use face::{FaceData, build_face, cap_height_px, compute_metrics, glyph_id, rasterize_from_face};
@@ -77,6 +77,7 @@ pub struct FontCollection {
     cap_height_px: f32,
     // Rasterization
     format: GlyphFormat,
+    hinting: HintingMode,
     glyph_cache: HashMap<RasterKey, RasterizedGlyph>,
     scale_context: ScaleContext,
     // Config
@@ -94,12 +95,17 @@ impl FontCollection {
     /// Validates all faces and computes cell metrics from the Regular font.
     /// ASCII glyphs are not pre-cached here — the GPU renderer's
     /// `pre_cache_atlas()` fills both the `HashMap` and the atlas in one pass.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "font collection requires all parameters: font data, sizing, format, weight, hinting"
+    )]
     pub fn new(
         font_set: FontSet,
         size_pt: f32,
         dpi: f32,
         format: GlyphFormat,
         weight: u16,
+        hinting: HintingMode,
     ) -> Result<Self, FontError> {
         let size_px = (size_pt * dpi / 72.0).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
 
@@ -159,6 +165,7 @@ impl FontCollection {
             strikeout_offset: font_metrics.strikeout_offset,
             cap_height_px: primary_cap,
             format,
+            hinting,
             glyph_cache: HashMap::new(),
             scale_context: ScaleContext::new(),
             weight,
@@ -226,6 +233,11 @@ impl FontCollection {
             }
         }
         &self.features
+    }
+
+    /// Current hinting mode.
+    pub fn hinting_mode(&self) -> HintingMode {
+        self.hinting
     }
 
     /// Whether the collection has a real Bold face (not synthetic).
@@ -308,6 +320,21 @@ impl FontCollection {
         self.strikeout_offset = fm.strikeout_offset;
         self.cap_height_px = primary_cap;
         self.glyph_cache.clear();
+    }
+
+    /// Change hinting mode and clear the glyph cache.
+    ///
+    /// No-ops if the mode is unchanged. The caller (`GpuRenderer::set_hinting_mode`)
+    /// is responsible for clearing GPU atlases and re-populating afterward.
+    ///
+    /// Returns `true` if the mode actually changed.
+    pub fn set_hinting(&mut self, mode: HintingMode) -> bool {
+        if self.hinting == mode {
+            return false;
+        }
+        self.hinting = mode;
+        self.glyph_cache.clear();
+        true
     }
 
     // ── Resolution ──
@@ -426,6 +453,7 @@ impl FontCollection {
             key.synthetic,
             self.cell_height,
             self.format,
+            self.hinting.hint_flag(),
             &mut self.scale_context,
         )?;
 

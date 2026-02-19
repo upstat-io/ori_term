@@ -95,6 +95,43 @@ impl CellMetrics {
     }
 }
 
+/// Glyph hinting mode — controls grid-fitting of outlines to pixel boundaries.
+///
+/// Hinting snaps glyph outlines to the pixel grid for sharper rendering at
+/// small sizes. On high-DPI displays (2x+) the extra pixels make hinting
+/// unnecessary, so disabling it preserves outline shape fidelity.
+///
+/// swash only supports a boolean hint flag — no "light" mode — so two
+/// variants is the honest representation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum HintingMode {
+    /// Full hinting (snaps to pixel grid). Crispest text on non-high-DPI.
+    #[default]
+    Full,
+    /// No hinting (preserves outline shape). Best on high-DPI (2x+) where
+    /// subpixel precision isn't needed for sharpness.
+    None,
+}
+
+impl HintingMode {
+    /// Convert to the boolean flag expected by swash's `ScalerBuilder::hint()`.
+    pub fn hint_flag(self) -> bool {
+        matches!(self, Self::Full)
+    }
+
+    /// Auto-detect hinting mode from display scale factor.
+    ///
+    /// `scale_factor < 2.0` → `Full` (non-high-DPI needs grid-fitting).
+    /// `scale_factor >= 2.0` → `None` (Retina/4K has enough pixels).
+    pub fn from_scale_factor(scale_factor: f64) -> Self {
+        if scale_factor < 2.0 {
+            Self::Full
+        } else {
+            Self::None
+        }
+    }
+}
+
 /// Rasterization output format.
 ///
 /// Determines pixel layout in [`RasterizedGlyph::bitmap`].
@@ -206,16 +243,19 @@ pub struct RasterKey {
     pub size_q6: u32,
     /// Synthetic transformations applied at rasterization time.
     pub synthetic: SyntheticFlags,
+    /// Whether this glyph was rasterized with hinting enabled.
+    pub hinted: bool,
 }
 
 impl RasterKey {
-    /// Construct a raster key from a resolved glyph and a 26.6 fixed-point size.
-    pub fn from_resolved(resolved: ResolvedGlyph, size_q6: u32) -> Self {
+    /// Construct a raster key from a resolved glyph, size, and hinting state.
+    pub fn from_resolved(resolved: ResolvedGlyph, size_q6: u32, hinted: bool) -> Self {
         Self {
             glyph_id: resolved.glyph_id,
             face_idx: resolved.face_idx,
             size_q6,
             synthetic: resolved.synthetic,
+            hinted,
         }
     }
 }

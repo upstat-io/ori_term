@@ -100,12 +100,13 @@ pub(super) fn rasterize_from_face(
     synthetic: SyntheticFlags,
     cell_height: f32,
     format: GlyphFormat,
+    hinted: bool,
     ctx: &mut ScaleContext,
 ) -> Option<RasterizedGlyph> {
     let fr = font_ref(fd);
     let advance = fr.glyph_metrics(&[]).scale(size_px).advance_width(glyph_id);
 
-    let builder = ctx.builder(fr).size(size_px).hint(true);
+    let builder = ctx.builder(fr).size(size_px).hint(hinted);
     let mut scaler = match wght {
         Some(w) => builder.variations(&[("wght", w)]).build(),
         None => builder.build(),

@@ -25,6 +25,8 @@ pub(crate) struct ShapedFrame {
     cols: usize,
     /// Font size in 26.6 fixed-point for `RasterKey` construction.
     size_q6: u32,
+    /// Whether glyphs were rasterized with hinting enabled.
+    hinted: bool,
 }
 
 impl ShapedFrame {
@@ -36,6 +38,7 @@ impl ShapedFrame {
             col_maps: Vec::new(),
             cols,
             size_q6,
+            hinted: true,
         }
     }
 
@@ -94,15 +97,21 @@ impl ShapedFrame {
         self.size_q6
     }
 
+    /// Whether glyphs in this frame were rasterized with hinting.
+    pub fn hinted(&self) -> bool {
+        self.hinted
+    }
+
     /// Reset for reuse on the next frame, updating metadata.
     ///
     /// Clears all glyph and mapping data while retaining allocations.
     /// `cols` and `size_q6` are updated to match the new frame's parameters.
-    pub fn clear(&mut self, cols: usize, size_q6: u32) {
+    pub fn clear(&mut self, cols: usize, size_q6: u32, hinted: bool) {
         self.glyphs.clear();
         self.row_spans.clear();
         self.col_maps.clear();
         self.cols = cols;
         self.size_q6 = size_q6;
+        self.hinted = hinted;
     }
 }

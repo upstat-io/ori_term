@@ -284,6 +284,7 @@ fn fill_frame_shaped(
             GlyphEmitter {
                 baseline,
                 size_q6: shaped.size_q6(),
+                hinted: shaped.hinted(),
                 atlas,
                 frame,
             }
@@ -314,6 +315,7 @@ fn fill_frame_shaped(
 struct GlyphEmitter<'a> {
     baseline: f32,
     size_q6: u32,
+    hinted: bool,
     atlas: &'a dyn AtlasLookup,
     frame: &'a mut PreparedFrame,
 }
@@ -354,6 +356,7 @@ impl GlyphEmitter<'_> {
                 face_idx: sg.face_idx,
                 size_q6: self.size_q6,
                 synthetic: sg.synthetic,
+                hinted: self.hinted,
             };
             if let Some(entry) = self.atlas.lookup_key(key) {
                 // Apply shaper offsets: x_offset shifts horizontally,

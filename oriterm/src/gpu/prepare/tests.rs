@@ -877,6 +877,7 @@ fn key_atlas_with(glyph_ids: &[u16], size_q6: u32) -> KeyTestAtlas {
             face_idx: FaceIdx::REGULAR,
             size_q6,
             synthetic: SyntheticFlags::NONE,
+            hinted: true,
         };
         map.insert(key, test_entry_for_glyph(gid));
     }
@@ -1117,6 +1118,7 @@ fn color_glyph_routes_to_color_glyphs_buffer() {
         face_idx: FaceIdx::REGULAR,
         size_q6,
         synthetic: SyntheticFlags::NONE,
+        hinted: true,
     };
     map.insert(
         key,
@@ -1174,6 +1176,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             face_idx: FaceIdx::REGULAR,
             size_q6,
             synthetic: SyntheticFlags::NONE,
+            hinted: true,
         },
         test_entry_for_glyph(10),
     );
@@ -1184,6 +1187,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             face_idx: FaceIdx::REGULAR,
             size_q6,
             synthetic: SyntheticFlags::NONE,
+            hinted: true,
         },
         AtlasEntry {
             is_color: true,
@@ -1197,6 +1201,7 @@ fn mixed_color_and_mono_glyphs_route_correctly() {
             face_idx: FaceIdx::REGULAR,
             size_q6,
             synthetic: SyntheticFlags::NONE,
+            hinted: true,
         },
         test_entry_for_glyph(11),
     );

@@ -33,6 +33,7 @@ pub(crate) fn raster_key(ch: char, size_q6: u32) -> RasterKey {
         face_idx: FaceIdx::BUILTIN,
         size_q6,
         synthetic: SyntheticFlags::NONE,
+        hinted: false,
     }
 }
 

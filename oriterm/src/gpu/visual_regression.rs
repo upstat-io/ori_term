@@ -27,7 +27,7 @@ use oriterm_core::{CellFlags, Column, CursorShape, Rgb};
 use super::frame_input::{FrameInput, ViewportSize};
 use super::renderer::GpuRenderer;
 use super::state::GpuState;
-use crate::font::{FontCollection, FontSet, GlyphFormat};
+use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 
 /// Per-channel tolerance for pixel comparison. Accounts for anti-aliasing
 /// differences and minor rasterization variance across GPU drivers.
@@ -53,6 +53,7 @@ fn headless_env() -> Option<(GpuState, GpuRenderer)> {
         TEST_DPI,
         GlyphFormat::Alpha,
         TEST_FONT_WEIGHT,
+        HintingMode::Full,
     )
     .ok()?;
     let renderer = GpuRenderer::new(&gpu, font_collection);

@@ -6,7 +6,7 @@ use oriterm_core::{Cell, CellExtra, CellFlags};
 
 use super::{prepare_line, shape_prepared_runs};
 use crate::font::collection::FontCollection;
-use crate::font::{FaceIdx, FontSet, GlyphFormat, SyntheticFlags};
+use crate::font::{FaceIdx, FontSet, GlyphFormat, HintingMode, SyntheticFlags};
 
 // ── Helpers ──
 
@@ -23,8 +23,15 @@ fn make_cells(text: &str) -> Vec<Cell> {
 /// Build a FontCollection from system discovery with default settings.
 fn test_collection() -> FontCollection {
     let font_set = FontSet::load(None, 400).expect("font must load");
-    FontCollection::new(font_set, 12.0, 96.0, GlyphFormat::Alpha, 400)
-        .expect("collection must build")
+    FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build")
 }
 
 // ── Phase 1: Run Segmentation ──
