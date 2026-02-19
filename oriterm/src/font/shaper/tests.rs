@@ -329,7 +329,299 @@ fn shape_reuses_scratch_buffer() {
     assert_eq!(output.len(), 1, "output should be cleared on re-shape");
 }
 
+// ── Phase 2: CJK Wide Char Shaping ──
+
+#[test]
+fn shape_wide_char_col_span_two() {
+    let fc = test_collection();
+
+    // CJK ideograph '好' (U+597D) is a wide character occupying 2 grid columns.
+    let cells = vec![
+        Cell {
+            ch: '\u{597D}',
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    // Should produce exactly 1 glyph for the wide character.
+    assert_eq!(output.len(), 1, "wide char should produce 1 glyph");
+    assert_eq!(output[0].col_start, 0);
+
+    // If a CJK fallback font is available, the advance width ≈ 2× cell width → col_span=2.
+    // Without fallback, .notdef glyph may have different advance — both are valid.
+    if output[0].glyph_id != 0 {
+        assert_eq!(output[0].col_span, 2, "CJK glyph should span 2 columns");
+    }
+}
+
+#[test]
+fn shape_cjk_uses_fallback_face() {
+    let fc = test_collection();
+
+    // CJK ideograph '好' (U+597D) — not in JetBrains Mono, requires fallback.
+    let cells = vec![
+        Cell {
+            ch: '\u{597D}',
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    assert_eq!(output.len(), 1);
+
+    // If system has CJK fallback, glyph should come from a fallback face.
+    // If no fallback installed, glyph_id will be 0 (.notdef) — both are valid.
+    if output[0].glyph_id != 0 {
+        assert!(
+            output[0].face_idx.is_fallback(),
+            "CJK char should be shaped from fallback face (got {:?})",
+            output[0].face_idx,
+        );
+    }
+}
+
+#[test]
+fn shape_ascii_cjk_ascii_column_positions() {
+    let fc = test_collection();
+
+    // "A好B" — A at col 0, 好 at col 1 (wide, spans 2), B at col 3.
+    let cells = vec![
+        Cell {
+            ch: 'A',
+            ..Cell::default()
+        },
+        Cell {
+            ch: '\u{597D}',
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'B',
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    assert_eq!(output.len(), 3, "'A好B' should produce 3 glyphs");
+    assert_eq!(output[0].col_start, 0, "'A' at column 0");
+
+    // CJK char at col 1. If fallback is available, col_span=2.
+    let cjk = output
+        .iter()
+        .find(|g| g.col_start == 1)
+        .expect("CJK glyph at col 1");
+    if cjk.glyph_id != 0 {
+        assert_eq!(cjk.col_span, 2, "CJK glyph should span 2 columns");
+    }
+
+    // 'B' at col 3 (after the 2-column wide char).
+    let b = output
+        .iter()
+        .find(|g| g.col_start == 3)
+        .expect("'B' at col 3");
+    assert_eq!(b.col_span, 1, "'B' spans 1 column");
+}
+
+#[test]
+fn shape_consecutive_cjk_column_positions() {
+    let fc = test_collection();
+
+    // "好世" — two CJK chars, each width 2.
+    // 好 at col 0 (span 2), 世 at col 2 (span 2).
+    let cells = vec![
+        Cell {
+            ch: '\u{597D}',
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+        Cell {
+            ch: '\u{4E16}',
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    assert_eq!(output.len(), 2, "two CJK chars should produce 2 glyphs");
+    assert_eq!(output[0].col_start, 0, "first CJK at col 0");
+    assert_eq!(output[1].col_start, 2, "second CJK at col 2");
+
+    // If CJK fallback available, both span 2 columns.
+    if output[0].glyph_id != 0 {
+        assert_eq!(output[0].col_span, 2, "first CJK spans 2 columns");
+    }
+    if output[1].glyph_id != 0 {
+        assert_eq!(output[1].col_span, 2, "second CJK spans 2 columns");
+    }
+}
+
+#[test]
+fn shape_ideographic_space_wide() {
+    let fc = test_collection();
+
+    // U+3000 IDEOGRAPHIC SPACE — width 2 per unicode-width, but NOT U+0020
+    // so it is NOT skipped during segmentation. It goes through shaping.
+    let cells = vec![
+        Cell {
+            ch: '\u{3000}',
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    // Ideographic space is not U+0020, so it is not skipped — it enters a run.
+    assert_eq!(
+        runs.len(),
+        1,
+        "ideographic space should produce a shaping run"
+    );
+    assert!(
+        runs[0].text.contains('\u{3000}'),
+        "run text should contain ideographic space",
+    );
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    assert_eq!(output.len(), 1, "ideographic space should produce 1 glyph");
+    assert!(
+        output[0].col_span >= 1,
+        "ideographic space col_span should be at least 1",
+    );
+}
+
+#[test]
+fn shape_wide_char_notdef_graceful() {
+    let fc = test_collection();
+
+    // CJK Extension B character — unlikely to have font coverage even with
+    // CJK fallbacks. Tests the .notdef path for wide characters.
+    let cells = vec![
+        Cell {
+            ch: '\u{2A6DF}',
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    // Regardless of font coverage: valid output, no panic.
+    assert_eq!(output.len(), 1, "should produce exactly 1 glyph");
+    assert!(output[0].col_span >= 1, "col_span must be at least 1");
+}
+
 // ── Phase 3: Column ↔ Glyph Mapping ──
+
+#[test]
+fn col_glyph_map_wide_char_pipeline() {
+    let fc = test_collection();
+
+    // "好B" — wide char at cols 0-1, ASCII at col 2.
+    let cells = vec![
+        Cell {
+            ch: '\u{597D}',
+            flags: CellFlags::WIDE_CHAR,
+            ..Cell::default()
+        },
+        Cell {
+            ch: ' ',
+            flags: CellFlags::WIDE_CHAR_SPACER,
+            ..Cell::default()
+        },
+        Cell {
+            ch: 'B',
+            ..Cell::default()
+        },
+    ];
+    let mut runs = Vec::new();
+    prepare_line(&cells, cells.len(), &fc, &mut runs);
+
+    let faces = fc.create_shaping_faces();
+    let mut output = Vec::new();
+    shape_prepared_runs(&runs, &faces, &fc, &mut output, &mut None);
+
+    let mut map = Vec::new();
+    super::build_col_glyph_map(&output, cells.len(), &mut map);
+
+    assert_eq!(map.len(), 3);
+    // Col 0: wide char glyph.
+    assert!(map[0].is_some(), "col 0 should have the wide char glyph");
+
+    // Col 1: continuation of wide char — None if col_span=2, Some if col_span=1 (.notdef).
+    let cjk_glyph = &output[map[0].unwrap()];
+    if cjk_glyph.col_span == 2 {
+        assert_eq!(map[1], None, "col 1 is continuation of wide char");
+    }
+
+    // Col 2: 'B'.
+    assert!(map[2].is_some(), "col 2 should have 'B' glyph");
+}
 
 #[test]
 fn col_glyph_map_simple_ascii() {

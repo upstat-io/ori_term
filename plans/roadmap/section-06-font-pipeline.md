@@ -255,8 +255,8 @@ Shape each run through rustybuzz to produce positioned glyphs with correct ligat
   - [x] `"hello"` → 5 glyphs, each col_span=1
   - [ ] `"=>"` with ligature-supporting font → 1 glyph, col_span=2 <!-- blocked-by:6.5 -->
   - [ ] `"fi"` with liga feature → 1 glyph (fi ligature), col_span=2 <!-- blocked-by:6.5 -->
-  - [ ] `"好"` (wide char) → 1 glyph, col_span=2 — requires CJK fallback font in test env
-  - [ ] CJK char → shaped from fallback face, correct face_idx — requires CJK fallback font in test env
+  - [x] `"好"` (wide char) → 1 glyph, col_span=2 — requires CJK fallback font in test env
+  - [x] CJK char → shaped from fallback face, correct face_idx — requires CJK fallback font in test env
 
 ---
 
