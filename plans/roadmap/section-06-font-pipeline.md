@@ -61,7 +61,7 @@ sections:
     status: complete
   - id: "6.19"
     title: Variable Font Axes
-    status: not-started
+    status: in-progress
   - id: "6.20"
     title: Font Codepoint Mapping
     status: not-started
@@ -877,11 +877,12 @@ Support variable fonts with configurable axis values (weight, width, slant, etc.
 
 **Reference:** Ghostty `font-variation-*` config, CSS `font-variation-settings`
 
-- [ ] Variable font axis detection:
-  - [ ] Query font for available axes: `wght` (weight), `wdth` (width), `slnt` (slant), `ital` (italic), custom axes
-  - [ ] Store discovered axes in `FaceData`: `axes: Vec<(Tag, f32, f32, f32)>` — (tag, min, default, max)
-  - [ ] `has_axis(&self, tag: &str) -> bool` — check if font supports an axis
-- [ ] Config integration:
+- [x] Variable font axis detection:
+  - [x] Query font for available axes: `wght` (weight), `wdth` (width), `slnt` (slant), `ital` (italic), custom axes
+  - [x] Store discovered axes in `FaceData`: `axes: Vec<AxisInfo>` — tag, min, default, max
+  - [x] `has_axis(axes, tag) -> bool` — check if font supports an axis
+  - [x] `clamp_to_axis(axes, tag, value) -> f32` — clamp to axis range
+- [ ] Config integration (blocked-by:13):
   ```toml
   [font]
   variations = { wght = 450, wdth = 87.5 }  # per-axis values
@@ -889,23 +890,26 @@ Support variable fonts with configurable axis values (weight, width, slant, etc.
   - [ ] Parse `variations: HashMap<String, f32>` from TOML
   - [ ] Validate values against axis min/max ranges
   - [ ] Clamp out-of-range values with warning log
-- [ ] Rasterization with variations:
-  - [ ] Pass variations to swash: `scale_ctx.builder(face).variations(&[(tag, value), ...])`
-  - [ ] Variable weight replaces synthetic bold when `wght` axis available
-  - [ ] Variable slant replaces synthetic italic when `slnt` or `ital` axis available
-  - [ ] Synthesis detection: prefer real axis over synthetic when available
-- [ ] Per-style variation overrides:
-  - [ ] Regular: use configured base variations
-  - [ ] Bold: `wght = min(base_wght + 300, axis_max)` (unless user specifies explicit bold weight)
-  - [ ] Italic: `slnt = -12` or `ital = 1` (unless user specifies)
-  - [ ] BoldItalic: combine bold weight + italic slant
-- [ ] Atlas key includes variation settings (different axis values produce different glyphs)
-- [ ] **Tests:**
-  - [ ] Variable font with `wght` axis: weight 400 vs 700 produce different glyphs
-  - [ ] Axis clamping: value beyond max clamped to max
-  - [ ] Bold derivation: `wght + 300` capped at axis maximum
-  - [ ] Config roundtrip: variations parsed from TOML correctly
-  - [ ] Non-variable font: variations ignored gracefully
+- [x] Rasterization with variations:
+  - [x] Pass variations to swash: `scale_ctx.builder(face).variations(&[(tag, value), ...])`
+  - [x] Variable weight replaces synthetic bold when `wght` axis available
+  - [x] Variable slant replaces synthetic italic when `slnt` or `ital` axis available
+  - [x] Synthesis detection: prefer real axis over synthetic when available
+  - [x] `face_variations()` computes settings + suppression flags from face index, synthetic flags, weight, and axes
+- [x] Per-style variation overrides:
+  - [x] Regular: use base weight
+  - [x] Bold: `wght = min(base_wght + 300, axis_max)`
+  - [x] Italic: `slnt = -12` or `ital = 1` (preference: slnt over ital)
+  - [x] BoldItalic: combine bold weight + italic slant
+- [x] Atlas key implicitly covers variations (deterministic from face_idx + synthetic + weight, cache cleared on set_size)
+- [x] **Tests:**
+  - [x] Axis clamping: value beyond min/max clamped correctly
+  - [x] Bold derivation: `wght + 300` capped at axis maximum
+  - [x] Synthetic bold/italic suppression when axis exists
+  - [x] Non-variable font: variations ignored gracefully, synthesis still works
+  - [x] Fallback faces: empty variations
+  - [x] slnt preferred over ital axis
+  - [ ] Config roundtrip: variations parsed from TOML correctly (blocked-by:13)
 
 ---
 

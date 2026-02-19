@@ -1411,3 +1411,256 @@ fn raster_key_subpx_x_distinguishes_cache() {
         "same glyph with different subpx_x should have different keys",
     );
 }
+
+// ── Variable font axes (Section 6.19) ──
+
+use super::face::{AxisInfo, clamp_to_axis, has_axis};
+use super::metadata::face_variations;
+
+/// Helper: build a fake `AxisInfo` for unit tests.
+fn axis(tag: &[u8; 4], min: f32, default: f32, max: f32) -> AxisInfo {
+    AxisInfo {
+        tag: *tag,
+        min,
+        default,
+        max,
+    }
+}
+
+#[test]
+fn embedded_font_has_no_variable_axes() {
+    let fd =
+        build_face(Arc::new(EMBEDDED_FONT_DATA.to_vec()), 0).expect("embedded font must build");
+    assert!(
+        fd.axes.is_empty(),
+        "JetBrains Mono Regular is not a variable font — should have zero axes",
+    );
+}
+
+#[test]
+fn has_axis_present() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    assert!(has_axis(&axes, *b"wght"), "wght axis should be found");
+}
+
+#[test]
+fn has_axis_absent() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    assert!(!has_axis(&axes, *b"slnt"), "slnt axis should not be found");
+}
+
+#[test]
+fn has_axis_empty_list() {
+    let axes: Vec<AxisInfo> = Vec::new();
+    assert!(!has_axis(&axes, *b"wght"), "empty axes should find nothing");
+}
+
+#[test]
+fn clamp_to_axis_within_range() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let val = clamp_to_axis(&axes, *b"wght", 500.0);
+    assert!(
+        (val - 500.0).abs() < f32::EPSILON,
+        "value within range should pass through unchanged",
+    );
+}
+
+#[test]
+fn clamp_to_axis_below_min() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let val = clamp_to_axis(&axes, *b"wght", 50.0);
+    assert!(
+        (val - 100.0).abs() < f32::EPSILON,
+        "value below min should clamp to min (100)",
+    );
+}
+
+#[test]
+fn clamp_to_axis_above_max() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let val = clamp_to_axis(&axes, *b"wght", 1000.0);
+    assert!(
+        (val - 900.0).abs() < f32::EPSILON,
+        "value above max should clamp to max (900)",
+    );
+}
+
+#[test]
+fn clamp_to_axis_tag_not_found() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let val = clamp_to_axis(&axes, *b"slnt", -20.0);
+    assert!(
+        (val - (-20.0)).abs() < f32::EPSILON,
+        "missing axis should return input value unchanged",
+    );
+}
+
+#[test]
+fn face_variations_fallback_returns_empty() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let result = face_variations(FaceIdx(4), SyntheticFlags::NONE, 400, &axes);
+    assert!(
+        result.settings.is_empty(),
+        "fallback face should return empty variations",
+    );
+    assert_eq!(result.suppress_synthetic, SyntheticFlags::NONE);
+}
+
+#[test]
+fn face_variations_no_axes_returns_empty() {
+    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::BOLD, 400, &[]);
+    assert!(
+        result.settings.is_empty(),
+        "no axes should return empty variations",
+    );
+    assert_eq!(result.suppress_synthetic, SyntheticFlags::NONE);
+}
+
+#[test]
+fn face_variations_regular_with_wght() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::NONE, 400, &axes);
+    assert_eq!(result.settings.len(), 1, "should set wght");
+    assert_eq!(result.settings[0].0, "wght");
+    assert!(
+        (result.settings[0].1 - 400.0).abs() < f32::EPSILON,
+        "Regular weight should be base weight (400)",
+    );
+    assert_eq!(result.suppress_synthetic, SyntheticFlags::NONE);
+}
+
+#[test]
+fn face_variations_bold_slot_with_wght() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let result = face_variations(FaceIdx(1), SyntheticFlags::NONE, 400, &axes);
+    assert_eq!(result.settings.len(), 1);
+    assert_eq!(result.settings[0].0, "wght");
+    assert!(
+        (result.settings[0].1 - 700.0).abs() < f32::EPSILON,
+        "Bold slot should derive weight 400 + 300 = 700",
+    );
+}
+
+#[test]
+fn face_variations_synthetic_bold_suppresses_flag() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 900.0)];
+    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::BOLD, 400, &axes);
+    assert_eq!(result.settings.len(), 1);
+    assert!(
+        (result.settings[0].1 - 700.0).abs() < f32::EPSILON,
+        "synthetic BOLD should derive weight 400 + 300 = 700",
+    );
+    assert!(
+        result.suppress_synthetic.contains(SyntheticFlags::BOLD),
+        "BOLD should be suppressed when wght axis exists",
+    );
+}
+
+#[test]
+fn face_variations_bold_clamped_to_axis_max() {
+    let axes = vec![axis(b"wght", 100.0, 400.0, 700.0)];
+    let result = face_variations(FaceIdx(1), SyntheticFlags::NONE, 600, &axes);
+    assert!(
+        (result.settings[0].1 - 700.0).abs() < f32::EPSILON,
+        "bold weight 600+300=900 should clamp to axis max 700",
+    );
+}
+
+#[test]
+fn face_variations_italic_with_slnt_axis() {
+    let axes = vec![
+        axis(b"wght", 100.0, 400.0, 900.0),
+        axis(b"slnt", -15.0, 0.0, 0.0),
+    ];
+    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, &axes);
+    assert_eq!(result.settings.len(), 2, "should set wght and slnt");
+    let slnt = result.settings.iter().find(|(t, _)| *t == "slnt");
+    assert!(slnt.is_some(), "slnt should be in settings");
+    assert!(
+        (slnt.unwrap().1 - (-12.0)).abs() < f32::EPSILON,
+        "Italic slot should set slnt to -12.0",
+    );
+}
+
+#[test]
+fn face_variations_synthetic_italic_with_slnt_suppresses() {
+    let axes = vec![axis(b"slnt", -15.0, 0.0, 0.0)];
+    let result = face_variations(FaceIdx::REGULAR, SyntheticFlags::ITALIC, 400, &axes);
+    let slnt = result.settings.iter().find(|(t, _)| *t == "slnt");
+    assert!(slnt.is_some(), "slnt should be set for synthetic italic");
+    assert!(
+        result.suppress_synthetic.contains(SyntheticFlags::ITALIC),
+        "ITALIC should be suppressed when slnt axis exists",
+    );
+}
+
+#[test]
+fn face_variations_italic_with_ital_axis() {
+    let axes = vec![axis(b"ital", 0.0, 0.0, 1.0)];
+    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, &axes);
+    let ital = result.settings.iter().find(|(t, _)| *t == "ital");
+    assert!(
+        ital.is_some(),
+        "ital should be in settings when no slnt axis"
+    );
+    assert!(
+        (ital.unwrap().1 - 1.0).abs() < f32::EPSILON,
+        "ital axis should be set to 1.0",
+    );
+}
+
+#[test]
+fn face_variations_slnt_preferred_over_ital() {
+    let axes = vec![axis(b"slnt", -15.0, 0.0, 0.0), axis(b"ital", 0.0, 0.0, 1.0)];
+    let result = face_variations(FaceIdx(2), SyntheticFlags::NONE, 400, &axes);
+    let has_slnt = result.settings.iter().any(|(t, _)| *t == "slnt");
+    let has_ital = result.settings.iter().any(|(t, _)| *t == "ital");
+    assert!(has_slnt, "slnt should be preferred over ital");
+    assert!(!has_ital, "ital should not be set when slnt exists");
+}
+
+#[test]
+fn face_variations_bold_italic_sets_both_axes() {
+    let axes = vec![
+        axis(b"wght", 100.0, 400.0, 900.0),
+        axis(b"slnt", -15.0, 0.0, 0.0),
+    ];
+    let result = face_variations(FaceIdx(3), SyntheticFlags::NONE, 400, &axes);
+    let has_wght = result.settings.iter().any(|(t, _)| *t == "wght");
+    let has_slnt = result.settings.iter().any(|(t, _)| *t == "slnt");
+    assert!(has_wght, "BoldItalic should set wght");
+    assert!(has_slnt, "BoldItalic should set slnt");
+}
+
+#[test]
+fn nonvariable_font_rasterizes_identically() {
+    // Embedded JetBrains Mono is not variable — verify that the new code
+    // path (empty axes → empty variations) produces a valid glyph.
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('H', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true, 0);
+    let glyph = fc
+        .rasterize(key)
+        .expect("'H' must rasterize with new code path");
+    assert!(glyph.width > 0, "bitmap width must be positive");
+    assert!(glyph.height > 0, "bitmap height must be positive");
+    assert!(
+        glyph.bitmap.iter().any(|&b| b > 0),
+        "bitmap should have non-zero pixels",
+    );
+}
+
+#[test]
+fn nonvariable_font_synthesis_still_works() {
+    // Verify that synthetic bold/italic still works on non-variable fonts
+    // (empty axes → no suppression).
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let regular = rasterize_with_synthesis(&mut fc, 'H', SyntheticFlags::NONE)
+        .expect("regular must rasterize");
+    let bold = rasterize_with_synthesis(&mut fc, 'H', SyntheticFlags::BOLD)
+        .expect("synthetic bold must rasterize");
+    assert_ne!(
+        regular.bitmap, bold.bitmap,
+        "synthetic bold must still differ from regular on non-variable fonts",
+    );
+}

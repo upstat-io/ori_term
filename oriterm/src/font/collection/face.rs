@@ -13,6 +13,24 @@ use swash::{CacheKey, FontRef};
 use super::RasterizedGlyph;
 use crate::font::{GlyphFormat, SyntheticFlags};
 
+/// A variable font axis with its valid range.
+///
+/// Discovered from the font's `fvar` table. Non-variable fonts have zero axes.
+pub(super) struct AxisInfo {
+    /// OpenType tag (e.g. `b"wght"`, `b"slnt"`, `b"ital"`).
+    pub tag: [u8; 4],
+    /// Minimum allowed value.
+    pub min: f32,
+    /// Default value (used when the axis is not explicitly set).
+    #[allow(
+        dead_code,
+        reason = "consumed when config-specified variations are added (Section 13)"
+    )]
+    pub default: f32,
+    /// Maximum allowed value.
+    pub max: f32,
+}
+
 /// Validated font data with swash metadata.
 ///
 /// Raw bytes are kept in [`Arc<Vec<u8>>`] for shared ownership with rustybuzz
@@ -27,6 +45,8 @@ pub(super) struct FaceData {
     offset: u32,
     /// Unique cache key for [`ScaleContext`] reuse.
     cache_key: CacheKey,
+    /// Variable font axes discovered from the `fvar` table.
+    pub(super) axes: Vec<AxisInfo>,
 }
 
 /// Validate font bytes and extract swash metadata.
@@ -39,15 +59,56 @@ pub(super) fn validate_font(data: &[u8], face_index: u32) -> Option<(u32, CacheK
 
 /// Build a [`FaceData`] from an [`Arc<Vec<u8>>`] and face index.
 ///
-/// Returns `None` if the font bytes are invalid.
+/// Returns `None` if the font bytes are invalid. Discovers variable font
+/// axes from the `fvar` table (empty for non-variable fonts).
 pub(super) fn build_face(bytes: Arc<Vec<u8>>, face_index: u32) -> Option<FaceData> {
     let (offset, cache_key) = validate_font(&bytes, face_index)?;
+    let axes = discover_axes(&bytes, face_index);
     Some(FaceData {
         bytes,
         face_index,
         offset,
         cache_key,
+        axes,
     })
+}
+
+/// Discover variable font axes from the `fvar` table via swash.
+///
+/// Returns an empty vec for non-variable fonts.
+fn discover_axes(data: &[u8], face_index: u32) -> Vec<AxisInfo> {
+    let Some(fr) = FontRef::from_index(data, face_index as usize) else {
+        return Vec::new();
+    };
+    fr.variations()
+        .map(|v| {
+            let tag = v.tag().to_be_bytes();
+            AxisInfo {
+                tag,
+                min: v.min_value(),
+                default: v.default_value(),
+                max: v.max_value(),
+            }
+        })
+        .collect()
+}
+
+/// Whether the axes list contains an axis with the given 4-byte tag.
+pub(super) fn has_axis(axes: &[AxisInfo], tag: [u8; 4]) -> bool {
+    axes.iter().any(|a| a.tag == tag)
+}
+
+/// Clamp a value to the axis range for the given tag.
+///
+/// Returns the value unchanged if the axis is not found (callers should
+/// check [`has_axis`] first).
+pub(super) fn clamp_to_axis(axes: &[AxisInfo], tag: [u8; 4], value: f32) -> f32 {
+    for a in axes {
+        if a.tag == tag {
+            return value.clamp(a.min, a.max);
+        }
+    }
+    value
 }
 
 /// Create a transient swash [`FontRef`] from stored face data.
@@ -88,6 +149,10 @@ pub(super) fn glyph_id(fd: &FaceData, ch: char) -> u16 {
 /// `format: GlyphFormat::Color` with RGBA premultiplied data regardless of
 /// the requested `format`. Callers must route color glyphs to a separate
 /// RGBA atlas.
+///
+/// `variations` is a slice of `(tag, value)` pairs to set on the font's
+/// variable axes (e.g. `[("wght", 700.0), ("slnt", -12.0)]`). Pass an
+/// empty slice for non-variable fonts or faces with no axis overrides.
 #[allow(
     clippy::too_many_arguments,
     reason = "rasterization requires all these parameters"
@@ -96,7 +161,7 @@ pub(super) fn rasterize_from_face(
     fd: &FaceData,
     glyph_id: u16,
     size_px: f32,
-    wght: Option<f32>,
+    variations: &[(&str, f32)],
     synthetic: SyntheticFlags,
     cell_height: f32,
     format: GlyphFormat,
@@ -108,9 +173,10 @@ pub(super) fn rasterize_from_face(
     let advance = fr.glyph_metrics(&[]).scale(size_px).advance_width(glyph_id);
 
     let builder = ctx.builder(fr).size(size_px).hint(hinted);
-    let mut scaler = match wght {
-        Some(w) => builder.variations(&[("wght", w)]).build(),
-        None => builder.build(),
+    let mut scaler = if variations.is_empty() {
+        builder.build()
+    } else {
+        builder.variations(variations).build()
     };
 
     let zeno_fmt = match format {

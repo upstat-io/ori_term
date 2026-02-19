@@ -25,7 +25,7 @@ pub use loading::FontSet;
 use metadata::parse_features;
 use metadata::{
     FallbackMeta, MAX_FONT_SIZE, MIN_FONT_SIZE, default_features, effective_size_for,
-    weight_variation,
+    face_variations,
 };
 
 /// A rasterized glyph bitmap ready for atlas upload.
@@ -238,7 +238,7 @@ impl FontCollection {
     /// Create rustybuzz `Face` objects for all loaded faces.
     ///
     /// Returns one entry per face slot (4 primary + N fallbacks). Primary faces
-    /// get weight variation applied; fallback faces use font defaults.
+    /// get variable axes set (wght, slnt, ital); fallback faces use font defaults.
     ///
     /// Faces borrow from `self`, so the returned vec must not outlive `self`.
     /// Create once per frame, reuse across all rows.
@@ -253,21 +253,34 @@ impl FontCollection {
         let total = 4 + self.fallbacks.len();
         let mut faces = Vec::with_capacity(total);
 
-        // Primary faces with weight variation.
+        // Primary faces with variable axes.
         for (i, slot) in self.primary.iter().enumerate() {
             faces.push(slot.as_ref().and_then(|fd| {
                 let mut face = rustybuzz::Face::from_slice(&fd.bytes, fd.face_index)?;
-                if let Some(w) = weight_variation(FaceIdx(i as u16), self.weight) {
-                    face.set_variations(&[rustybuzz::Variation {
-                        tag: rustybuzz::ttf_parser::Tag::from_bytes(b"wght"),
-                        value: w,
-                    }]);
+                let vars = face_variations(
+                    FaceIdx(i as u16),
+                    SyntheticFlags::NONE,
+                    self.weight,
+                    &fd.axes,
+                );
+                if !vars.settings.is_empty() {
+                    let rb_vars: Vec<rustybuzz::Variation> = vars
+                        .settings
+                        .iter()
+                        .map(|(tag, val)| rustybuzz::Variation {
+                            tag: rustybuzz::ttf_parser::Tag::from_bytes(
+                                tag.as_bytes().first_chunk::<4>().expect("4-byte tag"),
+                            ),
+                            value: *val,
+                        })
+                        .collect();
+                    face.set_variations(&rb_vars);
                 }
                 Some(face)
             }));
         }
 
-        // Fallback faces (no weight variation).
+        // Fallback faces (no variation).
         for fb in &self.fallbacks {
             faces.push(rustybuzz::Face::from_slice(&fb.bytes, fb.face_index));
         }
@@ -373,14 +386,15 @@ impl FontCollection {
             self.primary[key.face_idx.as_usize()].as_ref()?
         };
         let size = effective_size_for(key.face_idx, self.size_px, &self.fallback_meta);
-        let wght = weight_variation(key.face_idx, self.weight);
+        let face_vars = face_variations(key.face_idx, key.synthetic, self.weight, &fd.axes);
+        let effective_synthetic = key.synthetic - face_vars.suppress_synthetic;
         let subpx_x_offset = super::subpx_offset(key.subpx_x);
         let glyph = rasterize_from_face(
             fd,
             key.glyph_id,
             size,
-            wght,
-            key.synthetic,
+            &face_vars.settings,
+            effective_synthetic,
             self.metrics.height,
             self.format,
             self.hinting.hint_flag(),

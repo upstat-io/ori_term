@@ -4,6 +4,15 @@
 //! 500-line limit. All items are internal to the collection module.
 
 use super::super::FaceIdx;
+use super::face::{AxisInfo, clamp_to_axis, has_axis};
+use crate::font::SyntheticFlags;
+
+/// Weight axis tag.
+const WGHT: &[u8; 4] = b"wght";
+/// Slant axis tag.
+const SLNT: &[u8; 4] = b"slnt";
+/// Italic axis tag.
+const ITAL: &[u8; 4] = b"ital";
 
 /// Minimum font size in pixels (prevents degenerate scaling).
 pub(super) const MIN_FONT_SIZE: f32 = 2.0;
@@ -79,19 +88,78 @@ pub(super) fn effective_size_for(
     base_size
 }
 
-/// Compute the `wght` variation value for a face index.
+/// Computed variation settings and synthetic flag suppression.
 ///
-/// Primary faces use the configured weight (Regular/Italic) or bold-derived
-/// weight (Bold/BoldItalic). Fallback faces return `None`.
-pub(super) fn weight_variation(face_idx: FaceIdx, weight: u16) -> Option<f32> {
-    if face_idx.is_fallback() {
-        return None;
+/// When a font has variable axes that cover a requested style (e.g. `wght`
+/// for bold, `slnt`/`ital` for italic), the axis is set and the corresponding
+/// synthetic flag is suppressed — the real axis replaces outline manipulation.
+pub(super) struct FaceVariationResult {
+    /// Variation settings to pass to swash (rasterization) and rustybuzz (shaping).
+    pub settings: Vec<(&'static str, f32)>,
+    /// Synthetic flags to suppress because real axes handle them.
+    pub suppress_synthetic: SyntheticFlags,
+}
+
+/// Compute variation axis settings and synthetic suppression for a face.
+///
+/// Primary faces get weight/slant/italic axes set based on their style slot
+/// (Regular=0, Bold=1, Italic=2, `BoldItalic`=3) and any synthetic flags from
+/// resolution. Fallback faces return empty settings (no variation).
+///
+/// When the font has a real axis that covers the requested style, the
+/// corresponding synthetic flag is added to `suppress_synthetic` so callers
+/// can subtract it from the rasterization key's synthetic flags.
+pub(super) fn face_variations(
+    face_idx: FaceIdx,
+    synthetic: SyntheticFlags,
+    weight: u16,
+    axes: &[AxisInfo],
+) -> FaceVariationResult {
+    if face_idx.is_fallback() || axes.is_empty() {
+        return FaceVariationResult {
+            settings: Vec::new(),
+            suppress_synthetic: SyntheticFlags::NONE,
+        };
     }
+
+    let mut settings = Vec::with_capacity(2);
+    let mut suppress = SyntheticFlags::NONE;
     let i = face_idx.as_usize();
-    let w = if i == 1 || i == 3 {
-        (weight + 300).min(900)
-    } else {
-        weight
-    };
-    Some(w as f32)
+
+    // Weight axis: Bold/BoldItalic slots (1, 3) or synthetic BOLD.
+    let wants_bold = i == 1 || i == 3 || synthetic.contains(SyntheticFlags::BOLD);
+    if has_axis(axes, *WGHT) {
+        let target = if wants_bold {
+            (weight as f32 + 300.0).min(900.0)
+        } else {
+            weight as f32
+        };
+        settings.push(("wght", clamp_to_axis(axes, *WGHT, target)));
+        if synthetic.contains(SyntheticFlags::BOLD) {
+            suppress |= SyntheticFlags::BOLD;
+        }
+    }
+
+    // Slant/Italic axes: Italic/BoldItalic slots (2, 3) or synthetic ITALIC.
+    let wants_italic = i == 2 || i == 3 || synthetic.contains(SyntheticFlags::ITALIC);
+    if wants_italic {
+        if has_axis(axes, *SLNT) {
+            settings.push(("slnt", clamp_to_axis(axes, *SLNT, -12.0)));
+            if synthetic.contains(SyntheticFlags::ITALIC) {
+                suppress |= SyntheticFlags::ITALIC;
+            }
+        } else if has_axis(axes, *ITAL) {
+            settings.push(("ital", clamp_to_axis(axes, *ITAL, 1.0)));
+            if synthetic.contains(SyntheticFlags::ITALIC) {
+                suppress |= SyntheticFlags::ITALIC;
+            }
+        } else {
+            // No slant or italic axis — synthesis remains active.
+        }
+    }
+
+    FaceVariationResult {
+        settings,
+        suppress_synthetic: suppress,
+    }
 }
