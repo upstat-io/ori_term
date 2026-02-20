@@ -1047,3 +1047,70 @@ fn fill_portion_zero_behaves_like_hug() {
     assert_eq!(SizeSpec::FillPortion(0).fill_weight(), 0);
     assert!(!SizeSpec::FillPortion(0).is_fill());
 }
+
+// ── Nested flex cross-axis alignment ──
+
+#[test]
+fn nested_flex_align_center_uses_actual_solved_height() {
+    // Row with Align::Center, child is a Column with two 50px children.
+    // Container cross = 600px. Child actual height = 100px.
+    // Correct y = (600 - 100) / 2 = 250.
+    let inner_col = LayoutBox::flex(
+        Direction::Column,
+        vec![LayoutBox::leaf(80.0, 50.0), LayoutBox::leaf(80.0, 50.0)],
+    );
+
+    let row = LayoutBox::flex(Direction::Row, vec![inner_col])
+        .with_width(SizeSpec::Fill)
+        .with_height(SizeSpec::Fill)
+        .with_align(Align::Center);
+
+    let node = compute_layout(&row, viewport(800.0, 600.0));
+    let child = &node.children[0];
+    assert_approx(child.rect.height(), 100.0, "nested col height");
+    assert_approx(child.rect.y(), 250.0, "nested col centered y");
+}
+
+#[test]
+fn nested_flex_align_end_uses_actual_solved_height() {
+    // Row with Align::End, child is a Column with two 50px children.
+    // Container cross = 600px. Child actual height = 100px.
+    // Correct y = 600 - 100 = 500.
+    let inner_col = LayoutBox::flex(
+        Direction::Column,
+        vec![LayoutBox::leaf(80.0, 50.0), LayoutBox::leaf(80.0, 50.0)],
+    );
+
+    let row = LayoutBox::flex(Direction::Row, vec![inner_col])
+        .with_width(SizeSpec::Fill)
+        .with_height(SizeSpec::Fill)
+        .with_align(Align::End);
+
+    let node = compute_layout(&row, viewport(800.0, 600.0));
+    let child = &node.children[0];
+    assert_approx(child.rect.height(), 100.0, "nested col height");
+    assert_approx(child.rect.y(), 500.0, "nested col end y");
+}
+
+#[test]
+fn nested_flex_align_center_children_offset_correctly() {
+    // Verify grandchildren are also offset by the alignment adjustment.
+    let inner_col = LayoutBox::flex(
+        Direction::Column,
+        vec![LayoutBox::leaf(80.0, 30.0), LayoutBox::leaf(80.0, 30.0)],
+    );
+
+    let row = LayoutBox::flex(Direction::Row, vec![inner_col])
+        .with_width(SizeSpec::Fill)
+        .with_height(SizeSpec::Fill)
+        .with_align(Align::Center);
+
+    let node = compute_layout(&row, viewport(800.0, 600.0));
+    let col_node = &node.children[0];
+    // Column height = 60, centered in 600 → y = 270.
+    assert_approx(col_node.rect.y(), 270.0, "col y");
+    // First grandchild at top of column.
+    assert_approx(col_node.children[0].rect.y(), 270.0, "grandchild0 y");
+    // Second grandchild at y = 270 + 30 = 300.
+    assert_approx(col_node.children[1].rect.y(), 300.0, "grandchild1 y");
+}

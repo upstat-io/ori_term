@@ -71,13 +71,15 @@ fn solve_leaf(
     pos_x: f32,
     pos_y: f32,
 ) -> LayoutNode {
-    let (iw, ih) = match &layout_box.content {
-        BoxContent::Leaf {
-            intrinsic_width,
-            intrinsic_height,
-        } => (*intrinsic_width, *intrinsic_height),
-        BoxContent::Flex { .. } => (0.0, 0.0),
+    let BoxContent::Leaf {
+        intrinsic_width,
+        intrinsic_height,
+    } = &layout_box.content
+    else {
+        debug_assert!(false, "solve_leaf called on non-leaf");
+        return LayoutNode::new(Rect::default(), Rect::default());
     };
+    let (iw, ih) = (*intrinsic_width, *intrinsic_height);
 
     let width = resolve_size(
         layout_box.width,
@@ -169,7 +171,6 @@ fn solve_flex(
     // Pass 2: Position children.
     arrange_children(
         layout_box,
-        constraints,
         pos_x,
         pos_y,
         dir,
@@ -264,7 +265,6 @@ fn measure_children(
 #[expect(clippy::too_many_arguments, reason = "pass-2 needs all layout context")]
 fn arrange_children(
     layout_box: &LayoutBox,
-    _constraints: &LayoutConstraints,
     pos_x: f32,
     pos_y: f32,
     dir: Direction,
@@ -296,14 +296,23 @@ fn arrange_children(
     for (idx, child) in children.iter().enumerate() {
         let child_main = child_mains[idx];
 
-        let cross_pos =
-            compute_cross_position(align, child, dir, pad_cross_start, child_cross_avail);
-
+        // Solve child at cross-axis start position.
         let (cw, ch) = dir.compose(child_main, child_cross_avail);
         let child_constraints = LayoutConstraints::loose(cw, ch);
+        let (cx, cy) = dir.compose(cursor, pad_cross_start);
+        let mut node = solve(child, child_constraints, pos_x + cx, pos_y + cy);
 
-        let (cx, cy) = dir.compose(cursor, cross_pos);
-        let node = solve(child, child_constraints, pos_x + cx, pos_y + cy);
+        // Compute alignment offset using actual solved dimensions.
+        let actual_cross = dir.cross(node.rect.width(), node.rect.height());
+        let cross_offset = match align {
+            Align::Start | Align::Stretch => 0.0,
+            Align::Center => (child_cross_avail - actual_cross) / 2.0,
+            Align::End => child_cross_avail - actual_cross,
+        };
+        if cross_offset.abs() > f32::EPSILON {
+            offset_node_cross(&mut node, dir, cross_offset);
+        }
+
         child_nodes.push(node);
 
         cursor += child_main + gap + between;
@@ -399,43 +408,15 @@ fn compute_justification(justify: Justify, available: f32, used: f32, count: usi
     }
 }
 
-/// Computes the cross-axis position for a child based on alignment.
-fn compute_cross_position(
-    align: Align,
-    child: &LayoutBox,
-    dir: Direction,
-    pad_cross_start: f32,
-    cross_avail: f32,
-) -> f32 {
-    match align {
-        Align::Start | Align::Stretch => pad_cross_start,
-        Align::End => {
-            let child_cross = estimate_child_cross(child, dir, cross_avail);
-            pad_cross_start + cross_avail - child_cross
-        }
-        Align::Center => {
-            let child_cross = estimate_child_cross(child, dir, cross_avail);
-            pad_cross_start + (cross_avail - child_cross) / 2.0
-        }
+/// Offsets a solved node and all descendants along the cross axis.
+fn offset_node_cross(node: &mut LayoutNode, dir: Direction, delta: f32) {
+    let (dx, dy) = match dir {
+        Direction::Row => (0.0, delta),
+        Direction::Column => (delta, 0.0),
+    };
+    node.rect = node.rect.offset(dx, dy);
+    node.content_rect = node.content_rect.offset(dx, dy);
+    for child in &mut node.children {
+        offset_node_cross(child, dir, delta);
     }
-}
-
-/// Estimates a child's cross-axis size for alignment calculations.
-fn estimate_child_cross(child: &LayoutBox, dir: Direction, avail: f32) -> f32 {
-    let spec = match dir {
-        Direction::Row => child.height,
-        Direction::Column => child.width,
-    };
-    let intrinsic = match &child.content {
-        BoxContent::Leaf {
-            intrinsic_width,
-            intrinsic_height,
-        } => dir.cross(
-            *intrinsic_width + child.padding.width(),
-            *intrinsic_height + child.padding.height(),
-        ),
-        BoxContent::Flex { .. } => 0.0,
-    };
-    let margin = dir.cross_insets(child.margin);
-    resolve_size(spec, avail, intrinsic) + margin
 }

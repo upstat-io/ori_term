@@ -9,13 +9,13 @@ use crate::geometry::Insets;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LayoutConstraints {
     /// Minimum allowed width.
-    pub min_width: f32,
+    pub(crate) min_width: f32,
     /// Maximum allowed width.
-    pub max_width: f32,
+    pub(crate) max_width: f32,
     /// Minimum allowed height.
-    pub min_height: f32,
+    pub(crate) min_height: f32,
     /// Maximum allowed height.
-    pub max_height: f32,
+    pub(crate) max_height: f32,
 }
 
 impl Default for LayoutConstraints {
