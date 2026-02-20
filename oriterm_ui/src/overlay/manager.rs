@@ -68,6 +68,11 @@ pub enum OverlayEventResult {
 pub struct OverlayManager {
     overlays: Vec<Overlay>,
     viewport: Rect,
+    /// Index of the overlay currently under the cursor.
+    ///
+    /// Tracked across `process_hover_event` calls so we can send
+    /// `HoverEvent::Leave` to the old overlay when hover transitions.
+    hovered_overlay: Option<usize>,
 }
 
 impl OverlayManager {
@@ -76,6 +81,7 @@ impl OverlayManager {
         Self {
             overlays: Vec::new(),
             viewport,
+            hovered_overlay: None,
         }
     }
 
@@ -161,6 +167,8 @@ impl OverlayManager {
     pub fn pop_overlay(&mut self, id: OverlayId) -> bool {
         if let Some(idx) = self.overlays.iter().position(|o| o.id == id) {
             self.overlays.remove(idx);
+            // Invalidate hover tracking — index may be stale.
+            self.hovered_overlay = None;
             true
         } else {
             false
@@ -169,12 +177,17 @@ impl OverlayManager {
 
     /// Removes the topmost overlay and returns its ID.
     pub fn pop_topmost(&mut self) -> Option<OverlayId> {
-        self.overlays.pop().map(|o| o.id)
+        let result = self.overlays.pop().map(|o| o.id);
+        if result.is_some() {
+            self.hovered_overlay = None;
+        }
+        result
     }
 
     /// Removes all overlays.
     pub fn clear_all(&mut self) {
         self.overlays.clear();
+        self.hovered_overlay = None;
     }
 
     // Frame-loop API
@@ -247,6 +260,7 @@ impl OverlayManager {
                     measurer,
                     bounds: overlay.computed_rect,
                     is_focused: focused_widget == Some(root_id),
+                    focused_widget,
                 };
                 let response = overlay.widget.handle_mouse(event, &ctx);
                 return OverlayEventResult::Delivered {
@@ -303,6 +317,7 @@ impl OverlayManager {
             measurer,
             bounds: topmost.computed_rect,
             is_focused: focused_widget == Some(root_id),
+            focused_widget,
         };
         let response = topmost.widget.handle_key(event, &ctx);
 
@@ -318,36 +333,59 @@ impl OverlayManager {
 
     /// Routes a hover event through the overlay stack.
     ///
-    /// The `focused_widget` parameter indicates which widget currently has
-    /// keyboard focus (from the app layer's `FocusManager`).
+    /// Tracks which overlay was previously hovered. When the cursor moves
+    /// between overlays, sends `HoverEvent::Leave` to the old overlay and
+    /// `HoverEvent::Enter` to the new one.
     pub fn process_hover_event(
         &mut self,
         point: Point,
-        event: HoverEvent,
+        _event: HoverEvent,
         measurer: &dyn crate::widgets::TextMeasurer,
         focused_widget: Option<WidgetId>,
     ) -> OverlayEventResult {
         if self.overlays.is_empty() {
+            self.hovered_overlay = None;
             return OverlayEventResult::PassThrough;
         }
 
         // Find topmost overlay containing the point.
-        for i in (0..self.overlays.len()).rev() {
-            if self.overlays[i].computed_rect.contains(point) {
-                let overlay = &mut self.overlays[i];
-                let id = overlay.id;
-                let root_id = overlay.widget.id();
-                let ctx = EventCtx {
-                    measurer,
-                    bounds: overlay.computed_rect,
-                    is_focused: focused_widget == Some(root_id),
-                };
-                let response = overlay.widget.handle_hover(event, &ctx);
-                return OverlayEventResult::Delivered {
-                    overlay_id: id,
-                    response,
-                };
+        let new_hover = (0..self.overlays.len())
+            .rev()
+            .find(|&i| self.overlays[i].computed_rect.contains(point));
+
+        // Send Leave to old overlay if hover changed.
+        if self.hovered_overlay != new_hover {
+            if let Some(old_idx) = self.hovered_overlay {
+                if let Some(old_overlay) = self.overlays.get_mut(old_idx) {
+                    let root_id = old_overlay.widget.id();
+                    let ctx = EventCtx {
+                        measurer,
+                        bounds: old_overlay.computed_rect,
+                        is_focused: focused_widget == Some(root_id),
+                        focused_widget,
+                    };
+                    old_overlay.widget.handle_hover(HoverEvent::Leave, &ctx);
+                }
             }
+        }
+
+        self.hovered_overlay = new_hover;
+
+        if let Some(idx) = new_hover {
+            let overlay = &mut self.overlays[idx];
+            let id = overlay.id;
+            let root_id = overlay.widget.id();
+            let ctx = EventCtx {
+                measurer,
+                bounds: overlay.computed_rect,
+                is_focused: focused_widget == Some(root_id),
+                focused_widget,
+            };
+            let response = overlay.widget.handle_hover(HoverEvent::Enter, &ctx);
+            return OverlayEventResult::Delivered {
+                overlay_id: id,
+                response,
+            };
         }
 
         // Point is outside all overlays.

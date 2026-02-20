@@ -121,6 +121,7 @@ fn scroll_wheel_changes_offset() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     // Scroll down (negative delta_y means scroll down in our convention).
@@ -151,6 +152,7 @@ fn key_home_resets_to_top() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     let event = KeyEvent {
@@ -173,6 +175,7 @@ fn key_end_scrolls_to_bottom() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     let event = KeyEvent {
@@ -196,6 +199,7 @@ fn key_arrow_down_scrolls() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     let event = KeyEvent {
@@ -332,6 +336,7 @@ fn scroll_multiple_wheel_events_accumulate() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     // Scroll down 3 times.
@@ -357,6 +362,7 @@ fn scroll_wheel_clamps_at_bottom() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     // Scroll way past the bottom.
@@ -380,6 +386,7 @@ fn scroll_wheel_clamps_at_top() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     // Scroll up from top (should stay at 0).
@@ -401,6 +408,7 @@ fn scroll_pixel_delta_works() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     // Trackpad-style pixel delta.
@@ -426,6 +434,7 @@ fn scroll_delegates_non_scroll_mouse_to_child() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     let down = MouseEvent {
@@ -460,6 +469,7 @@ fn arrow_up_scrolls_upward() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     let event = KeyEvent {
@@ -578,6 +588,7 @@ fn scroll_hover_delegates_to_child() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     // Hover should delegate to the child.

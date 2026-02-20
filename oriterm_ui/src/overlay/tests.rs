@@ -530,6 +530,65 @@ fn hover_outside_non_modal_passes_through() {
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
+#[test]
+fn hover_transition_sends_leave_to_old_overlay() {
+    // Two overlays at different positions. Hover first, then move to second.
+    // Old overlay's widget should receive Leave.
+    let mut mgr = OverlayManager::new(viewport());
+
+    let btn_a = button_widget("A");
+    let anchor_a = Rect::new(50.0, 50.0, 80.0, 30.0);
+    let id_a = mgr.push_overlay(btn_a, anchor_a, Placement::Below);
+
+    let btn_b = button_widget("B");
+    let anchor_b = Rect::new(300.0, 50.0, 80.0, 30.0);
+    let id_b = mgr.push_overlay(btn_b, anchor_b, Placement::Below);
+
+    mgr.layout_overlays(&MockMeasurer::STANDARD);
+
+    let rect_a = mgr.overlay_rect(id_a).unwrap();
+    let rect_b = mgr.overlay_rect(id_b).unwrap();
+
+    // Hover into overlay A.
+    let result = mgr.process_hover_event(
+        Point::new(rect_a.x() + 5.0, rect_a.y() + 5.0),
+        HoverEvent::Enter,
+        &MockMeasurer::STANDARD,
+        None,
+    );
+    assert!(matches!(
+        result,
+        OverlayEventResult::Delivered {
+            overlay_id,
+            ..
+        } if overlay_id == id_a
+    ));
+
+    // Hover into overlay B — should send Leave to A internally.
+    let result = mgr.process_hover_event(
+        Point::new(rect_b.x() + 5.0, rect_b.y() + 5.0),
+        HoverEvent::Enter,
+        &MockMeasurer::STANDARD,
+        None,
+    );
+    assert!(matches!(
+        result,
+        OverlayEventResult::Delivered {
+            overlay_id,
+            ..
+        } if overlay_id == id_b
+    ));
+
+    // Hover outside both — should clear tracking.
+    let result = mgr.process_hover_event(
+        Point::new(1.0, 1.0),
+        HoverEvent::Leave,
+        &MockMeasurer::STANDARD,
+        None,
+    );
+    assert!(matches!(result, OverlayEventResult::PassThrough));
+}
+
 // --- Drawing tests ---
 
 #[test]

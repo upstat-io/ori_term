@@ -127,9 +127,16 @@ impl Widget for StackWidget {
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        // Key events go to frontmost child that handles them.
+        // Key events go to frontmost child that handles them,
+        // with per-child focus discrimination.
         for child in self.children.iter_mut().rev() {
-            let resp = child.handle_key(event, ctx);
+            let child_ctx = EventCtx {
+                measurer: ctx.measurer,
+                bounds: ctx.bounds,
+                is_focused: ctx.focused_widget == Some(child.id()),
+                focused_widget: ctx.focused_widget,
+            };
+            let resp = child.handle_key(event, &child_ctx);
             if resp.response.is_handled() {
                 return resp;
             }

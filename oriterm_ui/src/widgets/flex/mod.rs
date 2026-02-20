@@ -6,6 +6,7 @@
 //! flex layout solver from Section 07.3.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::geometry::Rect;
 use crate::input::{HoverEvent, KeyEvent, MouseEvent, MouseEventKind, layout_hit_test};
@@ -31,7 +32,7 @@ pub struct FlexWidget {
     hovered_child: Option<usize>,
     /// Cached layout result, keyed by bounds. Avoids re-solving the layout
     /// solver when bounds haven't changed between draw/event calls.
-    cached_layout: RefCell<Option<(Rect, LayoutNode)>>,
+    cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
 }
 
 impl FlexWidget {
@@ -94,19 +95,19 @@ impl FlexWidget {
         &self,
         measurer: &dyn super::TextMeasurer,
         bounds: Rect,
-    ) -> LayoutNode {
+    ) -> Rc<LayoutNode> {
         {
             let cached = self.cached_layout.borrow();
             if let Some((ref cb, ref node)) = *cached {
                 if *cb == bounds {
-                    return node.clone();
+                    return Rc::clone(node);
                 }
             }
         }
         let ctx = LayoutCtx { measurer };
         let layout_box = self.build_layout_box(&ctx);
-        let node = compute_layout(&layout_box, bounds);
-        *self.cached_layout.borrow_mut() = Some((bounds, node.clone()));
+        let node = Rc::new(compute_layout(&layout_box, bounds));
+        *self.cached_layout.borrow_mut() = Some((bounds, Rc::clone(&node)));
         node
     }
 
@@ -145,7 +146,8 @@ impl FlexWidget {
                 let child_ctx = EventCtx {
                     measurer: ctx.measurer,
                     bounds: child_node.content_rect,
-                    is_focused: ctx.is_focused,
+                    is_focused: ctx.focused_widget == Some(child.id()),
+                    focused_widget: ctx.focused_widget,
                 };
                 child.handle_hover(HoverEvent::Leave, &child_ctx);
             }
@@ -158,7 +160,8 @@ impl FlexWidget {
                 let child_ctx = EventCtx {
                     measurer: ctx.measurer,
                     bounds: child_node.content_rect,
-                    is_focused: ctx.is_focused,
+                    is_focused: ctx.focused_widget == Some(child.id()),
+                    focused_widget: ctx.focused_widget,
                 };
                 child.handle_hover(HoverEvent::Enter, &child_ctx);
             }
@@ -233,7 +236,8 @@ impl Widget for FlexWidget {
                 let child_ctx = EventCtx {
                     measurer: ctx.measurer,
                     bounds: child_node.content_rect,
-                    is_focused: ctx.is_focused,
+                    is_focused: ctx.focused_widget == Some(child.id()),
+                    focused_widget: ctx.focused_widget,
                 };
                 return child.handle_mouse(event, &child_ctx);
             }
@@ -257,7 +261,8 @@ impl Widget for FlexWidget {
                         let child_ctx = EventCtx {
                             measurer: ctx.measurer,
                             bounds: child_node.content_rect,
-                            is_focused: ctx.is_focused,
+                            is_focused: ctx.focused_widget == Some(child.id()),
+                            focused_widget: ctx.focused_widget,
                         };
                         child.handle_hover(HoverEvent::Leave, &child_ctx);
                     }
@@ -270,13 +275,14 @@ impl Widget for FlexWidget {
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.bounds);
 
-        // Delegate to all children with correct per-child bounds.
+        // Delegate to children with per-child focus discrimination.
         for (idx, child) in self.children.iter_mut().enumerate() {
             if let Some(child_node) = layout.children.get(idx) {
                 let child_ctx = EventCtx {
                     measurer: ctx.measurer,
                     bounds: child_node.content_rect,
-                    is_focused: ctx.is_focused,
+                    is_focused: ctx.focused_widget == Some(child.id()),
+                    focused_widget: ctx.focused_widget,
                 };
                 let resp = child.handle_key(event, &child_ctx);
                 if resp.response.is_handled() {

@@ -176,6 +176,7 @@ fn flex_delegates_mouse_to_child() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     // Click inside the button area (x > 40px).
@@ -211,7 +212,8 @@ fn flex_delegates_key_to_child() {
     let ctx = EventCtx {
         measurer: &measurer,
         bounds,
-        is_focused: true,
+        is_focused: false,
+        focused_widget: Some(btn_id),
     };
 
     let event = KeyEvent {
@@ -248,6 +250,7 @@ fn mouse_outside_children_is_ignored() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
     // Click far outside the label (label is 8px wide).
     let event = MouseEvent {
@@ -300,6 +303,7 @@ fn deeply_nested_mouse_routing() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     // Button is at row y=16 (after header), x=24 (after "Pre"=24px).
@@ -334,6 +338,7 @@ fn mouse_on_gap_between_children_is_ignored() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     // "A" occupies x=[0,8), gap is x=[8,28), "B" at x=[28,36).
@@ -356,6 +361,7 @@ fn empty_flex_mouse_events_ignored() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -374,6 +380,7 @@ fn empty_flex_key_events_ignored() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -451,6 +458,7 @@ fn child_consumes_event_stops_propagation() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     // Click at x=5 (inside first button).

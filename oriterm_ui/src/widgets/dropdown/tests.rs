@@ -17,6 +17,7 @@ fn event_ctx() -> EventCtx<'static> {
         measurer: &MEASURER,
         bounds: Rect::new(0.0, 0.0, 200.0, 28.0),
         is_focused: true,
+        focused_widget: None,
     }
 }
 

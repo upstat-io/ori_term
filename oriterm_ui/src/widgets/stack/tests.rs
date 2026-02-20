@@ -70,7 +70,8 @@ fn stack_key_routes_to_frontmost() {
     let ctx = EventCtx {
         measurer: &measurer,
         bounds,
-        is_focused: true,
+        is_focused: false,
+        focused_widget: Some(front_id),
     };
 
     let event = KeyEvent {
@@ -99,6 +100,7 @@ fn stack_mouse_routes_to_frontmost() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     let down = MouseEvent {
@@ -194,6 +196,7 @@ fn stack_empty_mouse_ignored() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
     let event = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -212,6 +215,7 @@ fn stack_empty_key_ignored() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -232,6 +236,7 @@ fn stack_hover_routes_to_frontmost() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     // Hover enter should reach the frontmost child.
@@ -248,6 +253,7 @@ fn stack_mouse_outside_bounds_ignored() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     // Click outside the stack's bounds.
@@ -311,7 +317,8 @@ fn stack_single_child_receives_events() {
     let ctx = EventCtx {
         measurer: &measurer,
         bounds,
-        is_focused: true,
+        is_focused: false,
+        focused_widget: Some(btn_id),
     };
 
     let event = KeyEvent {
@@ -339,6 +346,7 @@ fn stack_mouse_falls_through_to_back_child() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     let down = MouseEvent {

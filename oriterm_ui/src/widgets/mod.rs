@@ -137,6 +137,11 @@ pub struct EventCtx<'a> {
     pub bounds: Rect,
     /// Whether this widget currently has keyboard focus.
     pub is_focused: bool,
+    /// The currently focused widget, if any.
+    ///
+    /// Containers use this to set per-child `is_focused` correctly,
+    /// so only the focused child responds to key events.
+    pub focused_widget: Option<WidgetId>,
 }
 
 /// The core widget trait.

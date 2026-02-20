@@ -5,6 +5,7 @@
 //! navigation (PageUp/Down, Home/End), and an overlay scrollbar.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::color::Color;
 use crate::draw::RectStyle;
@@ -69,7 +70,7 @@ pub struct ScrollWidget {
     /// Pixels per mouse wheel line.
     line_height: f32,
     /// Cached child natural size, keyed by viewport bounds.
-    cached_child_layout: RefCell<Option<(Rect, LayoutNode)>>,
+    cached_child_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
 }
 
 impl ScrollWidget {
@@ -139,7 +140,7 @@ impl ScrollWidget {
         let unconstrained = Rect::new(0.0, 0.0, w, h);
         let node = compute_layout(&child_box, unconstrained);
         let size = (node.rect.width(), node.rect.height());
-        *self.cached_child_layout.borrow_mut() = Some((viewport, node));
+        *self.cached_child_layout.borrow_mut() = Some((viewport, Rc::new(node)));
         size
     }
 
@@ -255,7 +256,8 @@ impl Widget for ScrollWidget {
         let child_ctx = EventCtx {
             measurer: ctx.measurer,
             bounds: child_bounds,
-            is_focused: ctx.is_focused,
+            is_focused: ctx.focused_widget == Some(self.child.id()),
+            focused_widget: ctx.focused_widget,
         };
         self.child.handle_mouse(&child_event, &child_ctx)
     }

@@ -4,6 +4,7 @@
 //! layouts, dialog backgrounds, and settings panels.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::color::Color;
 use crate::draw::{RectStyle, Shadow};
@@ -53,7 +54,7 @@ pub struct PanelWidget {
     child: Box<dyn Widget>,
     style: PanelStyle,
     /// Cached layout result, keyed by bounds.
-    cached_layout: RefCell<Option<(crate::geometry::Rect, LayoutNode)>>,
+    cached_layout: RefCell<Option<(crate::geometry::Rect, Rc<LayoutNode>)>>,
 }
 
 impl PanelWidget {
@@ -107,12 +108,12 @@ impl PanelWidget {
         &self,
         measurer: &dyn super::TextMeasurer,
         bounds: crate::geometry::Rect,
-    ) -> LayoutNode {
+    ) -> Rc<LayoutNode> {
         {
             let cached = self.cached_layout.borrow();
             if let Some((ref cb, ref node)) = *cached {
                 if *cb == bounds {
-                    return node.clone();
+                    return Rc::clone(node);
                 }
             }
         }
@@ -123,8 +124,8 @@ impl PanelWidget {
             .with_width(SizeSpec::Fill)
             .with_height(SizeSpec::Fill)
             .with_widget_id(self.id);
-        let node = compute_layout(&wrapper, bounds);
-        *self.cached_layout.borrow_mut() = Some((bounds, node.clone()));
+        let node = Rc::new(compute_layout(&wrapper, bounds));
+        *self.cached_layout.borrow_mut() = Some((bounds, Rc::clone(&node)));
         node
     }
 }
@@ -178,7 +179,8 @@ impl Widget for PanelWidget {
                 let child_ctx = EventCtx {
                     measurer: ctx.measurer,
                     bounds: child_node.content_rect,
-                    is_focused: ctx.is_focused,
+                    is_focused: ctx.focused_widget == Some(self.child.id()),
+                    focused_widget: ctx.focused_widget,
                 };
                 return self.child.handle_mouse(event, &child_ctx);
             }
@@ -192,7 +194,8 @@ impl Widget for PanelWidget {
             let child_ctx = EventCtx {
                 measurer: ctx.measurer,
                 bounds: child_node.content_rect,
-                is_focused: ctx.is_focused,
+                is_focused: ctx.focused_widget == Some(self.child.id()),
+                focused_widget: ctx.focused_widget,
             };
             return self.child.handle_hover(event, &child_ctx);
         }
@@ -205,7 +208,8 @@ impl Widget for PanelWidget {
             let child_ctx = EventCtx {
                 measurer: ctx.measurer,
                 bounds: child_node.content_rect,
-                is_focused: ctx.is_focused,
+                is_focused: ctx.focused_widget == Some(self.child.id()),
+                focused_widget: ctx.focused_widget,
             };
             return self.child.handle_key(event, &child_ctx);
         }

@@ -118,7 +118,8 @@ fn panel_delegates_key_to_child() {
     let ctx = super::super::EventCtx {
         measurer: &measurer,
         bounds,
-        is_focused: true,
+        is_focused: false,
+        focused_widget: Some(child_id),
     };
     let event = KeyEvent {
         key: Key::Enter,
@@ -152,6 +153,7 @@ fn panel_delegates_mouse_to_child() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     // Click inside the child area (accounting for 12px padding).
@@ -189,6 +191,7 @@ fn panel_mouse_outside_child_ignored() {
         measurer: &measurer,
         bounds,
         is_focused: true,
+        focused_widget: None,
     };
 
     // Click in the panel's padding area (outside child bounds).
@@ -214,6 +217,7 @@ fn panel_delegates_hover_to_child() {
         measurer: &measurer,
         bounds,
         is_focused: false,
+        focused_widget: None,
     };
 
     // Hover should delegate to child.

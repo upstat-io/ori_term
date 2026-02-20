@@ -265,8 +265,8 @@ impl Widget for ToggleWidget {
         }
     }
 
-    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
-        if self.disabled {
+    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
+        if self.disabled || !ctx.is_focused {
             return WidgetResponse::ignored();
         }
         if event.key == Key::Space {
