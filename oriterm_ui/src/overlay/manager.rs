@@ -18,22 +18,29 @@ use super::placement::{Placement, compute_overlay_rect};
 /// Semi-transparent black for modal dimming.
 const MODAL_DIM_COLOR: Color = Color::rgba(0.0, 0.0, 0.0, 0.5);
 
+/// Discriminates overlay behavior: popup vs. modal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum OverlayKind {
+    /// Non-modal popup — dismissed on click outside.
+    Popup,
+    /// Modal dialog — blocks interaction below, not dismissable by click outside.
+    Modal,
+}
+
 /// A floating overlay containing a widget.
-pub struct Overlay {
+pub(super) struct Overlay {
     /// Unique identifier for this overlay.
-    pub id: OverlayId,
+    pub(super) id: OverlayId,
     /// The widget displayed in this overlay.
-    pub widget: Box<dyn Widget>,
+    pub(super) widget: Box<dyn Widget>,
     /// Anchor rectangle for placement computation.
-    pub anchor: Rect,
+    pub(super) anchor: Rect,
     /// Placement strategy relative to anchor.
-    pub placement: Placement,
-    /// Whether this overlay is modal (blocks interaction with layers below).
-    pub modal: bool,
-    /// Whether clicking outside dismisses this overlay.
-    pub dismiss_on_click_outside: bool,
+    pub(super) placement: Placement,
+    /// Popup vs. modal behavior.
+    pub(super) kind: OverlayKind,
     /// Computed screen-space rectangle (set by `layout_overlays`).
-    pub computed_rect: Rect,
+    pub(super) computed_rect: Rect,
 }
 
 /// Result of routing an event through the overlay stack.
@@ -94,7 +101,9 @@ impl OverlayManager {
 
     /// Returns `true` if the topmost overlay is modal.
     pub fn has_modal(&self) -> bool {
-        self.overlays.last().is_some_and(|o| o.modal)
+        self.overlays
+            .last()
+            .is_some_and(|o| o.kind == OverlayKind::Modal)
     }
 
     /// Returns the computed screen-space rectangle for an overlay.
@@ -123,8 +132,7 @@ impl OverlayManager {
             widget,
             anchor,
             placement,
-            modal: false,
-            dismiss_on_click_outside: true,
+            kind: OverlayKind::Popup,
             computed_rect: Rect::default(),
         });
         id
@@ -143,8 +151,7 @@ impl OverlayManager {
             widget,
             anchor,
             placement,
-            modal: true,
-            dismiss_on_click_outside: false,
+            kind: OverlayKind::Modal,
             computed_rect: Rect::default(),
         });
         id
@@ -202,7 +209,7 @@ impl OverlayManager {
         focused_widget: Option<WidgetId>,
     ) {
         for overlay in &self.overlays {
-            if overlay.modal {
+            if overlay.kind == OverlayKind::Modal {
                 draw_list.push_rect(self.viewport, RectStyle::filled(MODAL_DIM_COLOR));
             }
 
@@ -251,19 +258,18 @@ impl OverlayManager {
         let topmost = self.overlays.last().expect("checked non-empty above");
         let topmost_id = topmost.id;
 
-        if topmost.modal {
-            return OverlayEventResult::Blocked;
-        }
-
-        if topmost.dismiss_on_click_outside {
-            // Only dismiss on actual clicks (Down), not moves/scrolls.
-            if matches!(event.kind, MouseEventKind::Down(_)) {
-                self.overlays.pop();
-                return OverlayEventResult::Dismissed(topmost_id);
+        match topmost.kind {
+            OverlayKind::Modal => OverlayEventResult::Blocked,
+            OverlayKind::Popup => {
+                // Only dismiss on actual clicks (Down), not moves/scrolls.
+                if matches!(event.kind, MouseEventKind::Down(_)) {
+                    self.overlays.pop();
+                    OverlayEventResult::Dismissed(topmost_id)
+                } else {
+                    OverlayEventResult::PassThrough
+                }
             }
         }
-
-        OverlayEventResult::PassThrough
     }
 
     /// Routes a key event through the overlay stack.
@@ -286,7 +292,7 @@ impl OverlayManager {
 
         let topmost = self.overlays.last_mut().expect("checked non-empty above");
         let id = topmost.id;
-        let is_modal = topmost.modal;
+        let is_modal = topmost.kind == OverlayKind::Modal;
         let ctx = EventCtx {
             measurer,
             bounds: topmost.computed_rect,
@@ -345,16 +351,13 @@ impl OverlayManager {
     ///
     /// The application layer can use this with `FocusManager::set_focus_order()`
     /// to trap focus within the modal. Returns `None` if there is no modal.
-    pub fn modal_focus_order(
-        &self,
-        measurer: &dyn crate::widgets::TextMeasurer,
-    ) -> Option<Vec<WidgetId>> {
+    pub fn modal_focus_order(&self) -> Option<Vec<WidgetId>> {
         let topmost = self.overlays.last()?;
-        if !topmost.modal {
+        if topmost.kind != OverlayKind::Modal {
             return None;
         }
         let mut ids = Vec::new();
-        collect_focusable(&*topmost.widget, measurer, &mut ids);
+        collect_focusable(&*topmost.widget, &mut ids);
         Some(ids)
     }
 }
@@ -364,11 +367,7 @@ impl OverlayManager {
 /// For the modal focus order, we only need the top-level widget's focusability.
 /// Container widgets would need their own traversal — for now we check the
 /// root widget only.
-fn collect_focusable(
-    widget: &dyn Widget,
-    _measurer: &dyn crate::widgets::TextMeasurer,
-    ids: &mut Vec<WidgetId>,
-) {
+fn collect_focusable(widget: &dyn Widget, ids: &mut Vec<WidgetId>) {
     if widget.is_focusable() {
         ids.push(widget.id());
     }

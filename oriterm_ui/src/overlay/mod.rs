@@ -8,9 +8,9 @@ mod manager;
 mod overlay_id;
 mod placement;
 
-pub use manager::{Overlay, OverlayEventResult, OverlayManager};
+pub use manager::{OverlayEventResult, OverlayManager};
 pub use overlay_id::OverlayId;
-pub use placement::{Placement, compute_overlay_rect};
+pub use placement::Placement;
 
 #[cfg(test)]
 mod tests;

@@ -609,7 +609,7 @@ fn modal_focus_order_returns_focusable_ids() {
     mgr.push_modal(btn, anchor(), Placement::Center);
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
-    let order = mgr.modal_focus_order(&MockMeasurer::STANDARD);
+    let order = mgr.modal_focus_order();
     assert!(order.is_some());
     let ids = order.unwrap();
     assert!(ids.contains(&btn_id));
@@ -618,14 +618,14 @@ fn modal_focus_order_returns_focusable_ids() {
 #[test]
 fn no_modal_returns_none_focus_order() {
     let mgr = OverlayManager::new(viewport());
-    assert!(mgr.modal_focus_order(&MockMeasurer::STANDARD).is_none());
+    assert!(mgr.modal_focus_order().is_none());
 }
 
 #[test]
 fn non_modal_overlay_returns_none_focus_order() {
     let mut mgr = OverlayManager::new(viewport());
     mgr.push_overlay(button_widget("Btn"), anchor(), Placement::Below);
-    assert!(mgr.modal_focus_order(&MockMeasurer::STANDARD).is_none());
+    assert!(mgr.modal_focus_order().is_none());
 }
 
 // --- Viewport tests ---
@@ -942,7 +942,7 @@ fn label_not_focusable_in_modal() {
     mgr.push_modal(label_widget("Text Only"), anchor(), Placement::Center);
     mgr.layout_overlays(&MockMeasurer::STANDARD);
 
-    let order = mgr.modal_focus_order(&MockMeasurer::STANDARD);
+    let order = mgr.modal_focus_order();
     assert!(order.is_some());
     assert!(order.unwrap().is_empty(), "label has no focusable elements");
 }
