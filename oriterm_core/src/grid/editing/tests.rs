@@ -693,3 +693,281 @@ fn erase_display_above_does_not_dirty_lines_below() {
     // Only lines 0 and 1.
     assert_eq!(dirty, vec![0, 1]);
 }
+
+// --- Wide char boundary edge cases (tmux audit) ---
+
+/// Helper: place a wide char at `(line, col)` in a grid with existing content.
+fn grid_with_wide_at(lines: usize, cols: usize, fill: &str, wide_col: usize) -> Grid {
+    let mut grid = grid_with_text(lines, cols, fill);
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(wide_col));
+    grid.put_char('\u{597d}'); // CJK char, width 2
+    grid
+}
+
+#[test]
+fn insert_blank_splits_wide_char_at_cursor() {
+    // Wide char at cols 4-5. Insert at col 5 (the spacer). The base
+    // at col 4 should be cleared because its spacer is being shifted.
+    let mut grid = grid_with_text(24, 10, "ABCDEFGHIJ");
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(4));
+    grid.put_char('\u{597d}'); // Wide char at cols 4-5
+    grid.cursor_mut().set_col(Column(5));
+    grid.insert_blank(1);
+
+    let line = crate::index::Line(0);
+    // The wide char at col 4 should be cleared (spacer was displaced).
+    assert_eq!(grid[line][Column(4)].ch, ' ');
+    assert!(
+        !grid[line][Column(4)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+}
+
+#[test]
+fn insert_blank_wide_char_pushed_to_right_edge_clears() {
+    // Wide char at cols 8-9 in a 10-col grid. Insert at col 0 pushes
+    // the wide char base to col 9 (spacer falls off). Should clear.
+    let mut grid = Grid::new(24, 10);
+    grid.cursor_mut().set_col(Column(8));
+    grid.put_char('\u{597d}'); // Wide char at cols 8-9
+    grid.cursor_mut().set_col(Column(0));
+    grid.insert_blank(1);
+
+    let line = crate::index::Line(0);
+    // Wide char base pushed to col 9, spacer off-screen. Base should
+    // be cleared to a space without WIDE_CHAR flag.
+    assert_eq!(grid[line][Column(9)].ch, ' ');
+    assert!(
+        !grid[line][Column(9)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+}
+
+#[test]
+fn delete_chars_at_wide_char_spacer_boundary() {
+    // Wide char at cols 2-3. Cursor at col 2. Delete 1 char. The
+    // spacer at col 3 is the first shifted position — its base (col 2)
+    // is in the delete zone.
+    let mut grid = grid_with_text(24, 10, "ABCDEFGHIJ");
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(2));
+    grid.put_char('\u{597d}'); // Wide char at cols 2-3
+    grid.cursor_mut().set_col(Column(2));
+    grid.delete_chars(1);
+
+    let line = crate::index::Line(0);
+    // The orphaned spacer at col 3 (now shifted to col 2) should be
+    // cleaned up — no stale WIDE_CHAR_SPACER flag.
+    assert!(
+        !grid[line][Column(2)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+#[test]
+fn delete_chars_removes_wide_char_leaves_spacer_orphan() {
+    // Wide char at cols 4-5. Delete 2 chars at col 4. The delete range
+    // covers the base; the spacer at col 5 is the first shifted cell.
+    let mut grid = grid_with_text(24, 10, "ABCDEFGHIJ");
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(4));
+    grid.put_char('\u{597d}'); // Wide char at cols 4-5
+    grid.cursor_mut().set_col(Column(4));
+    grid.delete_chars(1);
+
+    let line = crate::index::Line(0);
+    // After delete: former spacer at col 5 shifts to col 4. It should
+    // have been cleaned up (no stale spacer flag).
+    assert!(
+        !grid[line][Column(4)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER),
+        "orphaned spacer should be cleaned up"
+    );
+}
+
+#[test]
+fn erase_line_right_splits_wide_char_at_start() {
+    // Wide char at cols 4-5. Erase right from col 5 (the spacer).
+    // The base at col 4 should be cleared since its spacer is erased.
+    let mut grid = grid_with_wide_at(24, 10, "ABCDEFGHIJ", 4);
+    grid.cursor_mut().set_col(Column(5));
+    grid.erase_line(LineEraseMode::Right);
+
+    let line = crate::index::Line(0);
+    // Base at col 4 should be cleared (its spacer was erased).
+    assert_eq!(grid[line][Column(4)].ch, ' ');
+    assert!(
+        !grid[line][Column(4)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+    // Col 5 and beyond should be erased.
+    assert!(grid[line][Column(5)].is_empty());
+}
+
+#[test]
+fn erase_line_left_splits_wide_char_at_end() {
+    // Wide char at cols 4-5. Erase left through col 4 (the base).
+    // The spacer at col 5 should be cleared since its base is erased.
+    let mut grid = grid_with_wide_at(24, 10, "ABCDEFGHIJ", 4);
+    grid.cursor_mut().set_col(Column(4));
+    grid.erase_line(LineEraseMode::Left);
+
+    let line = crate::index::Line(0);
+    // Spacer at col 5 should be cleared (base was erased).
+    assert_eq!(grid[line][Column(5)].ch, ' ');
+    assert!(
+        !grid[line][Column(5)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+#[test]
+fn erase_chars_splits_wide_char_at_start_boundary() {
+    // Wide char at cols 4-5. Erase 3 chars starting at col 5 (the spacer).
+    // The base at col 4 should be cleared.
+    let mut grid = grid_with_wide_at(24, 10, "ABCDEFGHIJ", 4);
+    grid.cursor_mut().set_col(Column(5));
+    grid.erase_chars(3);
+
+    let line = crate::index::Line(0);
+    assert_eq!(grid[line][Column(4)].ch, ' ');
+    assert!(
+        !grid[line][Column(4)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+    // Erased range is clean.
+    assert!(grid[line][Column(5)].is_empty());
+    assert!(grid[line][Column(6)].is_empty());
+    assert!(grid[line][Column(7)].is_empty());
+}
+
+#[test]
+fn erase_chars_splits_wide_char_at_end_boundary() {
+    // Wide char at cols 6-7. Erase 3 chars starting at col 4 (ends at col 6,
+    // which is the base of the wide char). The spacer at col 7 should be cleared.
+    let mut grid = grid_with_wide_at(24, 10, "ABCDEFGHIJ", 6);
+    grid.cursor_mut().set_col(Column(4));
+    grid.erase_chars(3);
+
+    let line = crate::index::Line(0);
+    // Spacer at col 7 should be cleared (its base at col 6 was erased).
+    assert_eq!(grid[line][Column(7)].ch, ' ');
+    assert!(
+        !grid[line][Column(7)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+#[test]
+fn bce_erase_on_wide_char_spacer_inherits_bg() {
+    use vte::ansi::Color;
+    // Wide char at cols 4-5. Set BCE bg, erase the spacer region.
+    let mut grid = grid_with_wide_at(24, 10, "ABCDEFGHIJ", 4);
+    grid.cursor_mut().set_col(Column(5));
+    grid.cursor_mut().template.bg = Color::Indexed(9);
+    grid.erase_chars(1);
+
+    let line = crate::index::Line(0);
+    // The cleared base at col 4 should NOT get the BCE bg (it's outside
+    // the erase range — fix_wide_boundaries clears orphaned halves).
+    // The erased spacer at col 5 should get the BCE bg.
+    assert_eq!(grid[line][Column(5)].bg, Color::Indexed(9));
+}
+
+#[test]
+fn erase_chars_covers_entire_wide_char() {
+    // Wide char at cols 4-5. Erase range [4..6) covers both halves.
+    // Neither half should be orphaned.
+    let mut grid = grid_with_wide_at(24, 10, "ABCDEFGHIJ", 4);
+    grid.cursor_mut().set_col(Column(4));
+    grid.erase_chars(2);
+
+    let line = crate::index::Line(0);
+    assert!(grid[line][Column(4)].is_empty());
+    assert!(grid[line][Column(5)].is_empty());
+    // No stale flags.
+    assert!(
+        !grid[line][Column(4)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        !grid[line][Column(5)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+#[test]
+fn insert_blank_between_consecutive_wide_chars() {
+    // Two wide chars: cols 0-1 and 2-3. Insert 1 blank at col 2
+    // (the base of the second wide char).
+    let mut grid = Grid::new(24, 10);
+    grid.put_char('\u{597d}'); // cols 0-1
+    grid.put_char('\u{4f60}'); // cols 2-3
+    grid.cursor_mut().set_col(Column(2));
+    grid.insert_blank(1);
+
+    let line = crate::index::Line(0);
+    // First wide char at cols 0-1 should be untouched.
+    assert!(
+        grid[line][Column(0)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[line][Column(1)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
+    // Col 2 should be a blank (inserted).
+    assert_eq!(grid[line][Column(2)].ch, ' ');
+    assert!(
+        !grid[line][Column(2)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        !grid[line][Column(2)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
+}
+
+#[test]
+fn delete_chars_between_consecutive_wide_chars() {
+    // Two wide chars: cols 0-1 and 2-3, then 'E' at col 4.
+    // Delete 2 at col 0 (removes first wide char entirely).
+    // Second wide char should shift left to cols 0-1.
+    let mut grid = Grid::new(24, 10);
+    grid.put_char('\u{597d}'); // cols 0-1
+    grid.put_char('\u{4f60}'); // cols 2-3
+    grid.put_char('E');
+    grid.cursor_mut().set_col(Column(0));
+    grid.delete_chars(2);
+
+    let line = crate::index::Line(0);
+    // Second wide char shifted to cols 0-1.
+    assert_eq!(grid[line][Column(0)].ch, '\u{4f60}');
+    assert!(
+        grid[line][Column(0)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR)
+    );
+    assert!(
+        grid[line][Column(1)]
+            .flags
+            .contains(crate::cell::CellFlags::WIDE_CHAR_SPACER)
+    );
+    assert_eq!(grid[line][Column(2)].ch, 'E');
+}

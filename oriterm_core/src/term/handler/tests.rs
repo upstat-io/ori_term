@@ -3793,3 +3793,159 @@ fn dirty_tracked_for_zerowidth_space() {
         "zero-width space should mark line dirty: {dirty:?}"
     );
 }
+
+// --- VT handler edge cases (tmux audit) ---
+
+#[test]
+fn decstbm_top_greater_than_bottom_is_ignored() {
+    let mut t = term();
+    // First set a valid region so we can verify it doesn't change.
+    feed(&mut t, b"\x1b[5;20r");
+    let region_before = t.grid().scroll_region().clone();
+
+    // CSI 10;5r — top > bottom: should be silently ignored.
+    feed(&mut t, b"\x1b[10;5r");
+    assert_eq!(
+        t.grid().scroll_region().clone(),
+        region_before,
+        "invalid DECSTBM (top > bottom) should be ignored"
+    );
+}
+
+#[test]
+fn decstbm_equal_top_and_bottom_is_ignored() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[5;20r");
+    let region_before = t.grid().scroll_region().clone();
+
+    // CSI 10;10r — top == bottom (single line): should be ignored.
+    feed(&mut t, b"\x1b[10;10r");
+    assert_eq!(
+        t.grid().scroll_region().clone(),
+        region_before,
+        "DECSTBM with top == bottom should be ignored"
+    );
+}
+
+#[test]
+fn decstbm_reset_with_no_params_restores_full_screen() {
+    let mut t = term();
+    // Set a sub-region.
+    feed(&mut t, b"\x1b[5;20r");
+    assert_ne!(t.grid().scroll_region().start, 0);
+
+    // CSI r — no params: reset to full screen.
+    feed(&mut t, b"\x1b[r");
+    assert_eq!(t.grid().scroll_region().start, 0);
+    assert_eq!(t.grid().scroll_region().end, 24);
+}
+
+#[test]
+fn cht_with_count_zero_treated_as_one() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[3;1H"); // Move to col 0
+    feed(&mut t, b"ABC"); // Now at col 3
+
+    // CSI 0 I — CHT with count=0, should act as count=1.
+    feed(&mut t, b"\x1b[0I");
+    // Next tab stop after col 3 is col 8.
+    assert_eq!(t.grid().cursor().col(), Column(8));
+}
+
+#[test]
+fn cht_with_count_three_advances_three_stops() {
+    let mut t = term();
+    // CSI 3 I — advance 3 tab stops from col 0 (stops at 8, 16, 24).
+    feed(&mut t, b"\x1b[3I");
+    assert_eq!(t.grid().cursor().col(), Column(24));
+}
+
+#[test]
+fn cbt_at_col_past_end_goes_to_last_stop() {
+    let mut t = term();
+    // Fill the line to trigger wrap-pending.
+    let text: String = (0..80).map(|_| 'A').collect();
+    feed(&mut t, text.as_bytes());
+    assert_eq!(t.grid().cursor().col(), Column(80)); // wrap-pending
+
+    // CSI Z — CBT from wrap-pending should snap and go to previous stop.
+    feed(&mut t, b"\x1b[Z");
+    assert_eq!(t.grid().cursor().col(), Column(72));
+}
+
+#[test]
+fn alt_screen_preserves_and_restores_cursor_position() {
+    let mut t = term();
+    // Move to a known position on primary screen.
+    feed(&mut t, b"\x1b[10;30H"); // Row 10, Col 30 (1-based)
+    assert_eq!(t.grid().cursor().line(), 9);
+    assert_eq!(t.grid().cursor().col(), Column(29));
+
+    // Enter alt screen (mode 1049 saves cursor).
+    feed(&mut t, b"\x1b[?1049h");
+    // Alt screen starts at origin.
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+
+    // Move in alt screen.
+    feed(&mut t, b"\x1b[5;15H");
+    assert_eq!(t.grid().cursor().line(), 4);
+
+    // Exit alt screen — cursor should be restored to primary position.
+    feed(&mut t, b"\x1b[?1049l");
+    assert_eq!(t.grid().cursor().line(), 9);
+    assert_eq!(t.grid().cursor().col(), Column(29));
+}
+
+#[test]
+fn scroll_up_count_exceeds_region_via_handler() {
+    let mut t = term();
+    feed(&mut t, b"AAAAA");
+    // CSI 100 S — scroll up by 100 (exceeds screen height).
+    feed(&mut t, b"\x1b[100S");
+    // All visible lines should be blank.
+    for line in 0..24 {
+        assert!(
+            t.grid()[crate::index::Line(line)][Column(0)].is_empty(),
+            "line {line} should be empty after massive scroll"
+        );
+    }
+}
+
+#[test]
+fn scroll_down_count_exceeds_region_via_handler() {
+    let mut t = term();
+    feed(&mut t, b"AAAAA");
+    // CSI 100 T — scroll down by 100.
+    feed(&mut t, b"\x1b[100T");
+    // All visible lines should be blank.
+    for line in 0..24 {
+        assert!(
+            t.grid()[crate::index::Line(line)][Column(0)].is_empty(),
+            "line {line} should be empty after massive scroll"
+        );
+    }
+}
+
+#[test]
+fn insert_delete_lines_outside_scroll_region_noop() {
+    let mut t = term();
+    // Fill with content.
+    for i in 0..24 {
+        feed(
+            &mut t,
+            format!("\x1b[{};1H{}", i + 1, (b'A' + (i as u8 % 26)) as char).as_bytes(),
+        );
+    }
+    // Set scroll region 5-20.
+    feed(&mut t, b"\x1b[5;20r");
+    // Move cursor to line 1 (outside region).
+    feed(&mut t, b"\x1b[1;1H");
+    let ch_before = t.grid()[crate::index::Line(0)][Column(0)].ch;
+
+    // IL and DL should be noop outside scroll region.
+    feed(&mut t, b"\x1b[5L"); // Insert 5 lines
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ch_before);
+    feed(&mut t, b"\x1b[5M"); // Delete 5 lines
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ch_before);
+}

@@ -88,6 +88,7 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 ## Reference Repos (`~/projects/reference_repos/console_repos/`)
 
+- **tmux** — C, the canonical terminal multiplexer. Grid/screen/tty separation, `input.c` (83k-line VT parser), `grid.c` (cell storage + extended cells for wide/RGB), `screen-write.c` (damage-tracked screen updates), `window-copy.c` (selection/search/vi-mode). Gold standard for PTY management, reflow, and session persistence
 - **alacritty** — 4-crate workspace, OpenGL, `vte` parser, strict clippy (`deny(clippy::all)`), `rustfmt.toml` with module imports
 - **wezterm** — 69-crate monorepo, `anyhow`+`thiserror` errors, Lua config, `portable-pty`, multiplexer architecture
 - **ghostty** — Zig, Metal+OpenGL+WebGL, SIMD, comptime C ABI, AGENTS.md, Valgrind integration

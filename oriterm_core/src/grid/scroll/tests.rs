@@ -934,6 +934,115 @@ fn reverse_index_in_middle_marks_cursor_lines_dirty() {
     assert_eq!(dirty.len(), 2);
 }
 
+// --- scrollback eviction edge cases (tmux audit) ---
+
+#[test]
+fn zero_scrollback_evicts_immediately() {
+    let mut grid = Grid::with_scrollback(3, 5, 0);
+    // Write identifiable content.
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid.put_char('A');
+
+    // Scroll up should not retain any scrollback.
+    grid.scroll_up(1);
+    assert_eq!(grid.scrollback().len(), 0);
+    assert!(grid.scrollback().is_empty());
+
+    // Multiple scrolls still produce no scrollback.
+    grid.scroll_up(1);
+    grid.scroll_up(1);
+    assert_eq!(grid.scrollback().len(), 0);
+}
+
+#[test]
+fn zero_scrollback_display_offset_stays_zero() {
+    let mut grid = Grid::with_scrollback(3, 5, 0);
+    // Trying to scroll display with no scrollback is a noop.
+    grid.scroll_display(5);
+    assert_eq!(grid.display_offset(), 0);
+
+    grid.scroll_up(1);
+    grid.scroll_display(1);
+    // Still 0 because scrollback is empty.
+    assert_eq!(grid.display_offset(), 0);
+}
+
+#[test]
+fn display_offset_clamped_when_scrollback_full_and_evicting() {
+    // Small scrollback capacity to test eviction behavior.
+    let mut grid = Grid::with_scrollback(3, 5, 5);
+
+    // Fill scrollback to capacity.
+    for _ in 0..5 {
+        grid.scroll_up(1);
+    }
+    assert_eq!(grid.scrollback().len(), 5);
+
+    // Scroll display back to oldest row.
+    grid.scroll_display(5);
+    assert_eq!(grid.display_offset(), 5);
+
+    // Push one more row — evicts oldest, but display_offset should
+    // remain clamped to max_scrollback (5).
+    grid.scroll_up(1);
+    assert_eq!(grid.scrollback().len(), 5);
+    assert_eq!(grid.display_offset(), 5);
+}
+
+#[test]
+fn scrollback_capacity_one_retains_only_newest() {
+    let mut grid = Grid::with_scrollback(3, 5, 1);
+
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid.put_char('A');
+    grid.scroll_up(1);
+    assert_eq!(grid.scrollback().len(), 1);
+    assert_eq!(grid.scrollback().get(0).unwrap()[Column(0)].ch, 'A');
+
+    // Push another row — 'A' should be evicted.
+    grid.cursor_mut().set_line(0);
+    grid.cursor_mut().set_col(Column(0));
+    grid.put_char('B');
+    grid.scroll_up(1);
+    assert_eq!(grid.scrollback().len(), 1);
+    assert_eq!(grid.scrollback().get(0).unwrap()[Column(0)].ch, 'B');
+}
+
+#[test]
+fn scroll_up_multi_count_pushes_all_to_scrollback() {
+    let mut grid = Grid::new(5, 5);
+    for line in 0..5 {
+        grid.cursor_mut().set_line(line);
+        grid.cursor_mut().set_col(Column(0));
+        grid.put_char((b'A' + line as u8) as char);
+    }
+
+    // Scroll up 3 at once — should push top 3 rows to scrollback.
+    grid.scroll_up(3);
+    assert_eq!(grid.scrollback().len(), 3);
+    // Newest = row 2 ('C'), oldest = row 0 ('A').
+    assert_eq!(grid.scrollback().get(0).unwrap()[Column(0)].ch, 'C');
+    assert_eq!(grid.scrollback().get(1).unwrap()[Column(0)].ch, 'B');
+    assert_eq!(grid.scrollback().get(2).unwrap()[Column(0)].ch, 'A');
+}
+
+#[test]
+fn sub_region_scroll_does_not_push_to_scrollback() {
+    let mut grid = Grid::new(5, 5);
+    for line in 0..5 {
+        grid.cursor_mut().set_line(line);
+        grid.cursor_mut().set_col(Column(0));
+        grid.put_char((b'A' + line as u8) as char);
+    }
+    grid.scroll_region = 1..4;
+    grid.scroll_up(2);
+
+    // Sub-region scroll never pushes to scrollback.
+    assert_eq!(grid.scrollback().len(), 0);
+}
+
 // --- scrollback content after mem::replace ---
 
 #[test]
