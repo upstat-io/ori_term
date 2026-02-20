@@ -1703,3 +1703,130 @@ fn mixed_mono_subpixel_color_route_to_separate_buffers() {
     assert_eq!(frame.subpixel_glyphs.len(), 1, "1 subpixel glyph");
     assert_eq!(frame.color_glyphs.len(), 1, "1 color glyph");
 }
+
+// ── Async resize guard tests ──
+
+#[test]
+fn shaped_frame_smaller_than_viewport_skips_excess_cells() {
+    // Shaped frame has 2 cols, but viewport grid has 4 cols.
+    // Cells beyond shaped.cols() should produce bg but no fg panic.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(4, 1, "ABCD");
+
+    // Atlas has entries for glyph IDs used in the shaped frame.
+    let atlas = key_atlas_with(&[10, 11], size_q6);
+
+    // Shaped frame only covers 2 columns (not 4).
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 10,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 0,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 11,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 1,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+    let shaped = shaped_one_row(2, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // All 4 cells produce backgrounds.
+    assert_eq!(frame.backgrounds.len(), 4);
+    // Only 2 shaped glyphs (cols 2-3 skipped by the resize guard).
+    assert_eq!(frame.glyphs.len(), 2);
+}
+
+#[test]
+fn shaped_frame_fewer_rows_than_viewport_skips_excess_rows() {
+    // Viewport has 3 rows, shaped frame has 1 row.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(2, 3, "AB    ");
+
+    let atlas = key_atlas_with(&[10], size_q6);
+
+    // Only 1 row in the shaped frame.
+    let glyphs = vec![ShapedGlyph {
+        glyph_id: 10,
+        face_idx: FaceIdx::REGULAR,
+        synthetic: SyntheticFlags::NONE,
+        col_start: 0,
+        col_span: 1,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }];
+    let shaped = shaped_one_row(2, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // 6 backgrounds (2 cols * 3 rows).
+    assert_eq!(frame.backgrounds.len(), 6);
+    // Only 1 glyph (from row 0); rows 1-2 skipped by guard.
+    assert_eq!(frame.glyphs.len(), 1);
+}
+
+#[test]
+fn shaped_frame_larger_than_viewport_no_panic() {
+    // Shaped frame has more data than the viewport — should not panic,
+    // only viewport cells get iterated.
+    let size_q6 = 768;
+    let input = FrameInput::test_grid(2, 1, "AB");
+
+    // Atlas has both glyph IDs.
+    let atlas = key_atlas_with(&[10, 11, 12, 13], size_q6);
+
+    // Shaped frame has 4 columns (more than viewport's 2).
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 10,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 0,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 11,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 1,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 12,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 2,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 13,
+            face_idx: FaceIdx::REGULAR,
+            synthetic: SyntheticFlags::NONE,
+            col_start: 3,
+            col_span: 1,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+    let shaped = shaped_one_row(4, &glyphs, size_q6);
+    let frame = prepare_frame_shaped(&input, &atlas, &shaped);
+
+    // Only 2 backgrounds (viewport is 2×1).
+    assert_eq!(frame.backgrounds.len(), 2);
+    // Only 2 glyphs (viewport cols 0 and 1).
+    assert_eq!(frame.glyphs.len(), 2);
+}

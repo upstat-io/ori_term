@@ -705,3 +705,150 @@ fn bgr_atlas_insert_produces_subpixel_kind() {
     let entry = atlas.insert(key, &glyph, &gpu.queue).unwrap();
     assert_eq!(entry.kind, AtlasKind::Subpixel);
 }
+
+// ── Eviction pressure tests ──
+
+#[test]
+fn lru_eviction_cycle_across_many_frames() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+    let max_dim = PAGE_SIZE - GLYPH_PADDING;
+
+    // Fill all 4 pages with page-filling glyphs.
+    for i in 0..4u16 {
+        atlas.begin_frame();
+        let key = test_key(i);
+        let glyph = test_glyph(max_dim, max_dim);
+        atlas.insert(key, &glyph, &gpu.queue);
+    }
+
+    // Run 10 frames of eviction: each frame evicts the oldest page and inserts
+    // a new glyph. After N evictions the surviving set should be the 4 most
+    // recently inserted keys.
+    for i in 4..14u16 {
+        atlas.begin_frame();
+        let key = test_key(i);
+        let glyph = test_glyph(max_dim, max_dim);
+        let entry = atlas.insert(key, &glyph, &gpu.queue);
+        assert!(
+            entry.is_some(),
+            "insert should succeed after eviction (i={i})"
+        );
+    }
+
+    // Only the last 4 inserted keys should survive.
+    for i in 10..14u16 {
+        assert!(
+            atlas.lookup(test_key(i)).is_some(),
+            "key {i} should still be cached",
+        );
+    }
+    for i in 0..10u16 {
+        assert!(
+            atlas.lookup(test_key(i)).is_none(),
+            "key {i} should have been evicted",
+        );
+    }
+}
+
+#[test]
+fn page_reuse_after_eviction_packs_new_glyphs() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+    let max_dim = PAGE_SIZE - GLYPH_PADDING;
+
+    // Fill all 4 pages.
+    for i in 0..4u16 {
+        atlas.begin_frame();
+        let key = test_key(i);
+        let glyph = test_glyph(max_dim, max_dim);
+        atlas.insert(key, &glyph, &gpu.queue);
+    }
+
+    // Evict page 0 (oldest) by inserting a small glyph.
+    atlas.begin_frame();
+    let small_key = test_key(100);
+    let small_glyph = test_glyph(8, 14);
+    let entry = atlas.insert(small_key, &small_glyph, &gpu.queue).unwrap();
+    let evicted_page = entry.page;
+
+    // The evicted page now has space. Insert many small glyphs that should
+    // all pack onto the same page.
+    let mut packed_on_same = 0;
+    for j in 101..120u16 {
+        let key = test_key(j);
+        let glyph = test_glyph(8, 14);
+        if let Some(e) = atlas.insert(key, &glyph, &gpu.queue) {
+            if e.page == evicted_page {
+                packed_on_same += 1;
+            }
+        }
+    }
+
+    assert!(
+        packed_on_same >= 10,
+        "small glyphs should pack onto evicted page: {packed_on_same} packed",
+    );
+}
+
+#[test]
+fn evict_and_reinsert_same_key() {
+    let Ok(gpu) = GpuState::new_headless() else {
+        eprintln!("skipped: no GPU adapter available");
+        return;
+    };
+
+    let mut atlas = GlyphAtlas::new(&gpu.device, GlyphFormat::Alpha);
+    let max_dim = PAGE_SIZE - GLYPH_PADDING;
+
+    // Insert key 0 on page 0.
+    atlas.begin_frame();
+    let key0 = test_key(0);
+    let glyph0 = test_glyph(max_dim, max_dim);
+    atlas.insert(key0, &glyph0, &gpu.queue).unwrap();
+
+    // Fill pages 1-3.
+    for i in 1..4u16 {
+        atlas.begin_frame();
+        let key = test_key(i);
+        let glyph = test_glyph(max_dim, max_dim);
+        atlas.insert(key, &glyph, &gpu.queue);
+    }
+
+    // Evict page 0 by inserting key 10 (small glyph occupies page 0 now).
+    atlas.begin_frame();
+    let key10 = test_key(10);
+    let glyph10 = test_glyph(8, 14);
+    atlas.insert(key10, &glyph10, &gpu.queue);
+
+    // key 0 should be gone now.
+    assert!(atlas.lookup(key0).is_none(), "key 0 evicted");
+
+    // Re-insert key 0 — page 0 has key10 so this full-page glyph evicts
+    // another page (page 1, the next-oldest).
+    atlas.begin_frame();
+    let reinserted = atlas.insert(key0, &glyph0, &gpu.queue);
+    assert!(
+        reinserted.is_some(),
+        "re-insert of evicted key should succeed"
+    );
+
+    // The re-inserted glyph should be lookupable.
+    assert!(
+        atlas.lookup(key0).is_some(),
+        "re-inserted glyph should be in cache",
+    );
+    // key 1 should now be evicted (it was the next-oldest).
+    assert!(
+        atlas.lookup(test_key(1)).is_none(),
+        "key 1 should be evicted to make room",
+    );
+}

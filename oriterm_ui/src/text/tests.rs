@@ -131,3 +131,28 @@ fn text_align_default_is_left() {
 fn text_overflow_default_is_clip() {
     assert_eq!(TextOverflow::default(), TextOverflow::Clip);
 }
+
+// --- Boundary value tests ---
+
+#[test]
+fn shaped_text_negative_baseline() {
+    // Negative baseline should be stored as-is (no clamping).
+    let t = ShapedText::new(Vec::new(), 0.0, 14.0, -5.0);
+    assert_eq!(t.baseline, -5.0);
+    assert!(t.is_empty());
+}
+
+#[test]
+fn shaped_glyph_zero_advance() {
+    // Zero-advance glyphs (e.g., combining marks) are valid.
+    let g = ShapedGlyph {
+        glyph_id: 100,
+        face_index: 1,
+        x_advance: 0.0,
+        x_offset: 2.0,
+        y_offset: -3.0,
+    };
+    assert_eq!(g.x_advance, 0.0);
+    assert_eq!(g.x_offset, 2.0);
+    assert_eq!(g.y_offset, -3.0);
+}

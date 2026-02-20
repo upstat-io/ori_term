@@ -612,3 +612,556 @@ fn text_color_glyph_routes_to_color_writer() {
     assert!(subpx.is_empty());
     assert_eq!(color_w.len(), 1);
 }
+
+// --- Corner radius edge cases (from Chromium rrect_f_unittest) ---
+
+#[test]
+fn uniform_radius_picks_max_of_four_corners() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::WHITE).with_per_corner_radius(2.0, 8.0, 4.0, 6.0);
+    dl.push_rect(Rect::new(0.0, 0.0, 200.0, 100.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    let rec = writer.as_bytes();
+    assert_eq!(read_f32(rec, 72), 8.0, "should pick max(2, 8, 4, 6) = 8");
+}
+
+#[test]
+fn all_corners_zero_is_sharp_rect() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::WHITE).with_per_corner_radius(0.0, 0.0, 0.0, 0.0);
+    dl.push_rect(Rect::new(0.0, 0.0, 50.0, 50.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    let rec = writer.as_bytes();
+    assert_eq!(read_f32(rec, 72), 0.0, "all-zero radii → sharp rect");
+}
+
+#[test]
+fn radius_larger_than_half_dimension_passes_through() {
+    // Chromium clamps, but our SDF shader handles this — verify it passes.
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::WHITE).with_radius(30.0);
+    dl.push_rect(Rect::new(0.0, 0.0, 20.0, 10.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    let rec = writer.as_bytes();
+    // The converter passes the radius as-is; the SDF shader clamps internally.
+    assert_eq!(read_f32(rec, 72), 30.0);
+}
+
+// --- Zero-size and degenerate rect edge cases ---
+
+#[test]
+fn zero_width_rect_produces_instance() {
+    let mut dl = DrawList::new();
+    dl.push_rect(
+        Rect::new(10.0, 20.0, 0.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    assert_eq!(read_f32(rec, 8), 0.0, "zero width preserved");
+    assert_eq!(read_f32(rec, 12), 50.0);
+}
+
+#[test]
+fn zero_height_rect_produces_instance() {
+    let mut dl = DrawList::new();
+    dl.push_rect(
+        Rect::new(10.0, 20.0, 100.0, 0.0),
+        RectStyle::filled(Color::WHITE),
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    assert_eq!(read_f32(rec, 8), 100.0);
+    assert_eq!(read_f32(rec, 12), 0.0, "zero height preserved");
+}
+
+// --- Shadow edge cases ---
+
+#[test]
+fn shadow_with_zero_blur_and_spread() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::WHITE).with_shadow(Shadow {
+        offset_x: 5.0,
+        offset_y: 5.0,
+        blur_radius: 0.0,
+        spread: 0.0,
+        color: Color::BLACK,
+    });
+    dl.push_rect(Rect::new(100.0, 100.0, 200.0, 150.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    assert_eq!(writer.len(), 2);
+    let bytes = writer.as_bytes();
+
+    // Shadow rect: expand=0, so same size as main, just offset.
+    let sx = read_f32(bytes, 0);
+    let sy = read_f32(bytes, 4);
+    let sw = read_f32(bytes, 8);
+    let sh = read_f32(bytes, 12);
+    assert_eq!(sx, 100.0 + 5.0); // offset_x only
+    assert_eq!(sy, 100.0 + 5.0); // offset_y only
+    assert_eq!(sw, 200.0); // no expansion
+    assert_eq!(sh, 150.0); // no expansion
+}
+
+#[test]
+fn shadow_with_negative_offset() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::WHITE).with_shadow(Shadow {
+        offset_x: -10.0,
+        offset_y: -10.0,
+        blur_radius: 0.0,
+        spread: 0.0,
+        color: Color::BLACK,
+    });
+    dl.push_rect(Rect::new(100.0, 100.0, 50.0, 50.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    let bytes = writer.as_bytes();
+    let sx = read_f32(bytes, 0);
+    let sy = read_f32(bytes, 4);
+    assert_eq!(sx, 90.0, "shadow shifted left");
+    assert_eq!(sy, 90.0, "shadow shifted up");
+}
+
+#[test]
+fn shadow_radius_inherits_rect_corner_radius() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::WHITE)
+        .with_radius(10.0)
+        .with_shadow(Shadow {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 4.0,
+            spread: 2.0,
+            color: Color::BLACK,
+        });
+    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 100.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    let bytes = writer.as_bytes();
+    // Shadow corner_radius = original(10) + expand(4+2) = 16.
+    let shadow_radius = read_f32(bytes, 72);
+    assert_eq!(shadow_radius, 16.0);
+
+    // Main rect corner_radius stays at 10.
+    let main_radius = read_f32(&bytes[INSTANCE_SIZE..], 72);
+    assert_eq!(main_radius, 10.0);
+}
+
+// --- Line edge cases (from Chromium line_f_unittest) ---
+
+#[test]
+fn vertical_line_converts_to_rect() {
+    let mut dl = DrawList::new();
+    dl.push_line(
+        Point::new(50.0, 10.0),
+        Point::new(50.0, 110.0),
+        2.0,
+        Color::BLACK,
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    let w = read_f32(rec, 8);
+    let h = read_f32(rec, 12);
+    assert!((w - 2.0).abs() < 0.01, "vertical line width ~2px, got {w}");
+    assert!(
+        (h - 100.0).abs() < 0.01,
+        "vertical line height ~100px, got {h}"
+    );
+}
+
+#[test]
+fn diagonal_line_aabb_correct() {
+    let mut dl = DrawList::new();
+    dl.push_line(
+        Point::new(0.0, 0.0),
+        Point::new(100.0, 100.0),
+        2.0,
+        Color::BLACK,
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    let x = read_f32(rec, 0);
+    let y = read_f32(rec, 4);
+    let w = read_f32(rec, 8);
+    let h = read_f32(rec, 12);
+
+    // AABB of a 45-degree line with thickness 2 should extend slightly beyond
+    // the line endpoints.
+    assert!(x < 0.0, "AABB should extend left of origin, got {x}");
+    assert!(y < 0.0, "AABB should extend above origin, got {y}");
+    assert!(w > 100.0, "AABB width should exceed line length, got {w}");
+    assert!(h > 100.0, "AABB height should exceed line length, got {h}");
+}
+
+// --- Text subpixel routing ---
+
+#[test]
+fn text_subpixel_glyph_routes_to_subpixel_writer() {
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: TEST_SIZE_Q6,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Ui,
+    };
+    map.insert(
+        key,
+        AtlasEntry {
+            kind: AtlasKind::Subpixel,
+            ..text_entry(42)
+        },
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    assert!(mono.is_empty(), "should not go to mono");
+    assert_eq!(subpx.len(), 1, "should route to subpixel writer");
+    assert!(color_w.is_empty(), "should not go to color");
+}
+
+// --- Text cursor accumulation and positioning ---
+
+#[test]
+fn text_many_glyphs_cursor_accumulates() {
+    let ids: Vec<u16> = (1..=50).collect();
+    let atlas = text_atlas_with(&ids);
+
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let glyphs: Vec<ShapedGlyph> = ids
+        .iter()
+        .map(|&id| ShapedGlyph {
+            glyph_id: id,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        })
+        .collect();
+    let st = shaped_text(glyphs);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    assert_eq!(mono.len(), 50);
+
+    // Verify last glyph x position: 49 * 7.0 + bearing_x(1) = 344.0.
+    let bytes = mono.as_bytes();
+    let last_x = read_f32(&bytes[49 * INSTANCE_SIZE..], 0);
+    assert!(
+        (last_x - 344.0).abs() < 0.5,
+        "last glyph at x = 49*7 + 1 = 344, got {last_x}",
+    );
+}
+
+#[test]
+fn text_two_commands_independent_cursors() {
+    let atlas = text_atlas_with(&[42, 43]);
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st1 = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+    let st2 = shaped_text(vec![ShapedGlyph {
+        glyph_id: 43,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(100.0, 0.0), st1, Color::WHITE);
+    dl.push_text(Point::new(200.0, 0.0), st2, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    assert_eq!(mono.len(), 2);
+
+    // Each text command starts its own cursor — positions should be independent.
+    let bytes = mono.as_bytes();
+    let x1 = read_f32(bytes, 0);
+    let x2 = read_f32(&bytes[INSTANCE_SIZE..], 0);
+    assert!(
+        (x1 - 101.0).abs() < 0.5,
+        "first text at 100 + bearing(1) = 101, got {x1}",
+    );
+    assert!(
+        (x2 - 201.0).abs() < 0.5,
+        "second text at 200 + bearing(1) = 201, got {x2}",
+    );
+}
+
+#[test]
+fn text_negative_bearing_extends_left() {
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: TEST_SIZE_Q6,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Ui,
+    };
+    map.insert(
+        key,
+        AtlasEntry {
+            bearing_x: -3,
+            ..text_entry(42)
+        },
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    assert_eq!(mono.len(), 1);
+    let gx = read_f32(mono.as_bytes(), 0);
+    // x = 10.0 + bearing_x(-3) = 7.0 (extends left of cursor).
+    assert!(
+        (gx - 7.0).abs() < 0.5,
+        "negative bearing extends left: 10 + (-3) = 7, got {gx}",
+    );
+}
+
+#[test]
+fn text_all_spaces_produces_no_glyph_instances() {
+    let atlas = text_atlas_with(&[]);
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let glyphs = vec![
+        ShapedGlyph {
+            glyph_id: 0,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 0,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+        ShapedGlyph {
+            glyph_id: 0,
+            face_index: 0,
+            x_advance: 7.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        },
+    ];
+    let st = shaped_text(glyphs);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    assert!(
+        mono.is_empty(),
+        "all-space text should produce zero instances"
+    );
+}
+
+#[test]
+fn text_fractional_position_applies_subpixel_phase() {
+    // Position at x=10.5 should produce subpx_x=2 (phase 0.50).
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: TEST_SIZE_Q6,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+        subpx_x: 2, // phase for 0.5 fractional
+        font_realm: FontRealm::Ui,
+    };
+    map.insert(key, text_entry(42));
+    let atlas = KeyTestAtlas(map);
+
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(10.5, 20.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx));
+
+    // If the subpixel phase key matches, the atlas lookup succeeds and
+    // we get one glyph instance.
+    assert_eq!(
+        mono.len(),
+        1,
+        "fractional position should match subpx_x=2 phase",
+    );
+}
+
+// --- Border without fill ---
+
+#[test]
+fn border_only_rect_has_transparent_fill() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::default()
+        .with_border(2.0, Color::WHITE)
+        .with_radius(4.0);
+    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    // Fill (bg_color) = transparent (default when no fill set).
+    assert_eq!(read_f32(rec, 48), 0.0);
+    assert_eq!(read_f32(rec, 52), 0.0);
+    assert_eq!(read_f32(rec, 56), 0.0);
+    assert_eq!(read_f32(rec, 60), 0.0);
+    // Border (fg_color) = white.
+    assert_eq!(read_f32(rec, 32), 1.0);
+    // Border width.
+    assert_eq!(read_f32(rec, 76), 2.0);
+}
