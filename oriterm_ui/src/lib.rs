@@ -14,6 +14,7 @@ pub mod layout;
 pub mod scale;
 pub mod text;
 pub mod widget_id;
+pub mod widgets;
 pub mod window;
 
 #[cfg(target_os = "linux")]

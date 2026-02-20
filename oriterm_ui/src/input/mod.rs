@@ -9,7 +9,8 @@ mod hit_test;
 mod routing;
 
 pub use event::{
-    EventResponse, HoverEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind, ScrollDelta,
+    EventResponse, HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind,
+    ScrollDelta,
 };
 pub use hit_test::{layout_hit_test, layout_hit_test_clipped};
 pub use routing::{InputState, RouteAction};

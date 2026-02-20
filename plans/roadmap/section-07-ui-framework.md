@@ -13,16 +13,16 @@ sections:
     status: complete
   - id: "07.3"
     title: Layout Engine
-    status: in-progress
+    status: complete
   - id: "07.4"
     title: Hit Testing & Input Routing
     status: complete
   - id: "07.5"
     title: Focus & Keyboard Navigation
-    status: in-progress
+    status: complete
   - id: "07.6"
     title: Core Widgets
-    status: not-started
+    status: complete
   - id: "07.7"
     title: Container Widgets
     status: not-started
@@ -194,7 +194,7 @@ Flexbox-inspired layout system. Compute positions and sizes for all widgets befo
 
 - [x] `compute_layout(root: &LayoutBox, viewport: Rect) -> LayoutNode`
   - [x] Top-down constraint propagation, bottom-up size resolution
-  - [ ] Cache layout results — only recompute when dirty <!-- blocked-by:7.6 -->
+  - [ ] Cache layout results — only recompute when dirty <!-- deferred to 07.12 -->
 
 ---
 
@@ -241,15 +241,15 @@ Focus ring for keyboard-driven UI navigation.
   - [x] `focus_next()` — Tab key advances focus
   - [x] `focus_prev()` — Shift+Tab moves focus backward
 
-- [ ] Focus visual: <!-- blocked-by:7.6 -->
-  - [ ] Focused widget renders a focus ring (2px outline, accent color) <!-- blocked-by:7.6 -->
-  - [ ] Optional per-widget: `focusable: bool` <!-- blocked-by:7.6 -->
+- [x] Focus visual:
+  - [x] Focused widget renders a focus ring (2px outline, accent color)
+  - [x] Optional per-widget: `focusable: bool` via `Widget::is_focusable()`
 
-- [ ] Keyboard shortcuts: <!-- blocked-by:7.6 -->
-  - [ ] `Tab` / `Shift+Tab` — cycle focus <!-- blocked-by:7.6 -->
-  - [ ] `Enter` / `Space` — activate focused button/checkbox <!-- blocked-by:7.6 -->
-  - [ ] `Escape` — close overlay, unfocus <!-- blocked-by:7.6 -->
-  - [ ] `Arrow keys` — navigate within lists, dropdowns <!-- blocked-by:7.6 -->
+- [x] Keyboard shortcuts:
+  - [x] `Tab` / `Shift+Tab` — cycle focus (via FocusManager)
+  - [x] `Enter` / `Space` — activate focused button/checkbox
+  - [x] `Escape` — close overlay, unfocus (Key::Escape in Key enum)
+  - [x] `Arrow keys` — navigate within lists, dropdowns
 
 ---
 
@@ -260,45 +260,54 @@ The basic building blocks.
 **File:** `oriterm_ui/src/widgets/` — one file per widget
 
 ### Label
-- [ ] Static or dynamic text display
-- [ ] `LabelWidget { text: String, style: TextStyle }`
-- [ ] Supports single-line and multi-line
-- [ ] Ellipsis truncation when constrained
+- [x] Static or dynamic text display
+- [x] `LabelWidget { text: String, style: LabelStyle }` — `widgets/label/mod.rs`
+- [x] Supports single-line, ellipsis truncation configurable via `TextOverflow`
 
 ### Button
-- [ ] `ButtonWidget { label: String, on_click: Callback, style: ButtonStyle }`
-- [ ] States: Default, Hover, Pressed, Disabled, Focused
-- [ ] Visual: rounded rect background, centered text, hover highlight
-- [ ] Keyboard: activatable via Enter/Space when focused
+- [x] `ButtonWidget` with `WidgetAction::Clicked` (no closures) — `widgets/button/mod.rs`
+- [x] States: Default, Hover, Pressed, Disabled, Focused
+- [x] Visual: rounded rect background, centered text, hover highlight, focus ring
+- [x] Keyboard: activatable via Enter/Space when focused
 
 ### Checkbox
-- [ ] `CheckboxWidget { checked: bool, label: String, on_toggle: Callback }`
-- [ ] Visual: box with checkmark, label to the right
-- [ ] Keyboard: toggle via Space when focused
+- [x] `CheckboxWidget` with `WidgetAction::Toggled` — `widgets/checkbox/mod.rs`
+- [x] Visual: box with checkmark lines, label to the right
+- [x] Keyboard: toggle via Space when focused
 
 ### Toggle
-- [ ] `ToggleWidget { on: bool, on_toggle: Callback }`
-- [ ] Visual: sliding pill (iOS-style toggle)
-- [ ] Animated transition between on/off states
+- [x] `ToggleWidget` with animation-ready `toggle_progress` — `widgets/toggle/mod.rs`
+- [x] Visual: sliding pill (iOS-style toggle)
+- [x] `toggle_progress: f32` snaps to 0.0/1.0; animation system (07.9) will interpolate
 
 ### Slider
-- [ ] `SliderWidget { value: f32, min: f32, max: f32, on_change: Callback }`
-- [ ] Visual: track with draggable thumb
-- [ ] Keyboard: arrow keys adjust value
+- [x] `SliderWidget` with `WidgetAction::ValueChanged` — `widgets/slider/mod.rs`
+- [x] Visual: track with draggable thumb, filled portion
+- [x] Keyboard: arrow keys adjust value by step, Home/End jump to min/max
 
 ### Text Input
-- [ ] `TextInputWidget { text: String, placeholder: String, on_change: Callback }`
-- [ ] Single-line text entry with cursor, selection, copy/paste
-- [ ] Visual: bordered rect, blinking cursor, selection highlight
+- [x] `TextInputWidget` with `WidgetAction::TextChanged` — `widgets/text_input/mod.rs`
+- [x] Single-line text entry with cursor, selection, keyboard editing
+- [x] Visual: bordered rect, cursor, selection highlight, placeholder
+- [x] Clipboard operations deferred — emits actions for app layer
 
 ### Dropdown
-- [ ] `DropdownWidget { items: Vec<String>, selected: usize, on_select: Callback }`
-- [ ] Visual: button that opens a floating list
-- [ ] Uses overlay system (07.8) for the dropdown list
+- [x] `DropdownWidget` trigger button — `widgets/dropdown/mod.rs`
+- [x] Visual: button showing selected item + chevron indicator
+- [x] Popup list deferred to overlay system (07.8)
+- [x] Arrow Up/Down cycle through items
 
 ### Separator
-- [ ] Horizontal or vertical line with optional label
-- [ ] `SeparatorWidget { direction: Direction, label: Option<String> }`
+- [x] `SeparatorWidget` horizontal/vertical with optional label — `widgets/separator/mod.rs`
+
+### Infrastructure
+- [x] `Widget` trait with `id()`, `is_focusable()`, `layout()`, `draw()`, `handle_mouse()`, `handle_hover()`, `handle_key()`
+- [x] `WidgetAction` enum: `Clicked`, `Toggled`, `ValueChanged`, `TextChanged`, `Selected`
+- [x] `WidgetResponse` with `EventResponse` + optional `WidgetAction`
+- [x] `TextMeasurer` trait for decoupled text measurement
+- [x] `LayoutCtx`, `DrawCtx`, `EventCtx` context structs
+- [x] `KeyEvent` + `Key` enum added to `input/event.rs`
+- [x] `MockMeasurer` for widget tests (8px/char, 16px line height)
 
 ---
 

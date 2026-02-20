@@ -147,3 +147,47 @@ impl EventResponse {
         )
     }
 }
+
+/// A keyboard key relevant to widget interaction.
+///
+/// Much simpler than winit's key model — only keys that widgets actually
+/// handle. The app layer translates platform key events into this type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Key {
+    /// Enter/Return.
+    Enter,
+    /// Space bar.
+    Space,
+    /// Backspace.
+    Backspace,
+    /// Delete (forward delete).
+    Delete,
+    /// Escape.
+    Escape,
+    /// Tab key (not to be confused with Tab cycling — that is handled by
+    /// the focus manager before reaching widgets).
+    Tab,
+    /// Home key.
+    Home,
+    /// End key.
+    End,
+    /// Up arrow.
+    ArrowUp,
+    /// Down arrow.
+    ArrowDown,
+    /// Left arrow.
+    ArrowLeft,
+    /// Right arrow.
+    ArrowRight,
+    /// A character key (after dead-key / IME composition).
+    Character(char),
+}
+
+/// A keyboard event in the widget event model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyEvent {
+    /// Which key was pressed.
+    pub key: Key,
+    /// Active keyboard modifiers.
+    pub modifiers: Modifiers,
+}
