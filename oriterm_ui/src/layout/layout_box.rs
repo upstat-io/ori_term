@@ -5,6 +5,7 @@
 //! trees as output.
 
 use crate::geometry::Insets;
+use crate::widget_id::WidgetId;
 
 use super::flex::{Align, Direction, Justify};
 use super::size_spec::SizeSpec;
@@ -59,6 +60,8 @@ pub struct LayoutBox {
     pub max_height: f32,
     /// What this box contains.
     pub content: BoxContent,
+    /// Optional widget ID for hit testing and event routing.
+    pub widget_id: Option<WidgetId>,
 }
 
 impl LayoutBox {
@@ -77,6 +80,7 @@ impl LayoutBox {
                 intrinsic_width,
                 intrinsic_height,
             },
+            widget_id: None,
         }
     }
 
@@ -98,6 +102,7 @@ impl LayoutBox {
                 gap: 0.0,
                 children,
             },
+            widget_id: None,
         }
     }
 
@@ -187,6 +192,13 @@ impl LayoutBox {
         if let BoxContent::Flex { gap: ref mut g, .. } = self.content {
             *g = gap;
         }
+        self
+    }
+
+    /// Attaches a widget ID for hit testing and event routing.
+    #[must_use]
+    pub fn with_widget_id(mut self, id: WidgetId) -> Self {
+        self.widget_id = Some(id);
         self
     }
 }

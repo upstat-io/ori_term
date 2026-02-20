@@ -1,12 +1,13 @@
 //! Computed layout output node.
 
 use crate::geometry::Rect;
+use crate::widget_id::WidgetId;
 
 /// A computed layout node — the output of the layout solver.
 ///
 /// Each node stores its outer rectangle (including margin offset), the
 /// content rectangle (outer rect inset by padding), and child nodes
-/// for flex containers.
+/// for flex containers. Optionally carries a `WidgetId` for hit testing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutNode {
     /// Outer bounding rectangle (position relative to parent's content area).
@@ -15,15 +16,18 @@ pub struct LayoutNode {
     pub content_rect: Rect,
     /// Child layout nodes (empty for leaves).
     pub children: Vec<Self>,
+    /// Widget that owns this node (used by hit testing).
+    pub widget_id: Option<WidgetId>,
 }
 
 impl LayoutNode {
-    /// Creates a leaf node with no children.
+    /// Creates a leaf node with no children and no widget ID.
     pub fn new(rect: Rect, content_rect: Rect) -> Self {
         Self {
             rect,
             content_rect,
             children: Vec::new(),
+            widget_id: None,
         }
     }
 
@@ -31,6 +35,13 @@ impl LayoutNode {
     #[must_use]
     pub fn with_children(mut self, children: Vec<Self>) -> Self {
         self.children = children;
+        self
+    }
+
+    /// Attaches a widget ID.
+    #[must_use]
+    pub fn with_widget_id(mut self, id: WidgetId) -> Self {
+        self.widget_id = Some(id);
         self
     }
 }

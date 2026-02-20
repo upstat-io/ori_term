@@ -96,7 +96,9 @@ fn solve_leaf(
 
     let rect = Rect::new(pos_x, pos_y, width, height);
     let content_rect = rect.inset(layout_box.padding);
-    LayoutNode::new(rect, content_rect)
+    let mut node = LayoutNode::new(rect, content_rect);
+    node.widget_id = layout_box.widget_id;
+    node
 }
 
 /// Resolves a `SizeSpec` to a concrete pixel value.
@@ -321,7 +323,9 @@ fn arrange_children(
     let (width, height) = dir.compose(container_main, container_cross);
     let rect = Rect::new(pos_x, pos_y, width, height);
     let content_rect = rect.inset(layout_box.padding);
-    LayoutNode::new(rect, content_rect).with_children(child_nodes)
+    let mut node = LayoutNode::new(rect, content_rect).with_children(child_nodes);
+    node.widget_id = layout_box.widget_id;
+    node
 }
 
 /// Solves an empty flex container.
@@ -345,7 +349,9 @@ fn solve_empty(
     let height = constraints.constrain_height(height);
     let rect = Rect::new(pos_x, pos_y, width, height);
     let content_rect = rect.inset(layout_box.padding);
-    LayoutNode::new(rect, content_rect)
+    let mut node = LayoutNode::new(rect, content_rect);
+    node.widget_id = layout_box.widget_id;
+    node
 }
 
 /// Resolves the container's main-axis size.

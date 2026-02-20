@@ -19,6 +19,14 @@ pub struct Insets {
 }
 
 impl Insets {
+    /// Zero insets on all edges.
+    pub const ZERO: Self = Self {
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+        left: 0.0,
+    };
+
     /// Creates insets with all four edges set to the same value.
     pub const fn all(v: f32) -> Self {
         Self {

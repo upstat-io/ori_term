@@ -6,11 +6,14 @@
 
 pub mod color;
 pub mod draw;
+pub mod focus;
 pub mod geometry;
 pub mod hit_test;
+pub mod input;
 pub mod layout;
 pub mod scale;
 pub mod text;
+pub mod widget_id;
 pub mod window;
 
 #[cfg(target_os = "linux")]

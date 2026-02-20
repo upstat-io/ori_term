@@ -13,13 +13,13 @@ sections:
     status: complete
   - id: "07.3"
     title: Layout Engine
-    status: not-started
+    status: in-progress
   - id: "07.4"
     title: Hit Testing & Input Routing
-    status: not-started
+    status: complete
   - id: "07.5"
     title: Focus & Keyboard Navigation
-    status: not-started
+    status: in-progress
   - id: "07.6"
     title: Core Widgets
     status: not-started
@@ -162,39 +162,39 @@ Flexbox-inspired layout system. Compute positions and sizes for all widgets befo
 
 **File:** `oriterm_ui/src/layout.rs`, `oriterm_ui/src/layout/flex.rs`
 
-- [ ] `LayoutNode` — computed layout result for one widget
-  - [ ] `rect: Rect` — final position and size in screen coordinates
-  - [ ] `content_rect: Rect` — rect minus padding
-  - [ ] `children: Vec<LayoutNode>` — child layout results
+- [x] `LayoutNode` — computed layout result for one widget
+  - [x] `rect: Rect` — final position and size in screen coordinates
+  - [x] `content_rect: Rect` — rect minus padding
+  - [x] `children: Vec<LayoutNode>` — child layout results
 
-- [ ] `LayoutConstraints` — size constraints passed from parent to child
-  - [ ] `min_width: f32`, `max_width: f32`
-  - [ ] `min_height: f32`, `max_height: f32`
+- [x] `LayoutConstraints` — size constraints passed from parent to child
+  - [x] `min_width: f32`, `max_width: f32`
+  - [x] `min_height: f32`, `max_height: f32`
 
-- [ ] `Size` enum — how a widget sizes itself
-  - [ ] `Fixed(f32)` — exact pixel size
-  - [ ] `Fill` — expand to fill available space
-  - [ ] `FillPortion(u32)` — proportional fill (like CSS flex-grow)
-  - [ ] `Hug` — shrink to content size
-  - [ ] `Min(f32)` / `Max(f32)` — constrained
+- [x] `SizeSpec` enum — how a widget sizes itself (named `SizeSpec`, not `Size`, to avoid collision with geometry `Size`)
+  - [x] `Fixed(f32)` — exact pixel size
+  - [x] `Fill` — expand to fill available space
+  - [x] `FillPortion(u32)` — proportional fill (like CSS flex-grow)
+  - [x] `Hug` — shrink to content size
+  - [x] Min/Max constraints — handled via `LayoutBox` fields (standard Flutter/Iced pattern)
 
-- [ ] `Spacing` struct — padding and margin
-  - [ ] `top: f32`, `right: f32`, `bottom: f32`, `left: f32`
-  - [ ] `Spacing::all(v)`, `Spacing::xy(h, v)`, `Spacing::ZERO`
+- [x] `Insets` struct — padding and margin (named `Insets` following Chromium/Flutter convention)
+  - [x] `top: f32`, `right: f32`, `bottom: f32`, `left: f32`
+  - [x] `Insets::all(v)`, `Insets::vh(v, h)`, `Insets::ZERO`
 
-- [ ] Flex layout algorithm:
-  - [ ] `Direction` — `Row` (horizontal) or `Column` (vertical)
-  - [ ] `Align` — `Start`, `Center`, `End`, `Stretch` (cross-axis)
-  - [ ] `Justify` — `Start`, `Center`, `End`, `SpaceBetween`, `SpaceAround` (main-axis)
-  - [ ] `Gap` — spacing between children
-  - [ ] Two-pass layout:
+- [x] Flex layout algorithm:
+  - [x] `Direction` — `Row` (horizontal) or `Column` (vertical)
+  - [x] `Align` — `Start`, `Center`, `End`, `Stretch` (cross-axis)
+  - [x] `Justify` — `Start`, `Center`, `End`, `SpaceBetween`, `SpaceAround` (main-axis)
+  - [x] `Gap` — spacing between children
+  - [x] Two-pass layout:
     1. Measure pass: each child reports preferred size given constraints
     2. Arrange pass: distribute remaining space among `Fill` children
-  - [ ] Handle `Hug` containers that shrink-wrap their children
+  - [x] Handle `Hug` containers that shrink-wrap their children
 
-- [ ] `compute_layout(root: &WidgetTree, viewport: Rect) -> LayoutTree`
-  - [ ] Top-down constraint propagation, bottom-up size resolution
-  - [ ] Cache layout results — only recompute when dirty
+- [x] `compute_layout(root: &LayoutBox, viewport: Rect) -> LayoutNode`
+  - [x] Top-down constraint propagation, bottom-up size resolution
+  - [ ] Cache layout results — only recompute when dirty <!-- blocked-by:7.6 -->
 
 ---
 
@@ -202,28 +202,28 @@ Flexbox-inspired layout system. Compute positions and sizes for all widgets befo
 
 Determine which widget is under the cursor and route mouse/keyboard events.
 
-**File:** `oriterm_ui/src/input.rs`, `oriterm_ui/src/hit_test.rs`
+**File:** `oriterm_ui/src/input/` (event types, hit testing, routing), `oriterm_ui/src/widget_id.rs`
 
-- [ ] `hit_test(layout: &LayoutTree, point: Point) -> Option<WidgetId>`
-  - [ ] Walk layout tree back-to-front (last child drawn = frontmost = tested first)
-  - [ ] Respect clip rects (widget outside clip is not hittable)
-  - [ ] Return the deepest widget containing the point
+- [x] `layout_hit_test(root: &LayoutNode, point: Point) -> Option<WidgetId>`
+  - [x] Walk layout tree back-to-front (last child drawn = frontmost = tested first)
+  - [x] Respect clip rects (widget outside clip is not hittable) — via `layout_hit_test_clipped`
+  - [x] Return the deepest widget containing the point
 
-- [ ] Mouse event routing:
-  - [ ] `MouseEvent` — `{ kind: MouseEventKind, pos: Point, button: MouseButton, modifiers: Modifiers }`
-  - [ ] `MouseEventKind` — `Down`, `Up`, `Move`, `Scroll`, `Enter`, `Leave`
-  - [ ] Events dispatched to the hit-tested widget
-  - [ ] Hover state tracked: `Enter`/`Leave` generated automatically on cursor movement
-  - [ ] Capture: widget can capture mouse on `Down`, receives all events until `Up`
+- [x] Mouse event routing:
+  - [x] `MouseEvent` — `{ kind: MouseEventKind, pos: Point, modifiers: Modifiers }`
+  - [x] `MouseEventKind` — `Down`, `Up`, `Move`, `Scroll`; `HoverEvent` — `Enter`, `Leave`
+  - [x] Events dispatched to the hit-tested widget via `InputState::process_mouse_event`
+  - [x] Hover state tracked: `Enter`/`Leave` generated automatically on cursor movement
+  - [x] Capture: widget can capture mouse on `Down`, receives all events until `Up`
 
-- [ ] Keyboard event routing:
-  - [ ] Events go to the focused widget (see 07.5)
-  - [ ] Unhandled events bubble up to parent
-  - [ ] `KeyEvent` — reuse winit's `KeyEvent` structure
+- [x] Keyboard event routing:
+  - [x] Events go to the focused widget — `InputState::keyboard_target(focus)` returns focused WidgetId
+  - [x] Unhandled events bubble up to parent — caller responsibility (documented contract)
+  - [x] `KeyEvent` — reuse winit's `KeyEvent` structure (no wrapper needed)
 
-- [ ] Event response:
-  - [ ] `EventResponse` — `Handled`, `Ignored`, `RequestFocus`, `RequestRedraw`
-  - [ ] Widgets return response to indicate whether they consumed the event
+- [x] Event response:
+  - [x] `EventResponse` — `Handled`, `Ignored`, `RequestFocus`, `RequestRedraw`
+  - [x] Widgets return response to indicate whether they consumed the event
 
 ---
 
@@ -231,25 +231,25 @@ Determine which widget is under the cursor and route mouse/keyboard events.
 
 Focus ring for keyboard-driven UI navigation.
 
-**File:** `oriterm_ui/src/focus.rs`
+**File:** `oriterm_ui/src/focus/mod.rs`
 
-- [ ] `FocusManager` — tracks which widget has keyboard focus
-  - [ ] `focused: Option<WidgetId>`
-  - [ ] `focus_order: Vec<WidgetId>` — tab order (built from widget tree traversal)
-  - [ ] `set_focus(id: WidgetId)`
-  - [ ] `clear_focus()`
-  - [ ] `focus_next()` — Tab key advances focus
-  - [ ] `focus_prev()` — Shift+Tab moves focus backward
+- [x] `FocusManager` — tracks which widget has keyboard focus
+  - [x] `focused: Option<WidgetId>`
+  - [x] `focus_order: Vec<WidgetId>` — tab order (built from widget tree traversal)
+  - [x] `set_focus(id: WidgetId)`
+  - [x] `clear_focus()`
+  - [x] `focus_next()` — Tab key advances focus
+  - [x] `focus_prev()` — Shift+Tab moves focus backward
 
-- [ ] Focus visual:
-  - [ ] Focused widget renders a focus ring (2px outline, accent color)
-  - [ ] Optional per-widget: `focusable: bool`
+- [ ] Focus visual: <!-- blocked-by:7.6 -->
+  - [ ] Focused widget renders a focus ring (2px outline, accent color) <!-- blocked-by:7.6 -->
+  - [ ] Optional per-widget: `focusable: bool` <!-- blocked-by:7.6 -->
 
-- [ ] Keyboard shortcuts:
-  - [ ] `Tab` / `Shift+Tab` — cycle focus
-  - [ ] `Enter` / `Space` — activate focused button/checkbox
-  - [ ] `Escape` — close overlay, unfocus
-  - [ ] `Arrow keys` — navigate within lists, dropdowns
+- [ ] Keyboard shortcuts: <!-- blocked-by:7.6 -->
+  - [ ] `Tab` / `Shift+Tab` — cycle focus <!-- blocked-by:7.6 -->
+  - [ ] `Enter` / `Space` — activate focused button/checkbox <!-- blocked-by:7.6 -->
+  - [ ] `Escape` — close overlay, unfocus <!-- blocked-by:7.6 -->
+  - [ ] `Arrow keys` — navigate within lists, dropdowns <!-- blocked-by:7.6 -->
 
 ---
 
