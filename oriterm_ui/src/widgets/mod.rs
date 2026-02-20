@@ -100,6 +100,8 @@ pub enum WidgetAction {
     TextChanged { id: WidgetId, text: String },
     /// An item was selected by index (dropdown).
     Selected { id: WidgetId, index: usize },
+    /// An overlay content widget requests its own dismissal.
+    DismissOverlay(WidgetId),
 }
 
 /// Context passed to [`Widget::layout`].
@@ -188,4 +190,4 @@ pub const DEFAULT_DISABLED_BG: Color = Color::from_rgb_u8(0x25, 0x25, 0x25);
 pub const DEFAULT_FOCUS_RING: Color = Color::from_rgb_u8(0x4A, 0x9E, 0xFF);
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

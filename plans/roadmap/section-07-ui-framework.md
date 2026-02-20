@@ -28,7 +28,7 @@ sections:
     status: complete
   - id: "07.8"
     title: Overlay & Modal System
-    status: not-started
+    status: complete
   - id: "07.9"
     title: Animation
     status: not-started
@@ -302,7 +302,7 @@ The basic building blocks.
 
 ### Infrastructure
 - [x] `Widget` trait with `id()`, `is_focusable()`, `layout()`, `draw()`, `handle_mouse()`, `handle_hover()`, `handle_key()`
-- [x] `WidgetAction` enum: `Clicked`, `Toggled`, `ValueChanged`, `TextChanged`, `Selected`
+- [x] `WidgetAction` enum: `Clicked`, `Toggled`, `ValueChanged`, `TextChanged`, `Selected`, `DismissOverlay`
 - [x] `WidgetResponse` with `EventResponse` + optional `WidgetAction`
 - [x] `TextMeasurer` trait for decoupled text measurement
 - [x] `LayoutCtx`, `DrawCtx`, `EventCtx` context structs
@@ -349,30 +349,50 @@ Widgets that contain and arrange other widgets. Children stored as `Box<dyn Widg
 
 Floating UI that renders above the main widget tree.
 
-**File:** `oriterm_ui/src/overlay.rs`
+**Files:** `oriterm_ui/src/overlay/` — `overlay_id.rs`, `placement.rs`, `manager.rs`, `mod.rs`, `tests.rs`
 
-- [ ] `OverlayManager` — manages floating layers above the main content
-  - [ ] `overlays: Vec<Overlay>` — stack of active overlays (frontmost = last)
-  - [ ] `push_overlay(widget: Widget, anchor: Rect, placement: Placement) -> OverlayId`
-  - [ ] `pop_overlay(id: OverlayId)`
-  - [ ] `clear_all()`
+- [x] `OverlayId` — unique identifier (separate ID space from `WidgetId`)
+  - [x] Atomic counter, same pattern as `WidgetId`
 
-- [ ] `Placement` — where to position the overlay relative to its anchor
-  - [ ] `Below`, `Above`, `Left`, `Right` — auto-flip if insufficient space
-  - [ ] `Center` — centered on screen (for modals)
-  - [ ] `AtCursor` — positioned at mouse cursor (for context menus)
+- [x] `OverlayManager` — manages floating layers above the main content
+  - [x] `overlays: Vec<Overlay>` — stack of active overlays (frontmost = last)
+  - [x] `push_overlay(widget, anchor, placement) -> OverlayId` (dismiss-on-click-outside)
+  - [x] `push_modal(widget, anchor, placement) -> OverlayId` (blocks interaction below)
+  - [x] `pop_overlay(id) -> bool`, `pop_topmost() -> Option<OverlayId>`, `clear_all()`
+  - [x] `overlay_rect(id) -> Option<Rect>` — computed rect accessor
 
-- [ ] Overlay rendering:
-  - [ ] Overlays render after the main widget tree (on top)
-  - [ ] Background dimming for modals (semi-transparent black layer)
-  - [ ] Click-outside-to-dismiss behavior for non-modal overlays
+- [x] `Placement` — where to position the overlay relative to its anchor
+  - [x] `Below`, `Above`, `Left`, `Right` — auto-flip if insufficient space
+  - [x] `Center` — centered on screen (for modals)
+  - [x] `AtPoint(Point)` — positioned at absolute point (for context menus)
+  - [x] `compute_overlay_rect()` — pure function with auto-flip + viewport clamping
+  - [x] `ANCHOR_GAP` constant (4px spacing between anchor and overlay)
 
-- [ ] Rich overlay content — overlays can contain any widget, not just text:
-  - [ ] Terminal preview thumbnails (scaled-down live terminal renders)
-  - [ ] Image previews
-  - [ ] Multi-line formatted content
+- [x] `OverlayEventResult` — event routing results
+  - [x] `Delivered { overlay_id, response }` — event delivered to overlay widget
+  - [x] `Dismissed(OverlayId)` — click-outside or Escape dismissed overlay
+  - [x] `Blocked` — modal consumed the event
+  - [x] `PassThrough` — no overlay intercepted; deliver to main tree
 
-- [ ] Used by:
+- [x] Frame-loop API:
+  - [x] `layout_overlays(measurer)` — computes content size → placement rect
+  - [x] `draw_overlays(draw_list, measurer, focused_widget)` — painter's order
+  - [x] `process_mouse_event(event, measurer) -> OverlayEventResult`
+  - [x] `process_key_event(event, measurer) -> OverlayEventResult`
+  - [x] `process_hover_event(point, event, measurer) -> OverlayEventResult`
+  - [x] `modal_focus_order(measurer) -> Option<Vec<WidgetId>>` — focus trapping
+
+- [x] Overlay rendering:
+  - [x] Overlays render after the main widget tree (on top)
+  - [x] Background dimming for modals (semi-transparent black layer)
+  - [x] Click-outside-to-dismiss behavior for non-modal overlays
+  - [x] Escape key dismisses topmost overlay (modal or non-modal)
+
+- [x] `WidgetAction::DismissOverlay(WidgetId)` — overlay content widgets can signal self-dismissal
+
+- [x] Rich overlay content — overlays can contain any widget (Box<dyn Widget>)
+
+- [ ] Used by (deferred to consuming sections):
   - [ ] Context menus (right-click)
   - [ ] Dropdown lists
   - [ ] Command palette

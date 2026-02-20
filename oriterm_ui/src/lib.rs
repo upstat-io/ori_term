@@ -11,6 +11,7 @@ pub mod geometry;
 pub mod hit_test;
 pub mod input;
 pub mod layout;
+pub mod overlay;
 pub mod scale;
 pub mod text;
 pub mod widget_id;
