@@ -6,8 +6,11 @@ use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 use super::{ToggleStyle, ToggleWidget};
 
-fn event_ctx() -> EventCtx {
+static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
+
+fn event_ctx() -> EventCtx<'static> {
     EventCtx {
+        measurer: &MEASURER,
         bounds: Rect::new(0.0, 0.0, 40.0, 22.0),
         is_focused: true,
     }
@@ -188,6 +191,22 @@ fn right_click_ignored() {
     let r = t.handle_mouse(&right_click, &ctx);
     assert_eq!(r, WidgetResponse::ignored());
     assert!(!t.is_on());
+}
+
+#[test]
+fn release_outside_bounds_no_toggle() {
+    let mut t = ToggleWidget::new();
+    let ctx = event_ctx();
+
+    // MouseUp outside the widget bounds should not toggle.
+    let outside_click = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(300.0, 300.0),
+        modifiers: Modifiers::NONE,
+    };
+    let r = t.handle_mouse(&outside_click, &ctx);
+    assert!(!t.is_on());
+    assert_eq!(r, WidgetResponse::ignored());
 }
 
 #[test]

@@ -12,12 +12,15 @@ pub struct MockMeasurer {
 }
 
 impl MockMeasurer {
+    /// Standard mock: 8px per char, 16px line height (const for static usage).
+    pub const STANDARD: Self = Self {
+        char_width: 8.0,
+        line_height: 16.0,
+    };
+
     /// Standard mock: 8px per char, 16px line height.
     pub fn new() -> Self {
-        Self {
-            char_width: 8.0,
-            line_height: 16.0,
-        }
+        Self::STANDARD
     }
 }
 

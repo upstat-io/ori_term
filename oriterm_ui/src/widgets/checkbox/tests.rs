@@ -6,8 +6,11 @@ use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 use super::{CheckboxStyle, CheckboxWidget};
 
-fn event_ctx() -> EventCtx {
+static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
+
+fn event_ctx() -> EventCtx<'static> {
     EventCtx {
+        measurer: &MEASURER,
         bounds: Rect::new(0.0, 0.0, 200.0, 20.0),
         is_focused: true,
     }
@@ -191,6 +194,22 @@ fn rapid_toggle_sequence() {
     assert!(cb.is_checked());
     cb.handle_mouse(&left_click(), &ctx);
     assert!(!cb.is_checked());
+}
+
+#[test]
+fn release_outside_bounds_no_toggle() {
+    let mut cb = CheckboxWidget::new("X");
+    let ctx = event_ctx();
+
+    // MouseUp outside the widget bounds should not toggle.
+    let outside_click = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(300.0, 300.0),
+        modifiers: Modifiers::NONE,
+    };
+    let r = cb.handle_mouse(&outside_click, &ctx);
+    assert!(!cb.is_checked());
+    assert_eq!(r, WidgetResponse::ignored());
 }
 
 #[test]

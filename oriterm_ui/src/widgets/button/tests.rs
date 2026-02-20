@@ -6,8 +6,11 @@ use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 use super::{ButtonStyle, ButtonWidget};
 
-fn event_ctx(bounds: Rect) -> EventCtx {
+static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
+
+fn event_ctx(bounds: Rect) -> EventCtx<'static> {
     EventCtx {
+        measurer: &MEASURER,
         bounds,
         is_focused: true,
     }

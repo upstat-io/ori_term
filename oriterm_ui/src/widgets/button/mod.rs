@@ -211,7 +211,7 @@ impl Widget for ButtonWidget {
         }
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx) -> WidgetResponse {
+    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
@@ -233,7 +233,7 @@ impl Widget for ButtonWidget {
         }
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
@@ -250,7 +250,7 @@ impl Widget for ButtonWidget {
         }
     }
 
-    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }

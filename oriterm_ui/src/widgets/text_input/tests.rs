@@ -6,8 +6,11 @@ use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 use super::{TextInputStyle, TextInputWidget};
 
-fn event_ctx() -> EventCtx {
+static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
+
+fn event_ctx() -> EventCtx<'static> {
     EventCtx {
+        measurer: &MEASURER,
         bounds: Rect::new(0.0, 0.0, 200.0, 28.0),
         is_focused: true,
     }

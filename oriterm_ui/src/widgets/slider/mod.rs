@@ -295,7 +295,7 @@ impl Widget for SliderWidget {
         ctx.draw_list.push_rect(thumb_rect, thumb_style);
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx) -> WidgetResponse {
+    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
@@ -327,7 +327,7 @@ impl Widget for SliderWidget {
         }
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
@@ -343,7 +343,7 @@ impl Widget for SliderWidget {
         }
     }
 
-    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }

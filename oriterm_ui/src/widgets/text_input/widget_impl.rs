@@ -109,31 +109,35 @@ impl Widget for TextInputWidget {
         ctx.draw_list.pop_clip();
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx) -> WidgetResponse {
+    #[expect(clippy::string_slice, reason = "cursor always on char boundary")]
+    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
         if event.kind == MouseEventKind::Down(MouseButton::Left) {
-            // Place cursor at click position.
-            // No measurer available — approximate with char count.
             let inner = ctx.bounds.inset(self.style.padding);
             let rel_x = (event.pos.x - inner.x()).max(0.0);
+            let style = self.text_style();
 
             // Walk char boundaries; pick the one closest to click X.
             let mut best_pos = 0;
             let mut best_dist = rel_x;
-            let mut char_count: u16 = 0;
             for (i, _) in self.text.char_indices() {
-                let w = f32::from(char_count) * 8.0;
+                let w = ctx
+                    .measurer
+                    .measure(&self.text[..i], &style, f32::INFINITY)
+                    .width;
                 let dist = (w - rel_x).abs();
                 if dist < best_dist {
                     best_dist = dist;
                     best_pos = i;
                 }
-                char_count = char_count.saturating_add(1);
             }
             // Check end position.
-            let end_w = f32::from(char_count) * 8.0;
+            let end_w = ctx
+                .measurer
+                .measure(&self.text, &style, f32::INFINITY)
+                .width;
             if (end_w - rel_x).abs() < best_dist {
                 best_pos = self.text.len();
             }
@@ -145,7 +149,7 @@ impl Widget for TextInputWidget {
         WidgetResponse::ignored()
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
@@ -161,7 +165,7 @@ impl Widget for TextInputWidget {
         }
     }
 
-    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }

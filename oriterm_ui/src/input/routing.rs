@@ -5,6 +5,8 @@
 //! (active), and generates synthetic `Enter`/`Leave` events on hover
 //! transitions.
 
+use smallvec::SmallVec;
+
 use crate::focus::FocusManager;
 use crate::geometry::Point;
 use crate::layout::LayoutNode;
@@ -98,8 +100,8 @@ impl InputState {
         &mut self,
         event: MouseEvent,
         layout: &LayoutNode,
-    ) -> Vec<RouteAction> {
-        let mut actions = Vec::new();
+    ) -> SmallVec<[RouteAction; 4]> {
+        let mut actions = SmallVec::new();
         self.cursor_pos = Some(event.pos);
 
         let hit = layout_hit_test(layout, event.pos);
@@ -136,7 +138,7 @@ impl InputState {
     }
 
     /// Emits hover Enter/Leave actions if the hovered widget changed.
-    fn update_hover(&mut self, hit: Option<WidgetId>, actions: &mut Vec<RouteAction>) {
+    fn update_hover(&mut self, hit: Option<WidgetId>, actions: &mut SmallVec<[RouteAction; 4]>) {
         if hit != self.hovered {
             if let Some(old) = self.hovered {
                 actions.push(RouteAction::Hover {
@@ -168,8 +170,8 @@ impl InputState {
     ///
     /// Generates a `Leave` event for the currently hovered widget and
     /// clears cursor position.
-    pub fn process_cursor_left(&mut self) -> Vec<RouteAction> {
-        let mut actions = Vec::new();
+    pub fn process_cursor_left(&mut self) -> SmallVec<[RouteAction; 4]> {
+        let mut actions = SmallVec::new();
         if let Some(old) = self.hovered.take() {
             actions.push(RouteAction::Hover {
                 target: old,

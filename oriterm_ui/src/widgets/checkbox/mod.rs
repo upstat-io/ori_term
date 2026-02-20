@@ -259,18 +259,18 @@ impl Widget for CheckboxWidget {
         }
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
-        if event.kind == MouseEventKind::Up(MouseButton::Left) {
+        if event.kind == MouseEventKind::Up(MouseButton::Left) && ctx.bounds.contains(event.pos) {
             let action = self.toggle();
             return WidgetResponse::focus().with_action(action);
         }
         WidgetResponse::ignored()
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
@@ -286,7 +286,7 @@ impl Widget for CheckboxWidget {
         }
     }
 
-    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }

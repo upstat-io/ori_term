@@ -6,12 +6,15 @@ use crate::widgets::{EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
 
 use super::{DropdownStyle, DropdownWidget};
 
+static MEASURER: MockMeasurer = MockMeasurer::STANDARD;
+
 fn items() -> Vec<String> {
     vec!["Alpha".into(), "Beta".into(), "Gamma".into()]
 }
 
-fn event_ctx() -> EventCtx {
+fn event_ctx() -> EventCtx<'static> {
     EventCtx {
+        measurer: &MEASURER,
         bounds: Rect::new(0.0, 0.0, 200.0, 28.0),
         is_focused: true,
     }
@@ -272,6 +275,25 @@ fn full_cycle_forward() {
         dd.handle_key(key_event(Key::ArrowDown), &ctx);
         assert_eq!(dd.selected(), expected);
     }
+}
+
+#[test]
+fn release_outside_bounds_no_clicked() {
+    let mut dd = DropdownWidget::new(items());
+    let ctx = event_ctx();
+
+    // Press inside bounds, release outside → no Clicked action.
+    dd.handle_mouse(&mouse_down(), &ctx);
+    assert!(dd.pressed);
+
+    let outside_up = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(300.0, 300.0),
+        modifiers: Modifiers::NONE,
+    };
+    let r = dd.handle_mouse(&outside_up, &ctx);
+    assert!(r.action.is_none());
+    assert!(!dd.pressed);
 }
 
 #[test]

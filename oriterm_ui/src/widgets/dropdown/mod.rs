@@ -295,7 +295,7 @@ impl Widget for DropdownWidget {
         );
     }
 
-    fn handle_mouse(&mut self, event: &MouseEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
@@ -307,7 +307,7 @@ impl Widget for DropdownWidget {
             MouseEventKind::Up(MouseButton::Left) => {
                 let was_pressed = self.pressed;
                 self.pressed = false;
-                if was_pressed {
+                if was_pressed && ctx.bounds.contains(event.pos) {
                     // Emit Clicked — the app layer would open the popup (07.8).
                     WidgetResponse::redraw().with_action(WidgetAction::Clicked(self.id))
                 } else {
@@ -318,7 +318,7 @@ impl Widget for DropdownWidget {
         }
     }
 
-    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_hover(&mut self, event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }
@@ -335,7 +335,7 @@ impl Widget for DropdownWidget {
         }
     }
 
-    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_key(&mut self, event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         if self.disabled {
             return WidgetResponse::ignored();
         }

@@ -116,7 +116,9 @@ pub struct DrawCtx<'a> {
 }
 
 /// Context passed to mouse and keyboard event handlers.
-pub struct EventCtx {
+pub struct EventCtx<'a> {
+    /// Text measurement provider.
+    pub measurer: &'a dyn TextMeasurer,
     /// The widget's computed bounds (from layout).
     pub bounds: Rect,
     /// Whether this widget currently has keyboard focus.
@@ -142,13 +144,13 @@ pub trait Widget {
     fn draw(&self, ctx: &mut DrawCtx<'_>);
 
     /// Handles a mouse event. Returns a response with optional action.
-    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx) -> WidgetResponse;
+    fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
 
     /// Handles a synthetic hover event (enter/leave).
-    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx) -> WidgetResponse;
+    fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
 
     /// Handles a keyboard event. Returns a response with optional action.
-    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx) -> WidgetResponse;
+    fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse;
 }
 
 // Default dark-theme colors shared across widget styles.

@@ -134,15 +134,15 @@ impl Widget for SeparatorWidget {
         }
     }
 
-    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_mouse(&mut self, _event: &MouseEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         WidgetResponse::ignored()
     }
 
-    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_hover(&mut self, _event: HoverEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         WidgetResponse::ignored()
     }
 
-    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx) -> WidgetResponse {
+    fn handle_key(&mut self, _event: KeyEvent, _ctx: &EventCtx<'_>) -> WidgetResponse {
         WidgetResponse::ignored()
     }
 }
