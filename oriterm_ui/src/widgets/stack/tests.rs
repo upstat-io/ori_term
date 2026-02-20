@@ -39,11 +39,14 @@ fn stack_draws_all_children() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
     };
     stack.draw(&mut ctx);
 
@@ -152,11 +155,14 @@ fn stack_draws_in_painter_order() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
     };
     stack.draw(&mut ctx);
 

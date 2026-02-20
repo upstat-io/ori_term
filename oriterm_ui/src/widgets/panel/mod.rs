@@ -147,6 +147,8 @@ impl Widget for PanelWidget {
                 draw_list: ctx.draw_list,
                 bounds: child_node.content_rect,
                 focused_widget: ctx.focused_widget,
+                now: ctx.now,
+                animations_running: ctx.animations_running,
             };
             self.child.draw(&mut child_ctx);
         }

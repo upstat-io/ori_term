@@ -31,7 +31,7 @@ sections:
     status: complete
   - id: "07.9"
     title: Animation
-    status: not-started
+    status: complete
   - id: "07.10"
     title: Theming & Styling
     status: not-started
@@ -276,9 +276,9 @@ The basic building blocks.
 - [x] Keyboard: toggle via Space when focused
 
 ### Toggle
-- [x] `ToggleWidget` with animation-ready `toggle_progress` — `widgets/toggle/mod.rs`
+- [x] `ToggleWidget` with `AnimatedValue<f32>` toggle progress — `widgets/toggle/mod.rs`
 - [x] Visual: sliding pill (iOS-style toggle)
-- [x] `toggle_progress: f32` snaps to 0.0/1.0; animation system (07.9) will interpolate
+- [x] Smooth thumb sliding via animation system (150ms `EaseInOut`)
 
 ### Slider
 - [x] `SliderWidget` with `WidgetAction::ValueChanged` — `widgets/slider/mod.rs`
@@ -407,28 +407,37 @@ Floating UI that renders above the main widget tree.
 
 Smooth transitions for UI state changes.
 
-**File:** `oriterm_ui/src/animation.rs`
+**Files:** `oriterm_ui/src/animation/mod.rs`, `oriterm_ui/src/animation/tests.rs`
 
-- [ ] `Animation` — interpolates a value over time
-  - [ ] `from: f32`, `to: f32`, `duration: Duration`, `easing: Easing`
-  - [ ] `progress(now: Instant) -> f32` — returns current interpolated value
-  - [ ] `is_finished(now: Instant) -> bool`
+- [x] `Lerp` trait — generic linear interpolation
+  - [x] Implemented for `f32` and `Color` (channel-wise)
 
-- [ ] `Easing` — timing functions
-  - [ ] `Linear`, `EaseIn`, `EaseOut`, `EaseInOut`
-  - [ ] Cubic bezier for custom curves
+- [x] `Easing` — timing functions
+  - [x] `Linear`, `EaseIn`, `EaseOut`, `EaseInOut`
+  - [x] `CubicBezier(x1, y1, x2, y2)` — Newton's method + bisection fallback
 
-- [ ] `AnimatedValue<T>` — wrapper that animates between old and new values
-  - [ ] `set(new_value: T)` — starts animation from current to new
-  - [ ] `get(now: Instant) -> T` — returns interpolated value
-  - [ ] Triggers redraw while animation is in progress
+- [x] `Animation` — raw `f32` interpolation from one value to another
+  - [x] `from: f32`, `to: f32`, `duration: Duration`, `easing: Easing`
+  - [x] `progress(now: Instant) -> f32` — returns current eased value
+  - [x] `is_finished(now: Instant) -> bool`
 
-- [ ] Used for:
-  - [ ] Toggle switch sliding
-  - [ ] Hover color transitions
-  - [ ] Overlay fade-in/fade-out
-  - [ ] Tab bar tab sliding
-  - [ ] Scroll position smooth scrolling
+- [x] `AnimatedValue<T: Lerp>` — widget-embeddable wrapper
+  - [x] `set(new_value, now)` — starts animation from current to new
+  - [x] `set_immediate(value)` — sets without animation
+  - [x] `get(now: Instant) -> T` — returns interpolated value
+  - [x] `target() -> T` — returns final resting value
+  - [x] `is_animating(now) -> bool` — animation in flight
+  - [x] Smooth interruption: `set` mid-animation restarts from current position
+
+- [x] `DrawCtx` integration — `now: Instant` + `animations_running: &Cell<bool>`
+  - [x] Widgets set `animations_running` to request continued redraws
+
+- [x] Used for:
+  - [x] Toggle switch sliding (150ms `EaseInOut`)
+  - [x] Button hover color transitions (100ms `EaseOut`)
+  - [ ] Overlay fade-in/fade-out <!-- blocked-by:overlay-dismiss-state-machine -->
+  - [ ] Tab bar tab sliding <!-- blocked-by:07.11-tab-bar -->
+  - [ ] Scroll position smooth scrolling <!-- blocked-by:keyboard-smooth-scroll -->
 
 ---
 

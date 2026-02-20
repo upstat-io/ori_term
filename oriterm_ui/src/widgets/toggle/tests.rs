@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::layout::BoxContent;
@@ -153,15 +155,6 @@ fn set_on_programmatic() {
 }
 
 #[test]
-fn set_toggle_progress_clamps() {
-    let mut t = ToggleWidget::new();
-    t.set_toggle_progress(1.5);
-    assert_eq!(t.toggle_progress(), 1.0);
-    t.set_toggle_progress(-0.5);
-    assert_eq!(t.toggle_progress(), 0.0);
-}
-
-#[test]
 fn enter_key_does_not_toggle() {
     let mut t = ToggleWidget::new();
     let ctx = event_ctx();
@@ -232,4 +225,260 @@ fn rapid_toggle_maintains_consistency() {
         let expected_progress = if t.is_on() { 1.0 } else { 0.0 };
         assert_eq!(t.toggle_progress(), expected_progress);
     }
+}
+
+// --- Animation-specific tests ---
+
+#[test]
+fn set_on_is_immediate_no_animation() {
+    let mut t = ToggleWidget::new();
+    let now = Instant::now();
+    t.set_on(true);
+
+    // set_on uses set_immediate — no animation should be running.
+    assert!(!t.toggle_progress.is_animating(now));
+    assert_eq!(t.toggle_progress.get(now), 1.0);
+}
+
+#[test]
+fn toggle_starts_animation() {
+    let mut t = ToggleWidget::new();
+    let ctx = event_ctx();
+    t.handle_key(space_key(), &ctx);
+
+    let now = Instant::now();
+    // Animation should be running right after toggle.
+    assert!(t.toggle_progress.is_animating(now));
+    // Target is 1.0 (on).
+    assert_eq!(t.toggle_progress.target(), 1.0);
+}
+
+#[test]
+fn animation_completes_to_target() {
+    let mut t = ToggleWidget::new();
+    let ctx = event_ctx();
+    t.handle_key(space_key(), &ctx);
+
+    // After the animation duration, value should be at target.
+    let later = Instant::now() + Duration::from_millis(200);
+    assert!(!t.toggle_progress.is_animating(later));
+    assert_eq!(t.toggle_progress.get(later), 1.0);
+}
+
+#[test]
+fn with_on_builder_is_immediate() {
+    let t = ToggleWidget::new().with_on(true);
+    let now = Instant::now();
+    assert!(!t.toggle_progress.is_animating(now));
+    assert_eq!(t.toggle_progress.get(now), 1.0);
+}
+
+// --- with_style builder test ---
+
+#[test]
+fn with_style_applies_custom_style() {
+    use crate::color::Color;
+
+    let style = ToggleStyle {
+        width: 60.0,
+        height: 30.0,
+        off_bg: Color::BLACK,
+        off_hover_bg: Color::rgb(0.2, 0.2, 0.2),
+        on_bg: Color::rgb(0.0, 1.0, 0.0),
+        thumb_color: Color::rgb(0.9, 0.9, 0.9),
+        thumb_padding: 4.0,
+        disabled_bg: Color::rgb(0.1, 0.1, 0.1),
+        disabled_thumb: Color::rgb(0.3, 0.3, 0.3),
+        focus_ring_color: Color::rgb(0.0, 0.0, 1.0),
+    };
+    let t = ToggleWidget::new().with_style(style);
+
+    // Layout should reflect the custom size.
+    let m = MockMeasurer::new();
+    let ctx = LayoutCtx { measurer: &m };
+    let layout = t.layout(&ctx);
+    if let BoxContent::Leaf {
+        intrinsic_width,
+        intrinsic_height,
+    } = &layout.content
+    {
+        assert_eq!(*intrinsic_width, 60.0);
+        assert_eq!(*intrinsic_height, 30.0);
+    } else {
+        panic!("expected leaf layout");
+    }
+}
+
+// --- Animation interpolation output verification (Chromium blend tests) ---
+
+#[test]
+fn toggle_animation_interpolates_thumb_position() {
+    let mut t = ToggleWidget::new();
+    let ctx = event_ctx();
+
+    // Toggle on — starts animation.
+    t.handle_key(space_key(), &ctx);
+    let now = Instant::now();
+
+    // At animation start, progress should be near 0 (starting from off).
+    let start_progress = t.toggle_progress.get(now);
+    assert!(
+        start_progress < 0.1,
+        "at start of toggle animation, progress should be near 0, got {start_progress}"
+    );
+
+    // After animation completes, progress should be 1.0.
+    let after = now + Duration::from_millis(200);
+    let end_progress = t.toggle_progress.get(after);
+    assert_eq!(
+        end_progress, 1.0,
+        "after toggle animation completes, progress should be 1.0"
+    );
+}
+
+#[test]
+fn toggle_draw_signals_animations_running() {
+    use crate::draw::DrawList;
+
+    let mut t = ToggleWidget::new();
+    let ctx = event_ctx();
+
+    // Toggle on to start animation.
+    t.handle_key(space_key(), &ctx);
+
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let now = Instant::now();
+    let mut draw_ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now,
+        animations_running: &anim_flag,
+    };
+    t.draw(&mut draw_ctx);
+
+    assert!(
+        anim_flag.get(),
+        "draw() should signal animations_running while toggle animates"
+    );
+}
+
+#[test]
+fn toggle_draw_no_animation_signal_when_idle() {
+    use crate::draw::DrawList;
+
+    let t = ToggleWidget::new();
+
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, 40.0, 22.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let now = Instant::now();
+    let mut draw_ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now,
+        animations_running: &anim_flag,
+    };
+    t.draw(&mut draw_ctx);
+
+    assert!(
+        !anim_flag.get(),
+        "draw() should not signal animations_running when idle"
+    );
+}
+
+#[test]
+fn toggle_draws_thumb_at_correct_position() {
+    use crate::draw::{DrawCommand, DrawList};
+
+    // Toggle in ON state (immediate, no animation).
+    let t = ToggleWidget::new().with_on(true);
+    let style = ToggleStyle::default();
+
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, style.width, style.height);
+    let anim_flag = std::cell::Cell::new(false);
+    let now = Instant::now();
+    let mut draw_ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now,
+        animations_running: &anim_flag,
+    };
+    t.draw(&mut draw_ctx);
+
+    // The toggle draws: [optional focus ring], track rect, thumb rect.
+    // Thumb is the last Rect command.
+    let rects: Vec<_> = draw_list
+        .commands()
+        .iter()
+        .filter_map(|c| match c {
+            DrawCommand::Rect { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .collect();
+    assert!(rects.len() >= 2, "should have track + thumb rects");
+
+    let thumb_rect = rects.last().unwrap();
+    let thumb_diameter = style.height - style.thumb_padding * 2.0;
+    let travel = style.width - style.thumb_padding * 2.0 - thumb_diameter;
+    // ON state: thumb is at rightmost position.
+    let expected_x = bounds.x() + style.thumb_padding + travel;
+    assert!(
+        (thumb_rect.x() - expected_x).abs() < 0.1,
+        "ON state thumb x: expected {expected_x}, got {}",
+        thumb_rect.x()
+    );
+}
+
+#[test]
+fn toggle_draws_thumb_at_off_position() {
+    use crate::draw::{DrawCommand, DrawList};
+
+    let t = ToggleWidget::new(); // OFF, no animation.
+    let style = ToggleStyle::default();
+
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, style.width, style.height);
+    let anim_flag = std::cell::Cell::new(false);
+    let now = Instant::now();
+    let mut draw_ctx = super::super::DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now,
+        animations_running: &anim_flag,
+    };
+    t.draw(&mut draw_ctx);
+
+    let rects: Vec<_> = draw_list
+        .commands()
+        .iter()
+        .filter_map(|c| match c {
+            DrawCommand::Rect { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .collect();
+    assert!(rects.len() >= 2, "should have track + thumb rects");
+
+    let thumb_rect = rects.last().unwrap();
+    // OFF state: thumb is at leftmost position.
+    let expected_x = bounds.x() + style.thumb_padding;
+    assert!(
+        (thumb_rect.x() - expected_x).abs() < 0.1,
+        "OFF state thumb x: expected {expected_x}, got {}",
+        thumb_rect.x()
+    );
 }

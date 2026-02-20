@@ -1,9 +1,11 @@
 //! Toggle switch widget — a pill-shaped on/off switch.
 //!
 //! Emits `WidgetAction::Toggled` when clicked or activated via Space.
-//! Includes a `toggle_progress` field (0.0 = off, 1.0 = on) ready for
-//! the animation system (07.9) to interpolate.
+//! Uses [`AnimatedValue`] for smooth thumb sliding (150ms, `EaseInOut`).
 
+use std::time::{Duration, Instant};
+
+use crate::animation::{AnimatedValue, Easing};
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
@@ -15,6 +17,9 @@ use super::{
     DEFAULT_ACCENT, DEFAULT_BG, DEFAULT_DISABLED_BG, DEFAULT_DISABLED_FG, DEFAULT_FOCUS_RING,
     DEFAULT_HOVER_BG, DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse,
 };
+
+/// Duration of the toggle slide animation.
+const TOGGLE_DURATION: Duration = Duration::from_millis(150);
 
 /// Visual style for a [`ToggleWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -60,18 +65,16 @@ impl Default for ToggleStyle {
 
 /// A pill-shaped toggle switch.
 ///
-/// Snaps between on (1.0) and off (0.0). The `toggle_progress` field
-/// is exposed for the animation system to interpolate; without animation,
-/// it snaps immediately.
+/// The thumb slides smoothly between on (1.0) and off (0.0) positions
+/// using an [`AnimatedValue`] with `EaseInOut` easing over 150ms.
 #[derive(Debug, Clone)]
 pub struct ToggleWidget {
     id: WidgetId,
     on: bool,
     disabled: bool,
     hovered: bool,
-    /// Animation progress: 0.0 = off, 1.0 = on.
-    /// Snaps immediately; animation system (07.9) will interpolate.
-    toggle_progress: f32,
+    /// Animated thumb position: 0.0 = off, 1.0 = on.
+    toggle_progress: AnimatedValue<f32>,
     style: ToggleStyle,
 }
 
@@ -89,7 +92,7 @@ impl ToggleWidget {
             on: false,
             disabled: false,
             hovered: false,
-            toggle_progress: 0.0,
+            toggle_progress: AnimatedValue::new(0.0, TOGGLE_DURATION, Easing::EaseInOut),
             style: ToggleStyle::default(),
         }
     }
@@ -99,20 +102,16 @@ impl ToggleWidget {
         self.on
     }
 
-    /// Sets the on/off state.
+    /// Sets the on/off state programmatically (no animation).
     pub fn set_on(&mut self, on: bool) {
         self.on = on;
-        self.toggle_progress = if on { 1.0 } else { 0.0 };
-    }
-
-    /// Returns the current animation progress (0.0..1.0).
-    pub fn toggle_progress(&self) -> f32 {
         self.toggle_progress
+            .set_immediate(if on { 1.0 } else { 0.0 });
     }
 
-    /// Sets the animation progress directly (for animation system).
-    pub fn set_toggle_progress(&mut self, progress: f32) {
-        self.toggle_progress = progress.clamp(0.0, 1.0);
+    /// Returns the target animation progress (0.0 or 1.0).
+    pub fn toggle_progress(&self) -> f32 {
+        self.toggle_progress.target()
     }
 
     /// Returns whether the toggle is disabled.
@@ -140,11 +139,12 @@ impl ToggleWidget {
         self
     }
 
-    /// Sets initial on state via builder.
+    /// Sets initial on state via builder (no animation).
     #[must_use]
     pub fn with_on(mut self, on: bool) -> Self {
         self.on = on;
-        self.toggle_progress = if on { 1.0 } else { 0.0 };
+        self.toggle_progress
+            .set_immediate(if on { 1.0 } else { 0.0 });
         self
     }
 
@@ -155,10 +155,11 @@ impl ToggleWidget {
         self
     }
 
-    /// Toggles state and returns the action.
+    /// Toggles state with animation and returns the action.
     fn toggle(&mut self) -> WidgetAction {
         self.on = !self.on;
-        self.toggle_progress = if self.on { 1.0 } else { 0.0 };
+        let target = if self.on { 1.0 } else { 0.0 };
+        self.toggle_progress.set(target, Instant::now());
         WidgetAction::Toggled {
             id: self.id,
             value: self.on,
@@ -220,15 +221,21 @@ impl Widget for ToggleWidget {
         let track_style = RectStyle::filled(self.track_bg()).with_radius(radius);
         ctx.draw_list.push_rect(ctx.bounds, track_style);
 
-        // Thumb — a circle within the track.
+        // Thumb — a circle within the track, position driven by animation.
+        let progress = self.toggle_progress.get(ctx.now);
         let thumb_diameter = s.height - s.thumb_padding * 2.0;
         let thumb_radius = thumb_diameter / 2.0;
         let travel = s.width - s.thumb_padding * 2.0 - thumb_diameter;
-        let thumb_x = ctx.bounds.x() + s.thumb_padding + travel * self.toggle_progress;
+        let thumb_x = ctx.bounds.x() + s.thumb_padding + travel * progress;
         let thumb_y = ctx.bounds.y() + s.thumb_padding;
         let thumb_rect = Rect::new(thumb_x, thumb_y, thumb_diameter, thumb_diameter);
         let thumb_style = RectStyle::filled(self.thumb_color()).with_radius(thumb_radius);
         ctx.draw_list.push_rect(thumb_rect, thumb_style);
+
+        // Signal that we need continued redraws while animating.
+        if self.toggle_progress.is_animating(ctx.now) {
+            ctx.animations_running.set(true);
+        }
     }
 
     fn handle_mouse(&mut self, event: &MouseEvent, ctx: &EventCtx<'_>) -> WidgetResponse {

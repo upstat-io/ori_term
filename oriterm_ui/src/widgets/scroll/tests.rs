@@ -83,11 +83,14 @@ fn scroll_draws_with_clip() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
     };
     scroll.draw(&mut ctx);
 
@@ -213,11 +216,14 @@ fn scroll_clip_rect_matches_viewport() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(10.0, 20.0, 150.0, 80.0);
+    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
     };
     scroll.draw(&mut ctx);
 
@@ -237,11 +243,14 @@ fn scroll_child_drawn_offset_by_scroll() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
     };
     scroll.draw(&mut ctx);
 
@@ -262,11 +271,14 @@ fn scroll_draws_scrollbar_when_overflowing() {
     let mut draw_list = DrawList::new();
     // Viewport 100px < content 320px → scrollbar should appear.
     let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
     };
     scroll.draw(&mut ctx);
 
@@ -290,11 +302,14 @@ fn scroll_no_scrollbar_when_content_fits() {
     let mut draw_list = DrawList::new();
     // Viewport 100px > content 16px → no scrollbar.
     let bounds = Rect::new(0.0, 0.0, 1000.0, 100.0);
+    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
     };
     scroll.draw(&mut ctx);
 
@@ -453,4 +468,150 @@ fn arrow_up_scrolls_upward() {
     };
     scroll.handle_key(event, &ctx);
     assert_eq!(scroll.scroll_offset(), 80.0); // 100 - 20
+}
+
+// --- Horizontal and both-direction tests (Chromium scroll view patterns) ---
+
+/// Creates a wide row of labels that overflows a narrow viewport.
+/// 20 labels * 8px * 10 chars = 1600px wide.
+fn wide_content() -> Box<dyn Widget> {
+    let labels: Vec<Box<dyn Widget>> = (0..20)
+        .map(|i| Box::new(LabelWidget::new(format!("HorizLbl{i}"))) as Box<dyn Widget>)
+        .collect();
+    Box::new(FlexWidget::row(labels))
+}
+
+#[test]
+fn horizontal_scroll_new_constructor() {
+    let scroll = ScrollWidget::new(wide_content(), super::ScrollDirection::Horizontal);
+    assert_eq!(scroll.scroll_offset(), 0.0);
+    assert!(scroll.is_focusable());
+}
+
+#[test]
+fn both_direction_new_constructor() {
+    let scroll = ScrollWidget::new(tall_content(), super::ScrollDirection::Both);
+    assert_eq!(scroll.scroll_offset(), 0.0);
+    assert!(scroll.is_focusable());
+}
+
+#[test]
+fn horizontal_scroll_draws_with_clip() {
+    let scroll = ScrollWidget::new(wide_content(), super::ScrollDirection::Horizontal);
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+    };
+    scroll.draw(&mut ctx);
+
+    // Clip should be balanced.
+    let push_count = draw_list
+        .commands()
+        .iter()
+        .filter(|c| matches!(c, DrawCommand::PushClip { .. }))
+        .count();
+    let pop_count = draw_list
+        .commands()
+        .iter()
+        .filter(|c| matches!(c, DrawCommand::PopClip))
+        .count();
+    assert_eq!(push_count, 1);
+    assert_eq!(pop_count, 1);
+}
+
+#[test]
+fn scroll_content_exactly_fits_viewport() {
+    // When content height == viewport height, max offset should be 0.
+    let mut scroll = ScrollWidget::vertical(tall_content());
+    // tall_content = 320px. Set viewport to 320px.
+    scroll.set_scroll_offset(50.0, 320.0, 320.0);
+    assert_eq!(scroll.scroll_offset(), 0.0, "no scroll when content fits");
+}
+
+#[test]
+fn scroll_content_exactly_fits_no_scrollbar() {
+    // Content exactly fitting the viewport should not draw a scrollbar.
+    let label = LabelWidget::new("A".repeat(10)); // 80px wide, 16px tall
+    let scroll = ScrollWidget::vertical(Box::new(label));
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    // Viewport exactly matches content height (16px).
+    let bounds = Rect::new(0.0, 0.0, 200.0, 16.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+    };
+    scroll.draw(&mut ctx);
+
+    // No scrollbar rects after PopClip.
+    let after_pop = draw_list
+        .commands()
+        .iter()
+        .skip_while(|c| !matches!(c, DrawCommand::PopClip))
+        .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+        .count();
+    assert_eq!(after_pop, 0, "no scrollbar when content exactly fits");
+}
+
+#[test]
+fn scroll_hover_delegates_to_child() {
+    use crate::input::HoverEvent;
+
+    let btn = ButtonWidget::new("HoverMe");
+    let mut scroll = ScrollWidget::vertical(Box::new(btn));
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: false,
+    };
+
+    // Hover should delegate to the child.
+    let resp = scroll.handle_hover(HoverEvent::Enter, &ctx);
+    // ButtonWidget returns redraw on hover enter.
+    assert!(resp.response.is_handled());
+}
+
+#[test]
+fn scroll_with_scrollbar_style() {
+    use super::ScrollbarStyle;
+    use crate::color::Color;
+
+    let custom_style = ScrollbarStyle {
+        width: 10.0,
+        thumb_color: Color::WHITE,
+        track_color: Color::BLACK,
+        thumb_radius: 5.0,
+        min_thumb_height: 30.0,
+    };
+    let scroll = ScrollWidget::vertical(tall_content()).with_scrollbar_style(custom_style);
+    // Just verify it doesn't panic and produces valid output.
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+    };
+    scroll.draw(&mut ctx);
+    assert!(!draw_list.is_empty());
 }

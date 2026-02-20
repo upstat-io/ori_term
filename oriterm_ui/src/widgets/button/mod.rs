@@ -1,9 +1,12 @@
 //! Button widget with hover, pressed, and disabled states.
 //!
 //! Emits `WidgetAction::Clicked` on mouse click or keyboard activation
-//! (Enter/Space when focused). Supports configurable padding, border
-//! radius, and color states.
+//! (Enter/Space when focused). Uses [`AnimatedValue`] for smooth hover
+//! color transitions (100ms, `EaseOut`).
 
+use std::time::{Duration, Instant};
+
+use crate::animation::{AnimatedValue, Easing, Lerp};
 use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Insets, Point};
@@ -17,6 +20,9 @@ use super::{
     DEFAULT_FOCUS_RING, DEFAULT_HOVER_BG, DEFAULT_PRESSED_BG, DrawCtx, EventCtx, LayoutCtx, Widget,
     WidgetAction, WidgetResponse,
 };
+
+/// Duration of the hover color transition.
+const HOVER_DURATION: Duration = Duration::from_millis(100);
 
 /// Visual style for a [`ButtonWidget`].
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +75,7 @@ impl Default for ButtonStyle {
 /// Interactive button widget.
 ///
 /// Emits `WidgetAction::Clicked(id)` when clicked or keyboard-activated.
+/// Hover state transitions use smooth color interpolation.
 #[derive(Debug, Clone)]
 pub struct ButtonWidget {
     id: WidgetId,
@@ -76,6 +83,8 @@ pub struct ButtonWidget {
     disabled: bool,
     hovered: bool,
     pressed: bool,
+    /// Animated hover progress: 0.0 = not hovered, 1.0 = fully hovered.
+    hover_progress: AnimatedValue<f32>,
     style: ButtonStyle,
 }
 
@@ -88,6 +97,7 @@ impl ButtonWidget {
             disabled: false,
             hovered: false,
             pressed: false,
+            hover_progress: AnimatedValue::new(0.0, HOVER_DURATION, Easing::EaseOut),
             style: ButtonStyle::default(),
         }
     }
@@ -118,6 +128,7 @@ impl ButtonWidget {
         if disabled {
             self.hovered = false;
             self.pressed = false;
+            self.hover_progress.set_immediate(0.0);
         }
     }
 
@@ -135,18 +146,16 @@ impl ButtonWidget {
         self
     }
 
-    /// Returns the current background color based on state.
-    fn current_bg(&self) -> Color {
+    /// Returns the current background color, interpolating for hover.
+    fn current_bg(&self, now: Instant) -> Color {
         if self.disabled {
             return self.style.disabled_bg;
         }
         if self.pressed {
             return self.style.pressed_bg;
         }
-        if self.hovered {
-            return self.style.hover_bg;
-        }
-        self.style.bg
+        let t = self.hover_progress.get(now);
+        Color::lerp(self.style.bg, self.style.hover_bg, t)
     }
 
     /// Returns the current text color based on state.
@@ -193,8 +202,8 @@ impl Widget for ButtonWidget {
             ctx.draw_list.push_rect(ring_rect, ring_style);
         }
 
-        // Button background.
-        let bg_style = RectStyle::filled(self.current_bg())
+        // Button background with animated hover color.
+        let bg_style = RectStyle::filled(self.current_bg(ctx.now))
             .with_border(self.style.border_width, self.style.border_color)
             .with_radius(self.style.corner_radius);
         ctx.draw_list.push_rect(ctx.bounds, bg_style);
@@ -208,6 +217,11 @@ impl Widget for ButtonWidget {
             let y = inner.y() + (inner.height() - shaped.height) / 2.0;
             ctx.draw_list
                 .push_text(Point::new(x, y), shaped, self.current_fg());
+        }
+
+        // Signal that we need continued redraws while animating.
+        if self.hover_progress.is_animating(ctx.now) {
+            ctx.animations_running.set(true);
         }
     }
 
@@ -237,14 +251,17 @@ impl Widget for ButtonWidget {
         if self.disabled {
             return WidgetResponse::ignored();
         }
+        let now = Instant::now();
         match event {
             HoverEvent::Enter => {
                 self.hovered = true;
+                self.hover_progress.set(1.0, now);
                 WidgetResponse::redraw()
             }
             HoverEvent::Leave => {
                 self.hovered = false;
                 self.pressed = false;
+                self.hover_progress.set(0.0, now);
                 WidgetResponse::redraw()
             }
         }

@@ -5,7 +5,7 @@
 //! layout after the main tree, drawing after the main tree.
 
 use crate::color::Color;
-use crate::draw::{DrawList, RectStyle};
+use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect, Size};
 use crate::input::{HoverEvent, Key, KeyEvent, MouseEvent, MouseEventKind};
 use crate::layout::compute_layout;
@@ -201,25 +201,24 @@ impl OverlayManager {
     /// Draws all overlays in back-to-front order.
     ///
     /// Modal overlays emit a dimming rectangle covering the viewport before
-    /// drawing the overlay content.
-    pub fn draw_overlays(
-        &self,
-        draw_list: &mut DrawList,
-        measurer: &dyn crate::widgets::TextMeasurer,
-        focused_widget: Option<WidgetId>,
-    ) {
+    /// drawing the overlay content. The `ctx` provides shared drawing state;
+    /// each overlay's bounds are substituted automatically.
+    pub fn draw_overlays(&self, ctx: &mut DrawCtx<'_>) {
         for overlay in &self.overlays {
             if overlay.kind == OverlayKind::Modal {
-                draw_list.push_rect(self.viewport, RectStyle::filled(MODAL_DIM_COLOR));
+                ctx.draw_list
+                    .push_rect(self.viewport, RectStyle::filled(MODAL_DIM_COLOR));
             }
 
-            let mut ctx = DrawCtx {
-                measurer,
-                draw_list,
+            let mut overlay_ctx = DrawCtx {
+                measurer: ctx.measurer,
+                draw_list: ctx.draw_list,
                 bounds: overlay.computed_rect,
-                focused_widget,
+                focused_widget: ctx.focused_widget,
+                now: ctx.now,
+                animations_running: ctx.animations_running,
             };
-            overlay.widget.draw(&mut ctx);
+            overlay.widget.draw(&mut overlay_ctx);
         }
     }
 

@@ -1,10 +1,13 @@
+use std::cell::Cell;
+use std::time::Instant;
+
 use crate::draw::{DrawCommand, DrawList};
 use crate::geometry::{Point, Rect, Size};
 use crate::input::{HoverEvent, Key, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
 use crate::widgets::button::ButtonWidget;
 use crate::widgets::label::LabelWidget;
 use crate::widgets::tests::MockMeasurer;
-use crate::widgets::{Widget, WidgetAction};
+use crate::widgets::{DrawCtx, Widget, WidgetAction};
 
 use super::OverlayManager;
 use super::manager::OverlayEventResult;
@@ -529,7 +532,16 @@ fn draw_empty_is_noop() {
     let mgr = OverlayManager::new(viewport());
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    mgr.draw_overlays(&mut draw_list, &measurer, None);
+    let anim_flag = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now: Instant::now(),
+        animations_running: &anim_flag,
+    };
+    mgr.draw_overlays(&mut ctx);
     assert!(draw_list.is_empty());
 }
 
@@ -541,7 +553,16 @@ fn draw_non_modal_no_dimming() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    mgr.draw_overlays(&mut draw_list, &measurer, None);
+    let anim_flag = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now: Instant::now(),
+        animations_running: &anim_flag,
+    };
+    mgr.draw_overlays(&mut ctx);
 
     // Should have text command but no dim rect.
     let has_rect = draw_list
@@ -559,7 +580,16 @@ fn draw_modal_emits_dimming_rect() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    mgr.draw_overlays(&mut draw_list, &measurer, None);
+    let anim_flag = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now: Instant::now(),
+        animations_running: &anim_flag,
+    };
+    mgr.draw_overlays(&mut ctx);
 
     // First command should be the dim rect covering the viewport.
     let first = &draw_list.commands()[0];
@@ -585,7 +615,16 @@ fn draw_overlays_in_painter_order() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    mgr.draw_overlays(&mut draw_list, &measurer, None);
+    let anim_flag = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now: Instant::now(),
+        animations_running: &anim_flag,
+    };
+    mgr.draw_overlays(&mut ctx);
 
     let glyph_counts: Vec<usize> = draw_list
         .commands()
@@ -922,7 +961,16 @@ fn draw_stacked_modals_emits_two_dim_rects() {
 
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
-    mgr.draw_overlays(&mut draw_list, &measurer, None);
+    let anim_flag = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now: Instant::now(),
+        animations_running: &anim_flag,
+    };
+    mgr.draw_overlays(&mut ctx);
 
     let dim_rects: Vec<_> = draw_list
         .commands()

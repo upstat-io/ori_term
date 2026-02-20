@@ -21,6 +21,9 @@ pub mod stack;
 pub mod text_input;
 pub mod toggle;
 
+use std::cell::Cell;
+use std::time::Instant;
+
 use crate::color::Color;
 use crate::draw::DrawList;
 use crate::geometry::Rect;
@@ -120,6 +123,10 @@ pub struct DrawCtx<'a> {
     pub bounds: Rect,
     /// The currently focused widget, if any.
     pub focused_widget: Option<WidgetId>,
+    /// Current frame timestamp for animation interpolation.
+    pub now: Instant,
+    /// Set to `true` by widgets with running animations to request redraw.
+    pub animations_running: &'a Cell<bool>,
 }
 
 /// Context passed to mouse and keyboard event handlers.

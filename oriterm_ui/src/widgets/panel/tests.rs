@@ -54,11 +54,14 @@ fn panel_draws_background_rect() {
     let measurer = MockMeasurer::STANDARD;
     let mut draw_list = DrawList::new();
     let bounds = Rect::new(10.0, 20.0, 100.0, 50.0);
+    let anim_flag = std::cell::Cell::new(false);
     let mut ctx = DrawCtx {
         measurer: &measurer,
         draw_list: &mut draw_list,
         bounds,
         focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
     };
     panel.draw(&mut ctx);
 
@@ -128,5 +131,203 @@ fn panel_delegates_key_to_child() {
     match response.action {
         Some(super::super::WidgetAction::Clicked(id)) => assert_eq!(id, child_id),
         other => panic!("expected Clicked, got {other:?}"),
+    }
+}
+
+// --- Mouse and hover delegation (Chromium event dispatch patterns) ---
+
+#[test]
+fn panel_delegates_mouse_to_child() {
+    use crate::geometry::Point;
+    use crate::input::{Modifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    let child = Box::new(ButtonWidget::new("Click"));
+    let child_id = child.id();
+    let mut panel = PanelWidget::new(child);
+
+    let measurer = MockMeasurer::STANDARD;
+    // Panel with default padding (12px). Child is inset at (12, 12).
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = super::super::EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: true,
+    };
+
+    // Click inside the child area (accounting for 12px padding).
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(20.0, 20.0),
+        modifiers: Modifiers::NONE,
+    };
+    let _ = panel.handle_mouse(&down, &ctx);
+
+    let up = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        pos: Point::new(20.0, 20.0),
+        modifiers: Modifiers::NONE,
+    };
+    let resp = panel.handle_mouse(&up, &ctx);
+
+    match resp.action {
+        Some(super::super::WidgetAction::Clicked(id)) => assert_eq!(id, child_id),
+        other => panic!("expected Clicked through panel, got {other:?}"),
+    }
+}
+
+#[test]
+fn panel_mouse_outside_child_ignored() {
+    use crate::geometry::Point;
+    use crate::input::{Modifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    let child = Box::new(ButtonWidget::new("X"));
+    let mut panel = PanelWidget::new(child);
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = super::super::EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: true,
+    };
+
+    // Click in the panel's padding area (outside child bounds).
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        pos: Point::new(2.0, 2.0),
+        modifiers: Modifiers::NONE,
+    };
+    let resp = panel.handle_mouse(&down, &ctx);
+    assert_eq!(resp, super::super::WidgetResponse::ignored());
+}
+
+#[test]
+fn panel_delegates_hover_to_child() {
+    use crate::input::HoverEvent;
+
+    let child = Box::new(ButtonWidget::new("Hover"));
+    let mut panel = PanelWidget::new(child);
+
+    let measurer = MockMeasurer::STANDARD;
+    let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+    let ctx = super::super::EventCtx {
+        measurer: &measurer,
+        bounds,
+        is_focused: false,
+    };
+
+    // Hover should delegate to child.
+    let resp = panel.handle_hover(HoverEvent::Enter, &ctx);
+    // ButtonWidget returns redraw on hover enter.
+    assert!(resp.response.is_handled());
+}
+
+// --- Builder method tests ---
+
+#[test]
+fn panel_with_bg() {
+    use crate::color::Color;
+
+    let panel = make_panel_with_label("Test").with_bg(Color::WHITE);
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+    };
+    panel.draw(&mut ctx);
+
+    // First command is the background rect — verify its fill color.
+    match &draw_list.commands()[0] {
+        crate::draw::DrawCommand::Rect { style, .. } => {
+            assert_eq!(style.fill, Some(Color::WHITE));
+        }
+        other => panic!("expected Rect command, got {other:?}"),
+    }
+}
+
+#[test]
+fn panel_with_corner_radius() {
+    let panel = make_panel_with_label("R").with_corner_radius(20.0);
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+    };
+    panel.draw(&mut ctx);
+
+    match &draw_list.commands()[0] {
+        crate::draw::DrawCommand::Rect { style, .. } => {
+            assert_eq!(style.corner_radius, [20.0; 4]);
+        }
+        other => panic!("expected Rect command, got {other:?}"),
+    }
+}
+
+#[test]
+fn panel_with_padding_affects_layout() {
+    let panel = make_panel_with_label("Pad").with_padding(Insets::all(30.0));
+    let ctx = LayoutCtx {
+        measurer: &MockMeasurer::STANDARD,
+    };
+    let layout_box = panel.layout(&ctx);
+    let viewport = Rect::new(0.0, 0.0, 400.0, 300.0);
+    let node = compute_layout(&layout_box, viewport);
+
+    // "Pad" = 3 chars * 8px = 24px wide, 16px tall.
+    // Padding: 30px all sides → 24 + 60 = 84 wide, 16 + 60 = 76 tall.
+    assert_eq!(node.rect.width(), 84.0);
+    assert_eq!(node.rect.height(), 76.0);
+}
+
+#[test]
+fn panel_with_shadow() {
+    use crate::color::Color;
+    use crate::draw::Shadow;
+
+    let shadow = Shadow {
+        offset_x: 0.0,
+        offset_y: 4.0,
+        blur_radius: 8.0,
+        spread: 0.0,
+        color: Color::BLACK.with_alpha(0.3),
+    };
+    let panel = make_panel_with_label("S").with_shadow(shadow);
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let bounds = Rect::new(0.0, 0.0, 100.0, 50.0);
+    let anim_flag = std::cell::Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds,
+        focused_widget: None,
+        now: std::time::Instant::now(),
+        animations_running: &anim_flag,
+    };
+    panel.draw(&mut ctx);
+
+    // Background rect should have shadow set.
+    match &draw_list.commands()[0] {
+        crate::draw::DrawCommand::Rect { style, .. } => {
+            assert!(style.shadow.is_some(), "shadow should be set on panel rect");
+            let s = style.shadow.unwrap();
+            assert_eq!(s.offset_y, 4.0);
+            assert_eq!(s.blur_radius, 8.0);
+        }
+        other => panic!("expected Rect command, got {other:?}"),
     }
 }

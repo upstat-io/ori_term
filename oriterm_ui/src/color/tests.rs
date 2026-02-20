@@ -184,3 +184,38 @@ fn copy_semantics() {
     let b = a;
     assert_eq!(a, b);
 }
+
+// --- Lerp ---
+
+#[test]
+fn lerp_black_to_white_at_zero() {
+    use crate::animation::Lerp;
+    let result = Color::lerp(Color::BLACK, Color::WHITE, 0.0);
+    assert_eq!(result, Color::BLACK);
+}
+
+#[test]
+fn lerp_black_to_white_at_one() {
+    use crate::animation::Lerp;
+    let result = Color::lerp(Color::BLACK, Color::WHITE, 1.0);
+    assert_eq!(result, Color::WHITE);
+}
+
+#[test]
+fn lerp_black_to_white_midpoint() {
+    use crate::animation::Lerp;
+    let result = Color::lerp(Color::BLACK, Color::WHITE, 0.5);
+    assert!((result.r - 0.5).abs() < 1e-6);
+    assert!((result.g - 0.5).abs() < 1e-6);
+    assert!((result.b - 0.5).abs() < 1e-6);
+    assert_eq!(result.a, 1.0); // Both have a=1.0.
+}
+
+#[test]
+fn lerp_alpha_interpolation() {
+    use crate::animation::Lerp;
+    let transparent = Color::BLACK.with_alpha(0.0);
+    let opaque = Color::BLACK.with_alpha(1.0);
+    let result = Color::lerp(transparent, opaque, 0.5);
+    assert!((result.a - 0.5).abs() < 1e-6);
+}
