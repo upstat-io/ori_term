@@ -12,7 +12,7 @@ use crate::index::Column;
 ///
 /// Returns 0 for word characters (alphanumeric + `_`), 1 for whitespace
 /// (space, null, tab), 2 for punctuation/other.
-pub fn delimiter_class(c: char) -> u8 {
+pub(crate) fn delimiter_class(c: char) -> u8 {
     if c.is_alphanumeric() || c == '_' {
         0
     } else if c == ' ' || c == '\0' || c == '\t' {
@@ -20,11 +20,6 @@ pub fn delimiter_class(c: char) -> u8 {
     } else {
         2
     }
-}
-
-/// Returns true if the character is a word delimiter (not a word character).
-pub fn is_word_delimiter(c: char) -> bool {
-    delimiter_class(c) != 0
 }
 
 /// Internal alias used during boundary scanning.

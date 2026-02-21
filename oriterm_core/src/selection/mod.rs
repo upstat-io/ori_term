@@ -11,9 +11,7 @@ mod click;
 mod tests;
 pub(crate) mod text;
 
-pub use boundaries::{
-    delimiter_class, is_word_delimiter, logical_line_end, logical_line_start, word_boundaries,
-};
+pub use boundaries::{logical_line_end, logical_line_start, word_boundaries};
 pub use click::ClickDetector;
 pub use text::extract_text;
 
@@ -138,38 +136,33 @@ impl Selection {
 
     /// Returns the normalized (start, end) range including the pivot.
     ///
-    /// Sorts anchor, pivot, and end to extract the minimum and maximum,
+    /// Computes the minimum and maximum of anchor, pivot, and end,
     /// giving a canonical range regardless of drag direction.
     pub fn ordered(&self) -> (SelectionPoint, SelectionPoint) {
-        let mut points = [self.anchor, self.pivot, self.end];
-        points.sort();
-        (points[0], points[2])
+        let min = self.anchor.min(self.pivot).min(self.end);
+        let max = self.anchor.max(self.pivot).max(self.end);
+        (min, max)
+    }
+
+    /// Precompute bounds for batch containment testing.
+    ///
+    /// Call once per frame, then use `SelectionBounds::contains()` for each
+    /// cell. Avoids recomputing `ordered()` per cell during rendering.
+    pub fn bounds(&self) -> SelectionBounds {
+        let (start, end) = self.ordered();
+        SelectionBounds {
+            mode: self.mode,
+            start,
+            end,
+        }
     }
 
     /// Test whether a cell at (`stable_row`, `col`) is within the selection.
+    ///
+    /// Convenience method that recomputes bounds each call. For batch testing
+    /// (e.g. rendering), use `bounds()` + `SelectionBounds::contains()`.
     pub fn contains(&self, stable_row: StableRowIndex, col: usize) -> bool {
-        let (start, end) = self.ordered();
-
-        if self.mode == SelectionMode::Block {
-            let min_col = start.col.min(end.col);
-            let max_col = start.col.max(end.col);
-            stable_row >= start.row && stable_row <= end.row && col >= min_col && col <= max_col
-        } else {
-            if stable_row < start.row || stable_row > end.row {
-                return false;
-            }
-            let first = if stable_row == start.row {
-                start.effective_start_col()
-            } else {
-                0
-            };
-            let last = if stable_row == end.row {
-                end.effective_end_col()
-            } else {
-                usize::MAX
-            };
-            col >= first && col <= last
-        }
+        self.bounds().contains(stable_row, col)
     }
 
     /// Returns true if this selection has zero area.
@@ -177,5 +170,45 @@ impl Selection {
     /// Only possible in Char mode when anchor equals end (no drag yet).
     pub fn is_empty(&self) -> bool {
         self.mode == SelectionMode::Char && self.anchor == self.end
+    }
+}
+
+/// Precomputed selection bounds for batch containment testing.
+///
+/// Compute once with `Selection::bounds()`, then test many cells with
+/// `SelectionBounds::contains()`. This avoids redundant min/max computation
+/// per cell during rendering (O(1) per cell instead of O(3) comparisons).
+pub struct SelectionBounds {
+    pub mode: SelectionMode,
+    pub start: SelectionPoint,
+    pub end: SelectionPoint,
+}
+
+impl SelectionBounds {
+    /// Test whether a cell at (`stable_row`, `col`) is within these bounds.
+    pub fn contains(&self, stable_row: StableRowIndex, col: usize) -> bool {
+        if self.mode == SelectionMode::Block {
+            let min_col = self.start.col.min(self.end.col);
+            let max_col = self.start.col.max(self.end.col);
+            stable_row >= self.start.row
+                && stable_row <= self.end.row
+                && col >= min_col
+                && col <= max_col
+        } else {
+            if stable_row < self.start.row || stable_row > self.end.row {
+                return false;
+            }
+            let first = if stable_row == self.start.row {
+                self.start.effective_start_col()
+            } else {
+                0
+            };
+            let last = if stable_row == self.end.row {
+                self.end.effective_end_col()
+            } else {
+                usize::MAX
+            };
+            col >= first && col <= last
+        }
     }
 }

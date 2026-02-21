@@ -3,7 +3,13 @@
 use crate::grid::{Grid, StableRowIndex};
 use crate::index::{Column, Side};
 
+use super::boundaries::delimiter_class;
 use super::*;
+
+/// Returns true if the character is a word delimiter (not a word character).
+fn is_word_delimiter(c: char) -> bool {
+    delimiter_class(c) != 0
+}
 
 /// Helper to create a `StableRowIndex` from a raw value.
 fn sri(n: u64) -> StableRowIndex {
