@@ -6,7 +6,7 @@
 
 use crate::cell::CellFlags;
 use crate::grid::Grid;
-use crate::grid::row::Row;
+use crate::grid::Row;
 use crate::index::Column;
 
 use super::{Selection, SelectionMode};

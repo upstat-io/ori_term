@@ -5,10 +5,10 @@
 //! (word end, line end), and end tracks the current drag position. This
 //! prevents losing the originally selected unit during drag extension.
 
-pub mod boundaries;
+pub(crate) mod boundaries;
 #[cfg(test)]
 mod tests;
-pub mod text;
+pub(crate) mod text;
 
 pub use boundaries::{
     delimiter_class, is_word_delimiter, logical_line_end, logical_line_start, word_boundaries,
