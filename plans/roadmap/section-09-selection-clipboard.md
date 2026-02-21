@@ -1,13 +1,13 @@
 ---
 section: 9
 title: Selection & Clipboard
-status: not-started
+status: in-progress
 tier: 3
 goal: Windows Terminal-style 3-point selection, all selection modes, clipboard with paste filtering
 sections:
   - id: "9.1"
     title: Selection Model & Anchoring
-    status: not-started
+    status: in-progress
   - id: "9.2"
     title: Mouse Selection
     status: not-started
@@ -16,10 +16,10 @@ sections:
     status: not-started
   - id: "9.4"
     title: Word Delimiters & Boundaries
-    status: not-started
+    status: in-progress
   - id: "9.5"
     title: Copy Operations
-    status: not-started
+    status: in-progress
   - id: "9.6"
     title: Paste Operations
     status: not-started
@@ -54,56 +54,56 @@ Windows Terminal uses a 3-point selection model: anchor, pivot, and endpoint. Th
 
 **Reference:** `_old/src/selection/mod.rs` — carries forward the proven 3-point model with `SelectionPoint`, `Selection`, `SelectionMode`.
 
-- [ ] `Side` enum — `Left`, `Right`
-  - [ ] Sub-cell precision for selection boundaries (which half of the cell was clicked)
-  - [ ] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
-- [ ] `SelectionPoint` struct
-  - [ ] Fields:
+- [x] `Side` enum — `Left`, `Right`
+  - [x] Sub-cell precision for selection boundaries (which half of the cell was clicked)
+  - [x] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
+- [x] `SelectionPoint` struct
+  - [x] Fields:
     - `row: StableRowIndex` — row identity that survives scrollback eviction
     - `col: usize` — column index
     - `side: Side` — which half of the cell
-  - [ ] `effective_start_col(&self) -> usize` — when `side == Right`, selection starts at `col + 1`
-  - [ ] `effective_end_col(&self) -> usize` — when `side == Left && col > 0`, selection ends at `col - 1`
-  - [ ] `impl Ord` — compare by row, then col, then side (Left < Right)
-  - [ ] `impl PartialOrd` — delegate to `Ord`
-  - [ ] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
-- [ ] `SelectionMode` enum
-  - [ ] `Char` — character-by-character (single click + drag)
-  - [ ] `Word` — word selection (double-click, subsequent drag expands by words)
-  - [ ] `Line` — full logical line selection (triple-click, follows WRAPLINE)
-  - [ ] `Block` — rectangular block selection (Alt+click+drag)
-  - [ ] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
-- [ ] `Selection` struct
-  - [ ] Fields:
+  - [x] `effective_start_col(&self) -> usize` — when `side == Right`, selection starts at `col + 1`
+  - [x] `effective_end_col(&self) -> usize` — when `side == Left && col > 0`, selection ends at `col - 1`
+  - [x] `impl Ord` — compare by row, then col, then side (Left < Right)
+  - [x] `impl PartialOrd` — delegate to `Ord`
+  - [x] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
+- [x] `SelectionMode` enum
+  - [x] `Char` — character-by-character (single click + drag)
+  - [x] `Word` — word selection (double-click, subsequent drag expands by words)
+  - [x] `Line` — full logical line selection (triple-click, follows WRAPLINE)
+  - [x] `Block` — rectangular block selection (Alt+click+drag)
+  - [x] Derive: `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`
+- [x] `Selection` struct
+  - [x] Fields:
     - `mode: SelectionMode`
     - `anchor: SelectionPoint` — initial click position (fixed)
     - `pivot: SelectionPoint` — other end of initial unit (word end, line end); prevents losing selected word during drag
     - `end: SelectionPoint` — current drag endpoint (moves with mouse)
-  - [ ] `Selection::new_char(row: StableRowIndex, col: usize, side: Side) -> Self` — anchor = pivot = end
-  - [ ] `Selection::new_word(anchor: SelectionPoint, pivot: SelectionPoint) -> Self` — anchor/pivot set to word boundaries
-  - [ ] `Selection::new_line(anchor: SelectionPoint, pivot: SelectionPoint) -> Self` — anchor/pivot set to line boundaries
-  - [ ] `ordered(&self) -> (SelectionPoint, SelectionPoint)` — normalize: sort anchor, pivot, end and return (min, max)
-  - [ ] `contains(&self, stable_row: StableRowIndex, col: usize) -> bool` — test if cell is within selection
-    - [ ] Block mode: rectangular bounds (min_col..max_col within row range)
-    - [ ] Other modes: use effective_start_col/effective_end_col at boundary rows, full rows in between
-  - [ ] `is_empty(&self) -> bool` — true if Char mode and anchor == end (zero area)
-- [ ] Selection across scrollback: points use `StableRowIndex` (absolute row positions that survive scrollback eviction)
+  - [x] `Selection::new_char(row: StableRowIndex, col: usize, side: Side) -> Self` — anchor = pivot = end
+  - [x] `Selection::new_word(anchor: SelectionPoint, pivot: SelectionPoint) -> Self` — anchor/pivot set to word boundaries
+  - [x] `Selection::new_line(anchor: SelectionPoint, pivot: SelectionPoint) -> Self` — anchor/pivot set to line boundaries
+  - [x] `ordered(&self) -> (SelectionPoint, SelectionPoint)` — normalize: sort anchor, pivot, end and return (min, max)
+  - [x] `contains(&self, stable_row: StableRowIndex, col: usize) -> bool` — test if cell is within selection
+    - [x] Block mode: rectangular bounds (min_col..max_col within row range)
+    - [x] Other modes: use effective_start_col/effective_end_col at boundary rows, full rows in between
+  - [x] `is_empty(&self) -> bool` — true if Char mode and anchor == end (zero area)
+- [x] Selection across scrollback: points use `StableRowIndex` (absolute row positions that survive scrollback eviction)
 - [ ] Selection invalidation: clear on output that affects selected region
 - [ ] Multi-click detection:
   - [ ] Track last click position and timestamp
   - [ ] Use 500ms window for multi-click detection
   - [ ] Click counter cycles: 1 -> 2 -> 3 -> 1 (single -> double -> triple -> reset)
   - [ ] Clicks must be in same cell position to count as multi-click
-- [ ] Re-export `Selection`, `SelectionPoint`, `SelectionMode`, `Side` from `oriterm_core/src/lib.rs`
-- [ ] **Tests** (`oriterm_core/src/selection/mod.rs` `#[cfg(test)]`):
-  - [ ] `new_char` creates selection with anchor == pivot == end
-  - [ ] `new_word` creates selection with distinct anchor and pivot
-  - [ ] `ordered()` returns min/max regardless of anchor/end order
-  - [ ] `contains()` returns true for cells inside selection, false outside
-  - [ ] `contains()` respects Side precision at boundary cells
-  - [ ] Block mode `contains()` uses rectangular bounds
-  - [ ] `is_empty()` returns true for zero-area Char selection
-  - [ ] SelectionPoint ordering: row takes priority, then col, then side
+- [x] Re-export `Selection`, `SelectionPoint`, `SelectionMode`, `Side` from `oriterm_core/src/lib.rs`
+- [x] **Tests** (`oriterm_core/src/selection/mod.rs` `#[cfg(test)]`):
+  - [x] `new_char` creates selection with anchor == pivot == end
+  - [x] `new_word` creates selection with distinct anchor and pivot
+  - [x] `ordered()` returns min/max regardless of anchor/end order
+  - [x] `contains()` returns true for cells inside selection, false outside
+  - [x] `contains()` respects Side precision at boundary cells
+  - [x] Block mode `contains()` uses rectangular bounds
+  - [x] `is_empty()` returns true for zero-area Char selection
+  - [x] SelectionPoint ordering: row takes priority, then col, then side
 
 ---
 
@@ -219,37 +219,37 @@ Configurable word boundary detection for double-click selection and Ctrl+arrow w
 
 **Reference:** `_old/src/selection/boundaries.rs` — carries forward the char_class + scan approach.
 
-- [ ] **Default word delimiters**: ``[]{}()=\,;"'-`` plus space (always a delimiter)
-- [ ] **Character classification** (`fn char_class(ch: char) -> u8`):
-  - [ ] Class 0: Word characters (alphanumeric + `_`)
-  - [ ] Class 1: Whitespace (space, `\0`, tab)
-  - [ ] Class 2: Punctuation/other (all other characters)
-  - [ ] Two non-zero classes allow asymmetric word navigation behavior
-- [ ] `is_word_delimiter(ch: char) -> bool` — returns true if class != 0
-- [ ] `delimiter_class(ch: char) -> u8` — returns classification
-- [ ] `word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize)`
-  - [ ] Returns (start_col, end_col) inclusive
-  - [ ] If clicked on WIDE_CHAR_SPACER: redirect to base cell (col - 1)
-  - [ ] Classify the clicked character
-  - [ ] Scan left: move while `char_class(cell.c) == click_class`, skipping WIDE_CHAR_SPACER
-  - [ ] Scan right: move while `char_class(cell.c) == click_class`, including WIDE_CHAR_SPACER that follows a wide char
-  - [ ] Returns (start, end) of contiguous same-class region
-- [ ] `logical_line_start(grid: &Grid, abs_row: usize) -> usize`
-  - [ ] Walk backwards through rows connected by WRAPLINE flag
-  - [ ] Returns absolute row index of first row in logical line
-- [ ] `logical_line_end(grid: &Grid, abs_row: usize) -> usize`
-  - [ ] Walk forwards through rows connected by WRAPLINE flag
-  - [ ] Returns absolute row index of last row in logical line
-- [ ] Configurable delimiters via settings (future: wired through config in Section 13)
-- [ ] **Tests** (`oriterm_core/src/selection/boundaries.rs` `#[cfg(test)]`):
-  - [ ] `char_class('a')` returns 0 (word)
-  - [ ] `char_class(' ')` returns 1 (whitespace)
-  - [ ] `char_class(';')` returns 2 (punctuation)
-  - [ ] `word_boundaries` on "hello world" at col 2 returns (0, 4)
-  - [ ] `word_boundaries` on "hello world" at col 5 returns (5, 5) (space is its own unit)
-  - [ ] `word_boundaries` on wide char spacer redirects to base cell
-  - [ ] `logical_line_start` walks back through WRAPLINE rows
-  - [ ] `logical_line_end` walks forward through WRAPLINE rows
+- [x] **Default word delimiters**: ``[]{}()=\,;"'-`` plus space (always a delimiter)
+- [x] **Character classification** (`fn char_class(ch: char) -> u8`):
+  - [x] Class 0: Word characters (alphanumeric + `_`)
+  - [x] Class 1: Whitespace (space, `\0`, tab)
+  - [x] Class 2: Punctuation/other (all other characters)
+  - [x] Two non-zero classes allow asymmetric word navigation behavior
+- [x] `is_word_delimiter(ch: char) -> bool` — returns true if class != 0
+- [x] `delimiter_class(ch: char) -> u8` — returns classification
+- [x] `word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize)`
+  - [x] Returns (start_col, end_col) inclusive
+  - [x] If clicked on WIDE_CHAR_SPACER: redirect to base cell (col - 1)
+  - [x] Classify the clicked character
+  - [x] Scan left: move while `char_class(cell.c) == click_class`, skipping WIDE_CHAR_SPACER
+  - [x] Scan right: move while `char_class(cell.c) == click_class`, including WIDE_CHAR_SPACER that follows a wide char
+  - [x] Returns (start, end) of contiguous same-class region
+- [x] `logical_line_start(grid: &Grid, abs_row: usize) -> usize`
+  - [x] Walk backwards through rows connected by WRAPLINE flag
+  - [x] Returns absolute row index of first row in logical line
+- [x] `logical_line_end(grid: &Grid, abs_row: usize) -> usize`
+  - [x] Walk forwards through rows connected by WRAPLINE flag
+  - [x] Returns absolute row index of last row in logical line
+- [ ] Configurable delimiters via settings (future: wired through config in Section 13) <!-- blocked-by:13 -->
+- [x] **Tests** (`oriterm_core/src/selection/boundaries.rs` `#[cfg(test)]`):
+  - [x] `char_class('a')` returns 0 (word)
+  - [x] `char_class(' ')` returns 1 (whitespace)
+  - [x] `char_class(';')` returns 2 (punctuation)
+  - [x] `word_boundaries` on "hello world" at col 2 returns (0, 4)
+  - [x] `word_boundaries` on "hello world" at col 5 returns (5, 5) (space is its own unit)
+  - [x] `word_boundaries` on wide char spacer redirects to base cell
+  - [x] `logical_line_start` walks back through WRAPLINE rows
+  - [x] `logical_line_end` walks forward through WRAPLINE rows
 
 ---
 
@@ -268,17 +268,17 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
   - [ ] Enter — copy selection (in mark mode, then exit mark mode)
   - [ ] CopyOnSelect setting: auto-copy on mouse release after selection (does NOT clear selection)
   - [ ] Right-click: copy if selection exists (when context menu disabled)
-- [ ] **Text extraction** (`extract_text(grid: &Grid, selection: &Selection) -> String`):
-  - [ ] Convert StableRowIndex to absolute row for iteration
-  - [ ] Walk selected cells, concatenate characters
-  - [ ] Skip WIDE_CHAR_SPACER cells (include the wide char cell, not its spacer)
-  - [ ] Skip LEADING_WIDE_CHAR_SPACER cells
-  - [ ] Replace `\0` (null) with space
-  - [ ] Append zero-width characters (combining marks) from `cell.zerowidth()`
-  - [ ] Handle wrapped lines: rows connected by WRAPLINE flag join without newline
-  - [ ] Unwrapped lines: trim trailing spaces, add newline between rows
-  - [ ] Block selection: add newlines between rows, trim trailing spaces per row, use min_col..max_col bounds
-  - [ ] Handle grapheme clusters: base char + all zerowidth chars from CellExtra
+- [x] **Text extraction** (`extract_text(grid: &Grid, selection: &Selection) -> String`):
+  - [x] Convert StableRowIndex to absolute row for iteration
+  - [x] Walk selected cells, concatenate characters
+  - [x] Skip WIDE_CHAR_SPACER cells (include the wide char cell, not its spacer)
+  - [x] Skip LEADING_WIDE_CHAR_SPACER cells
+  - [x] Replace `\0` (null) with space
+  - [x] Append zero-width characters (combining marks) from `cell.zerowidth()`
+  - [x] Handle wrapped lines: rows connected by WRAPLINE flag join without newline
+  - [x] Unwrapped lines: trim trailing spaces, add newline between rows
+  - [x] Block selection: add newlines between rows, trim trailing spaces per row, use min_col..max_col bounds
+  - [x] Handle grapheme clusters: base char + all zerowidth chars from CellExtra
 - [ ] **Clipboard formats** (placed on clipboard simultaneously):
   - [ ] `CF_UNICODETEXT` — plain text (always)
   - [ ] `HTML Format` — HTML with inline styles (if CopyFormatting enabled)
@@ -294,15 +294,15 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
 - [ ] **OSC 52 clipboard integration**:
   - [ ] Application can set clipboard via `ESC]52;c;{base64_data}ST`
   - [ ] Application can request clipboard (if permitted by config)
-- [ ] **Tests** (`oriterm_core/src/selection/text.rs` `#[cfg(test)]`):
-  - [ ] Extract text from single row: correct characters
-  - [ ] Extract text skips WIDE_CHAR_SPACER
-  - [ ] Extract text includes zero-width chars (combining marks)
-  - [ ] Wrapped lines joined without newline
-  - [ ] Unwrapped lines separated by newline
-  - [ ] Trailing spaces trimmed per row
-  - [ ] Block selection extracts rectangular region
-  - [ ] Null chars replaced with spaces
+- [x] **Tests** (`oriterm_core/src/selection/tests.rs`):
+  - [x] Extract text from single row: correct characters
+  - [x] Extract text skips WIDE_CHAR_SPACER
+  - [x] Extract text includes zero-width chars (combining marks)
+  - [x] Wrapped lines joined without newline
+  - [x] Unwrapped lines separated by newline
+  - [x] Trailing spaces trimmed per row
+  - [x] Block selection extracts rectangular region
+  - [x] Null chars replaced with spaces
 
 ---
 

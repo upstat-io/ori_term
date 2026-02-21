@@ -12,6 +12,7 @@ pub mod color;
 pub mod event;
 pub mod grid;
 pub mod index;
+pub mod selection;
 pub mod sync;
 pub mod term;
 pub mod theme;
@@ -19,8 +20,11 @@ pub mod theme;
 pub use cell::{Cell, CellExtra, CellFlags, Hyperlink};
 pub use color::{Palette, Rgb};
 pub use event::{ClipboardType, Event, EventListener, VoidListener};
-pub use grid::{Cursor, CursorShape, DisplayEraseMode, Grid, LineEraseMode, Row, TabClearMode};
+pub use grid::{
+    Cursor, CursorShape, DisplayEraseMode, Grid, LineEraseMode, Row, StableRowIndex, TabClearMode,
+};
 pub use index::{Boundary, Column, Direction, Line, Point, Side};
+pub use selection::{Selection, SelectionMode, SelectionPoint};
 pub use sync::{FairMutex, FairMutexGuard, FairMutexLease};
 pub use term::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, Term, TermDamage, TermMode,

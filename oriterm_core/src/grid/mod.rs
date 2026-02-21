@@ -11,6 +11,7 @@ pub mod navigation;
 pub mod ring;
 pub mod row;
 pub mod scroll;
+pub mod stable_index;
 
 use std::ops::{Index, IndexMut, Range};
 
@@ -22,6 +23,7 @@ pub use editing::{DisplayEraseMode, LineEraseMode};
 pub use navigation::TabClearMode;
 pub use ring::ScrollbackBuffer;
 pub use row::Row;
+pub use stable_index::StableRowIndex;
 
 /// The 2D terminal cell grid.
 ///
@@ -48,6 +50,8 @@ pub struct Grid {
     scrollback: ScrollbackBuffer,
     /// How many lines scrolled back into history (0 = live view).
     display_offset: usize,
+    /// Rows evicted from scrollback (for `StableRowIndex` stability).
+    total_evicted: usize,
     /// Tracks which rows have changed since last drain.
     dirty: DirtyTracker,
 }
@@ -80,6 +84,7 @@ impl Grid {
             scroll_region: 0..lines,
             scrollback: ScrollbackBuffer::new(max_scrollback),
             display_offset: 0,
+            total_evicted: 0,
             dirty: DirtyTracker::new(lines),
         }
     }
@@ -120,9 +125,32 @@ impl Grid {
         self.display_offset
     }
 
+    /// Rows evicted from scrollback history.
+    ///
+    /// Used by `StableRowIndex` to produce row identities that survive
+    /// scrollback eviction.
+    pub fn total_evicted(&self) -> usize {
+        self.total_evicted
+    }
+
     /// Immutable reference to the scrollback buffer.
     pub fn scrollback(&self) -> &ScrollbackBuffer {
         &self.scrollback
+    }
+
+    /// Access a row by absolute index.
+    ///
+    /// Absolute index 0 is the oldest scrollback row, with visible rows
+    /// following at `scrollback.len()..scrollback.len() + lines`.
+    pub fn absolute_row(&self, abs_row: usize) -> Option<&Row> {
+        let sb_len = self.scrollback.len();
+        if abs_row < sb_len {
+            // Scrollback: logical 0 = newest, but absolute 0 = oldest.
+            self.scrollback.get(sb_len - 1 - abs_row)
+        } else {
+            let vis = abs_row - sb_len;
+            self.rows.get(vis)
+        }
     }
 
     /// The scroll region as a half-open range (top inclusive, bottom exclusive).
@@ -168,6 +196,7 @@ impl Grid {
         self.saved_cursor = None;
         Self::reset_tab_stops(&mut self.tab_stops, self.cols);
         self.scroll_region = 0..self.lines;
+        self.total_evicted += self.scrollback.len();
         self.scrollback.clear();
         self.display_offset = 0;
         self.dirty.mark_all();

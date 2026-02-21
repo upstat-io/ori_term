@@ -64,8 +64,9 @@ impl Grid {
                 // where reset() will resize it to the correct column count.
                 let evicted = mem::replace(&mut self.rows[i], Row::new(0));
                 if let Some(mut recycled) = self.scrollback.push(evicted) {
-                    // Scrollback was full: reuse the evicted row's allocation
-                    // instead of the fresh placeholder we just inserted.
+                    // Scrollback was full: oldest row evicted. Track for
+                    // StableRowIndex stability.
+                    self.total_evicted += 1;
                     recycled.reset(self.cols, &Cell::default());
                     self.rows[i] = recycled;
                 }
