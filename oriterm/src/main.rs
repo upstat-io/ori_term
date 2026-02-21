@@ -11,6 +11,7 @@ mod app;
 mod clipboard;
 mod font;
 mod gpu;
+mod key_encoding;
 mod platform;
 mod pty;
 mod tab;

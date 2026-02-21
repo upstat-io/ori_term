@@ -253,7 +253,7 @@ Configurable word boundary detection for double-click selection and Ctrl+arrow w
 
 ---
 
-## 9.5 Copy Operations
+## 9.5 Copy Operations <!-- unblocks:8.3 -->
 
 Windows Terminal copies multiple clipboard formats simultaneously. Smart copy behavior adapts to context.
 

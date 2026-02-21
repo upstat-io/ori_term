@@ -10,6 +10,7 @@ mod cursor_blink;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
+use winit::keyboard::{ModifiersState, SmolStr};
 use winit::window::WindowId;
 
 use oriterm_core::{Event, TermMode};
@@ -21,6 +22,7 @@ use crate::gpu::{
     FrameInput, GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame,
     extract_frame_into,
 };
+use crate::key_encoding::{self, KeyEventType, KeyInput, Modifiers};
 use crate::tab::{Tab, TabId, TermEvent};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
@@ -63,6 +65,9 @@ pub(crate) struct App {
     // Redraw coalescing.
     dirty: bool,
 
+    // Keyboard modifier state (updated on ModifiersChanged).
+    modifiers: ModifiersState,
+
     // Cursor blink state (application-level, not terminal-level).
     cursor_blink: CursorBlink,
 
@@ -89,6 +94,7 @@ impl App {
             event_proxy,
             frame: None,
             dirty: false,
+            modifiers: ModifiersState::empty(),
             cursor_blink: CursorBlink::new(),
             blinking_active: false,
             window_config,
@@ -290,6 +296,80 @@ impl App {
             Err(e) => log::error!("render error: {e}"),
         }
     }
+
+    /// Dispatch a keyboard event through key encoding to the PTY.
+    ///
+    /// Reads the terminal mode, converts winit modifiers to key encoding
+    /// modifiers, encodes the key event, and sends the result to the PTY.
+    /// Scrolls to the live position if the user was viewing scrollback.
+    fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent) {
+        let Some(tab) = &self.tab else { return };
+
+        // Read terminal mode (brief lock).
+        let mode = tab.terminal().lock().mode();
+
+        // Map winit event type.
+        let event_type = match (event.state, event.repeat) {
+            (ElementState::Released, _) => KeyEventType::Release,
+            (ElementState::Pressed, true) => KeyEventType::Repeat,
+            (ElementState::Pressed, false) => KeyEventType::Press,
+        };
+
+        // Convert winit modifiers → key encoding modifiers.
+        let mods = build_modifiers(self.modifiers);
+
+        // Encode the key event.
+        let bytes = key_encoding::encode_key(&KeyInput {
+            key: &event.logical_key,
+            mods,
+            mode,
+            text: event.text.as_ref().map(SmolStr::as_str),
+            location: event.location,
+            event_type,
+        });
+
+        if !bytes.is_empty() {
+            // Scroll to live position if viewing scrollback.
+            {
+                let mut term = tab.terminal().lock();
+                if term.grid().display_offset() > 0 {
+                    term.grid_mut().scroll_display(isize::MIN);
+                }
+            }
+
+            tab.write_input(&bytes);
+            self.cursor_blink.reset();
+            self.dirty = true;
+        }
+    }
+
+    /// Handle IME commit: send committed text directly to the PTY.
+    fn handle_ime_commit(&mut self, text: &str) {
+        let Some(tab) = &self.tab else { return };
+        if !text.is_empty() {
+            // Scroll to live position on IME input.
+            {
+                let mut term = tab.terminal().lock();
+                if term.grid().display_offset() > 0 {
+                    term.grid_mut().scroll_display(isize::MIN);
+                }
+            }
+
+            tab.write_input(text.as_bytes());
+            self.cursor_blink.reset();
+            self.dirty = true;
+        }
+    }
+}
+
+/// Convert winit [`ModifiersState`] to key encoding [`Modifiers`].
+fn build_modifiers(m: ModifiersState) -> Modifiers {
+    let mut mods = Modifiers::empty();
+    mods.set(Modifiers::SHIFT, m.shift_key());
+    mods.set(Modifiers::ALT, m.alt_key());
+    mods.set(Modifiers::CONTROL, m.control_key());
+    mods.set(Modifiers::SUPER, m.super_key());
+    mods
 }
 
 impl ApplicationHandler<TermEvent> for App {
@@ -342,17 +422,16 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::RedrawRequested => self.handle_redraw(),
 
+            WindowEvent::ModifiersChanged(mods) => {
+                self.modifiers = mods.state();
+            }
+
             WindowEvent::KeyboardInput { event, .. } => {
-                if event.state != ElementState::Pressed {
-                    return;
-                }
-                if let Some(text) = &event.text {
-                    if let Some(tab) = &self.tab {
-                        tab.write_input(text.as_bytes());
-                        self.cursor_blink.reset();
-                        self.dirty = true;
-                    }
-                }
+                self.handle_keyboard_input(&event);
+            }
+
+            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
+                self.handle_ime_commit(&text);
             }
 
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {

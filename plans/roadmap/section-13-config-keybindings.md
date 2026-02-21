@@ -241,7 +241,7 @@ Apply config changes to the running application without restart.
 
 ---
 
-## 13.5 Keybinding System
+## 13.5 Keybinding System <!-- unblocks:8.3 -->
 
 Map key + modifiers to application actions. Linear scan with O(1) expected-case lookup.
 
