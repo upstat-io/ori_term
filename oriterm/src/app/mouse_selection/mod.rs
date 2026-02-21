@@ -144,8 +144,19 @@ pub(crate) fn handle_press(
     };
     let side = pixel_to_side(pos, ctx);
 
-    // Clamp to grid bounds, redirect wide-char spacers, compute stable row.
-    let (col, grid_cols, stable_row, abs_row) = {
+    // Record touchdown for drag threshold.
+    mouse.touchdown = Some(pos);
+    mouse.left_down = true;
+    mouse.drag_active = false;
+
+    // Click detection uses pixel-derived coordinates (before grid clamping).
+    let click_count = mouse.click_detector.click(col, line);
+    let shift = modifiers.shift_key();
+    let alt = modifiers.alt_key();
+
+    // Single lock: clamp, compute stable row, and conditionally compute
+    // word/line boundaries for multi-click selections.
+    let (col, stable_row, word_bounds, line_bounds) = {
         let term = tab.terminal().lock();
         let g = term.grid();
         let c = col.min(g.cols().saturating_sub(1));
@@ -153,17 +164,24 @@ pub(crate) fn handle_press(
         let abs = g.scrollback().len().saturating_sub(g.display_offset()) + l;
         let c = redirect_spacer(g, abs, c);
         let stable = StableRowIndex::from_absolute(g, abs);
-        (c, g.cols(), stable, abs)
+
+        let wb = if click_count == 2 {
+            Some(word_boundaries(g, abs, c))
+        } else {
+            None
+        };
+        let lb = if click_count >= 3 {
+            Some((
+                StableRowIndex::from_absolute(g, logical_line_start(g, abs)),
+                StableRowIndex::from_absolute(g, logical_line_end(g, abs)),
+                g.cols(),
+            ))
+        } else {
+            None
+        };
+
+        (c, stable, wb, lb)
     };
-
-    // Record touchdown for drag threshold.
-    mouse.touchdown = Some(pos);
-    mouse.left_down = true;
-    mouse.drag_active = false;
-
-    let click_count = mouse.click_detector.click(col, line);
-    let shift = modifiers.shift_key();
-    let alt = modifiers.alt_key();
 
     // Shift+click: extend existing selection.
     if shift && tab.selection().is_some() {
@@ -177,12 +195,9 @@ pub(crate) fn handle_press(
     }
 
     // Create new selection based on click count.
-    let selection = match click_count {
-        2 => {
+    let selection = match (click_count, word_bounds, line_bounds) {
+        (2, Some((ws, we)), _) => {
             // Double-click: word selection.
-            let term = tab.terminal().lock();
-            let g = term.grid();
-            let (ws, we) = word_boundaries(g, abs_row, col);
             Selection::new_word(
                 SelectionPoint {
                     row: stable_row,
@@ -196,21 +211,17 @@ pub(crate) fn handle_press(
                 },
             )
         }
-        3 => {
+        (c, _, Some((ls, le, cols))) if c >= 3 => {
             // Triple-click: line selection (follows wrapped lines).
-            let term = tab.terminal().lock();
-            let g = term.grid();
-            let ls = logical_line_start(g, abs_row);
-            let le = logical_line_end(g, abs_row);
             Selection::new_line(
                 SelectionPoint {
-                    row: StableRowIndex::from_absolute(g, ls),
+                    row: ls,
                     col: 0,
                     side: Side::Left,
                 },
                 SelectionPoint {
-                    row: StableRowIndex::from_absolute(g, le),
-                    col: grid_cols.saturating_sub(1),
+                    row: le,
+                    col: cols.saturating_sub(1),
                     side: Side::Right,
                 },
             )
@@ -374,7 +385,10 @@ fn redirect_spacer(grid: &Grid, abs_row: usize, col: usize) -> usize {
 }
 
 /// Auto-scroll the viewport when the mouse is above or below the grid.
-fn handle_auto_scroll(tab: &Tab, pos: PhysicalPosition<f64>, ctx: &GridCtx<'_>) {
+///
+/// After scrolling, updates the selection endpoint to the visible edge row
+/// at the mouse's X column so the highlight extends with the scroll.
+fn handle_auto_scroll(tab: &mut Tab, pos: PhysicalPosition<f64>, ctx: &GridCtx<'_>) {
     let Some(bounds) = ctx.widget.bounds() else {
         return;
     };
@@ -385,19 +399,50 @@ fn handle_auto_scroll(tab: &Tab, pos: PhysicalPosition<f64>, ctx: &GridCtx<'_>) 
         return;
     }
 
-    let mut term = tab.terminal().lock();
-    let g = term.grid_mut();
+    let cw = f64::from(ctx.cell.width);
+    let side = pixel_to_side(pos, ctx);
+    let scrolling_up = y < grid_top;
 
-    if y < grid_top {
-        // Mouse above grid: scroll into history.
-        g.scroll_display(1);
-    } else {
-        let grid_bottom = grid_top + g.lines() as f64 * ch;
-        if y >= grid_bottom && g.display_offset() > 0 {
+    let endpoint = {
+        let mut term = tab.terminal().lock();
+        let g = term.grid_mut();
+
+        if scrolling_up {
+            // Mouse above grid: scroll into history.
+            g.scroll_display(1);
+        } else {
+            let grid_bottom = grid_top + g.lines() as f64 * ch;
+            if y < grid_bottom || g.display_offset() == 0 {
+                return;
+            }
             // Mouse below grid: scroll toward live.
             g.scroll_display(-1);
         }
-    }
+
+        // After scrolling, compute endpoint for the visible edge row.
+        let g = term.grid();
+        let edge_line = if scrolling_up {
+            0
+        } else {
+            g.lines().saturating_sub(1)
+        };
+        let abs = g.scrollback().len().saturating_sub(g.display_offset()) + edge_line;
+        let col = if cw > 0.0 {
+            ((pos.x - f64::from(bounds.x())) / cw) as usize
+        } else {
+            0
+        };
+        let col = col.min(g.cols().saturating_sub(1));
+        let col = redirect_spacer(g, abs, col);
+        let stable = StableRowIndex::from_absolute(g, abs);
+        SelectionPoint {
+            row: stable,
+            col,
+            side,
+        }
+    };
+
+    tab.update_selection_end(endpoint);
 }
 
 #[cfg(test)]
