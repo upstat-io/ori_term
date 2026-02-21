@@ -22,11 +22,6 @@ pub(crate) fn delimiter_class(c: char) -> u8 {
     }
 }
 
-/// Internal alias used during boundary scanning.
-fn char_class(c: char) -> u8 {
-    delimiter_class(c)
-}
-
 /// Find word boundaries around (`abs_row`, `col`) in the grid.
 ///
 /// Returns (`start_col`, `end_col`) inclusive. Wide-char spacers are
@@ -51,7 +46,7 @@ pub fn word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize
     };
 
     let ch = row[Column(click_col)].ch;
-    let class = char_class(ch);
+    let class = delimiter_class(ch);
 
     // Scan left, skipping wide-char spacers.
     let mut start = click_col;
@@ -63,12 +58,12 @@ pub fn word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize
             && prev > 0
         {
             // Spacer: check the base cell before it.
-            if char_class(row[Column(prev - 1)].ch) == class {
+            if delimiter_class(row[Column(prev - 1)].ch) == class {
                 start = prev - 1;
             } else {
                 break;
             }
-        } else if char_class(row[Column(prev)].ch) == class {
+        } else if delimiter_class(row[Column(prev)].ch) == class {
             start = prev;
         } else {
             break;
@@ -87,7 +82,7 @@ pub fn word_boundaries(grid: &Grid, abs_row: usize, col: usize) -> (usize, usize
             end = next;
             continue;
         }
-        if char_class(row[Column(next)].ch) == class {
+        if delimiter_class(row[Column(next)].ch) == class {
             end = next;
         } else {
             break;

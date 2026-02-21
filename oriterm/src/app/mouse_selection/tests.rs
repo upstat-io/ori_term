@@ -284,14 +284,78 @@ fn mouse_state_release_clears_drag() {
 // --- Off-grid / boundary edge cases ---
 
 #[test]
-fn cell_beyond_grid_still_returns_some() {
-    // pixel_to_cell doesn't clamp — it returns raw col/row.
-    // Clamping to grid bounds happens in handle_press/update_drag_endpoint.
+fn cell_beyond_grid_right_returns_none() {
     let (w, c) = ctx_at_origin(8.0, 16.0, 80, 24);
     let ctx = grid_ctx(&w, c);
-    // col 100 > 80 grid cols — pixel_to_cell still returns the raw value.
-    let result = pixel_to_cell(PhysicalPosition::new(800.0, 100.0), &ctx);
-    assert_eq!(result, Some((100, 6)));
+    // X=640.0 is at the exclusive right edge (80 cols * 8.0) → None.
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(640.0, 100.0), &ctx),
+        None
+    );
+    // X=800.0 is well past the grid → None.
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(800.0, 100.0), &ctx),
+        None
+    );
+}
+
+#[test]
+fn cell_beyond_grid_bottom_returns_none() {
+    let (w, c) = ctx_at_origin(8.0, 16.0, 80, 24);
+    let ctx = grid_ctx(&w, c);
+    // Y=384.0 is at the exclusive bottom edge (24 rows * 16.0) → None.
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(100.0, 384.0), &ctx),
+        None
+    );
+    // Y=500.0 is well past the grid → None.
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(100.0, 500.0), &ctx),
+        None
+    );
+}
+
+#[test]
+fn cell_beyond_grid_both_axes_returns_none() {
+    let (w, c) = ctx_at_origin(8.0, 16.0, 80, 24);
+    let ctx = grid_ctx(&w, c);
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(700.0, 400.0), &ctx),
+        None
+    );
+}
+
+#[test]
+fn cell_just_inside_grid_right_bottom() {
+    let (w, c) = ctx_at_origin(8.0, 16.0, 80, 24);
+    let ctx = grid_ctx(&w, c);
+    // One pixel inside the right/bottom edges → valid.
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(639.0, 383.0), &ctx),
+        Some((79, 23))
+    );
+}
+
+#[test]
+fn cell_beyond_grid_with_offset_origin() {
+    let widget = make_widget_with_bounds(8.0, 16.0, 80, 24, 10.0, 50.0);
+    let cell = test_cell_metrics(8.0, 16.0);
+    let ctx = grid_ctx(&widget, cell);
+    // Grid runs from (10, 50) to (650, 434). Past right edge → None.
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(650.0, 200.0), &ctx),
+        None
+    );
+    // Past bottom edge → None.
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(100.0, 434.0), &ctx),
+        None
+    );
+    // Just inside → valid.
+    assert_eq!(
+        pixel_to_cell(PhysicalPosition::new(649.0, 433.0), &ctx),
+        Some((79, 23))
+    );
 }
 
 #[test]

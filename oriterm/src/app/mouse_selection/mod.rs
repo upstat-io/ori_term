@@ -98,7 +98,11 @@ pub(crate) fn pixel_to_cell(
     let x = pos.x;
     let y = pos.y;
 
-    if x < f64::from(bounds.x()) || y < f64::from(bounds.y()) {
+    if x < f64::from(bounds.x())
+        || y < f64::from(bounds.y())
+        || x >= f64::from(bounds.right())
+        || y >= f64::from(bounds.bottom())
+    {
         return None;
     }
 
