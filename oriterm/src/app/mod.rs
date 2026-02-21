@@ -7,15 +7,16 @@
 
 mod cursor_blink;
 mod init;
+mod mark_mode;
 mod mouse_selection;
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
-use winit::keyboard::{ModifiersState, SmolStr};
+use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey, SmolStr};
 use winit::window::WindowId;
 
-use oriterm_core::{Event, TermMode};
+use oriterm_core::{Column, CursorShape, Event, TermMode};
 use oriterm_ui::window::WindowConfig;
 
 use self::cursor_blink::CursorBlink;
@@ -151,6 +152,20 @@ impl App {
                 }
             };
 
+            // Override cursor for mark mode: show a hollow block at the mark
+            // cursor position so the user can see where they are navigating.
+            if let Some(mc) = tab.mark_cursor() {
+                if let Some(offset) = mc.row.0.checked_sub(frame.content.stable_row_base) {
+                    let viewport_line = offset as usize;
+                    if viewport_line < frame.rows() {
+                        frame.content.cursor.line = viewport_line;
+                        frame.content.cursor.column = Column(mc.col);
+                        frame.content.cursor.shape = CursorShape::HollowBlock;
+                        frame.content.cursor.visible = true;
+                    }
+                }
+            }
+
             // Snapshot selection for rendering. The selection lives on Tab
             // (not inside Term), so we build the FrameSelection after the
             // terminal lock is released, using the stable_row_base from
@@ -199,25 +214,54 @@ impl App {
         }
     }
 
-    /// Dispatch a keyboard event through key encoding to the PTY.
+    /// Dispatch a keyboard event through mark mode or key encoding to the PTY.
     ///
-    /// Reads the terminal mode, converts winit modifiers to key encoding
-    /// modifiers, encodes the key event, and sends the result to the PTY.
-    /// Scrolls to the live position if the user was viewing scrollback.
+    /// Mark mode intercepts all key events when active. Otherwise, reads the
+    /// terminal mode, converts winit modifiers to key encoding modifiers,
+    /// encodes the key event, and sends the result to the PTY.
     fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent) {
+        // Mark mode: consume ALL key events (including releases) to prevent
+        // leaking input to the PTY while navigating.
+        if let Some(tab) = &mut self.tab {
+            if tab.is_mark_mode() {
+                if event.state == ElementState::Pressed {
+                    let action = mark_mode::handle_mark_mode_key(tab, event, self.modifiers);
+                    match action {
+                        mark_mode::MarkAction::Handled | mark_mode::MarkAction::Exit { .. } => {
+                            self.dirty = true;
+                        }
+                        mark_mode::MarkAction::Ignored => {}
+                    }
+                }
+                return;
+            }
+        }
+
+        // Ctrl+Shift+M enters mark mode.
+        if event.state == ElementState::Pressed && !event.repeat {
+            if self.modifiers.control_key()
+                && self.modifiers.shift_key()
+                && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
+            {
+                if let Some(tab) = &mut self.tab {
+                    tab.enter_mark_mode();
+                    self.dirty = true;
+                }
+                return;
+            }
+        }
+
+        // Normal key encoding to PTY.
         let Some(tab) = &self.tab else { return };
 
-        // Read terminal mode (brief lock).
         let mode = tab.terminal().lock().mode();
 
-        // Map winit event type.
         let event_type = match (event.state, event.repeat) {
             (ElementState::Released, _) => KeyEventType::Release,
             (ElementState::Pressed, true) => KeyEventType::Repeat,
             (ElementState::Pressed, false) => KeyEventType::Press,
         };
 
-        // Encode the key event.
         let bytes = key_encoding::encode_key(&KeyInput {
             key: &event.logical_key,
             mods: self.modifiers.into(),

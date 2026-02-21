@@ -13,7 +13,7 @@ sections:
     status: in-progress
   - id: "9.3"
     title: Keyboard Selection (Mark Mode)
-    status: not-started
+    status: in-progress
   - id: "9.4"
     title: Word Delimiters & Boundaries
     status: in-progress
@@ -180,38 +180,38 @@ Keyboard-driven selection for accessibility and power users, modeled after Windo
 
 **File:** `oriterm/src/app/input_keyboard.rs` (mark mode branch in dispatch)
 
-- [ ] **Enter mark mode**: Ctrl+Shift+M
-  - [ ] Set `mark_mode: bool` on active tab
-  - [ ] Show visual cursor at current terminal cursor position
-  - [ ] Arrow keys move selection cursor (not terminal cursor, not sent to PTY)
-- [ ] **Shift+Arrow keys** — Extend selection by one cell:
-  - [ ] Shift+Left/Right: extend by one column
-  - [ ] Shift+Up/Down: extend by one row
-- [ ] **Ctrl+Shift+Arrow keys** — Extend selection by word:
-  - [ ] Ctrl+Shift+Left: extend to previous word boundary
-  - [ ] Ctrl+Shift+Right: extend to next word boundary
-- [ ] **Shift+Page Up/Down** — Extend by one screen:
-  - [ ] Selection extends by `grid.lines` rows
-- [ ] **Shift+Home/End** — Extend to line boundaries:
-  - [ ] Shift+Home: extend to start of current line (column 0)
-  - [ ] Shift+End: extend to end of current line (last non-empty column)
-- [ ] **Ctrl+Shift+Home/End** — Extend to buffer boundaries:
-  - [ ] Ctrl+Shift+Home: extend to top of scrollback
-  - [ ] Ctrl+Shift+End: extend to bottom of buffer
-- [ ] **Ctrl+A** — Select all:
-  - [ ] If cursor is in shell input line (with shell integration): select input line
-  - [ ] Otherwise: select entire buffer (visible + scrollback)
-- [ ] **Escape** — Cancel selection:
-  - [ ] Clear selection
-  - [ ] Exit mark mode
-- [ ] **Enter** — Copy and exit:
-  - [ ] Copy current selection to clipboard
-  - [ ] Exit mark mode
-- [ ] **Tests**:
-  - [ ] Enter mark mode sets flag, exit clears it
-  - [ ] Shift+Right extends selection by one column
-  - [ ] Ctrl+A selects entire buffer
-  - [ ] Escape clears selection and exits mark mode
+- [x] **Enter mark mode**: Ctrl+Shift+M
+  - [x] Set `mark_mode: bool` on active tab
+  - [x] Show visual cursor at current terminal cursor position
+  - [x] Arrow keys move selection cursor (not terminal cursor, not sent to PTY)
+- [x] **Shift+Arrow keys** — Extend selection by one cell:
+  - [x] Shift+Left/Right: extend by one column
+  - [x] Shift+Up/Down: extend by one row
+- [x] **Ctrl+Shift+Arrow keys** — Extend selection by word:
+  - [x] Ctrl+Shift+Left: extend to previous word boundary
+  - [x] Ctrl+Shift+Right: extend to next word boundary
+- [x] **Shift+Page Up/Down** — Extend by one screen:
+  - [x] Selection extends by `grid.lines` rows
+- [x] **Shift+Home/End** — Extend to line boundaries:
+  - [x] Shift+Home: extend to start of current line (column 0)
+  - [x] Shift+End: extend to end of current line (last non-empty column)
+- [x] **Ctrl+Shift+Home/End** — Extend to buffer boundaries:
+  - [x] Ctrl+Shift+Home: extend to top of scrollback
+  - [x] Ctrl+Shift+End: extend to bottom of buffer
+- [x] **Ctrl+A** — Select all:
+  - [ ] If cursor is in shell input line (with shell integration): select input line <!-- blocked-by:20 -->
+  - [x] Otherwise: select entire buffer (visible + scrollback)
+- [x] **Escape** — Cancel selection:
+  - [x] Clear selection
+  - [x] Exit mark mode
+- [x] **Enter** — Copy and exit:
+  - [ ] Copy current selection to clipboard <!-- blocked-by:9.5 -->
+  - [x] Exit mark mode
+- [x] **Tests**:
+  - [x] Enter mark mode sets flag, exit clears it
+  - [x] Shift+Right extends selection by one column
+  - [x] Ctrl+A selects entire buffer
+  - [x] Escape clears selection and exits mark mode
 
 ---
 

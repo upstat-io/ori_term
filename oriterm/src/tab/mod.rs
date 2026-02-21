@@ -8,6 +8,8 @@
 //! event), `EventProxy` (terminal → winit bridge), `Notifier` (input →
 //! PTY bridge).
 
+mod mark_cursor;
+
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,7 +19,11 @@ use std::time::{Duration, Instant};
 
 use winit::event_loop::EventLoopProxy;
 
-use oriterm_core::{Event, EventListener, FairMutex, Selection, SelectionPoint, Term};
+use oriterm_core::{
+    Event, EventListener, FairMutex, Selection, SelectionPoint, StableRowIndex, Term,
+};
+
+pub use mark_cursor::MarkCursor;
 
 use crate::pty::{Msg, PtyConfig, PtyEventLoop, PtyHandle, spawn_pty};
 
@@ -161,6 +167,8 @@ pub struct Tab {
     has_bell: bool,
     /// Active text selection, if any.
     selection: Option<Selection>,
+    /// Mark mode cursor position (keyboard-driven selection).
+    mark_cursor: Option<MarkCursor>,
 }
 
 impl Tab {
@@ -225,6 +233,7 @@ impl Tab {
             title: String::new(),
             has_bell: false,
             selection: None,
+            mark_cursor: None,
         })
     }
 
@@ -282,10 +291,6 @@ impl Tab {
     }
 
     /// Clear the active selection.
-    #[allow(
-        dead_code,
-        reason = "used by copy operations, keyboard escape, context menu"
-    )]
     pub fn clear_selection(&mut self) {
         self.selection = None;
     }
@@ -319,6 +324,49 @@ impl Tab {
             drop(term);
             self.selection = None;
         }
+    }
+
+    /// Whether mark mode is active (keyboard-driven cursor navigation).
+    pub fn is_mark_mode(&self) -> bool {
+        self.mark_cursor.is_some()
+    }
+
+    /// Current mark cursor position, if mark mode is active.
+    pub fn mark_cursor(&self) -> Option<MarkCursor> {
+        self.mark_cursor
+    }
+
+    /// Enter mark mode at the terminal cursor position.
+    ///
+    /// Scrolls to the live position, then places the mark cursor at the
+    /// terminal cursor. No-op if already in mark mode.
+    pub fn enter_mark_mode(&mut self) {
+        if self.mark_cursor.is_some() {
+            return;
+        }
+        self.scroll_to_bottom();
+        let mc = {
+            let term = self.terminal.lock();
+            let g = term.grid();
+            let cursor = g.cursor();
+            let abs_row = g.scrollback().len() + cursor.line();
+            let stable = StableRowIndex::from_absolute(g, abs_row);
+            MarkCursor {
+                row: stable,
+                col: cursor.col().0,
+            }
+        };
+        self.mark_cursor = Some(mc);
+    }
+
+    /// Exit mark mode (clears the mark cursor; selection is left intact).
+    pub fn exit_mark_mode(&mut self) {
+        self.mark_cursor = None;
+    }
+
+    /// Update the mark cursor position.
+    pub fn set_mark_cursor(&mut self, cursor: MarkCursor) {
+        self.mark_cursor = Some(cursor);
     }
 
     /// Send raw bytes to the PTY (keyboard input, escape responses).
