@@ -5,10 +5,12 @@
 //! Render), handles window events, and dispatches terminal events from the
 //! PTY reader thread.
 
+mod clipboard_ops;
 mod cursor_blink;
 mod init;
 mod mark_mode;
 mod mouse_selection;
+mod redraw;
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
@@ -16,16 +18,14 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey, SmolStr};
 use winit::window::WindowId;
 
-use oriterm_core::{Column, CursorShape, Event, TermMode};
+use oriterm_core::Event;
 use oriterm_ui::window::WindowConfig;
 
 use self::cursor_blink::CursorBlink;
 use self::mouse_selection::MouseState;
+use crate::clipboard::Clipboard;
 use crate::font::{HintingMode, SubpixelMode};
-use crate::gpu::{
-    FrameInput, FrameSelection, GpuRenderer, GpuState, SurfaceError, ViewportSize, extract_frame,
-    extract_frame_into,
-};
+use crate::gpu::{FrameInput, GpuRenderer, GpuState};
 use crate::key_encoding::{self, KeyEventType, KeyInput};
 use crate::tab::{Tab, TermEvent};
 use crate::widgets::terminal_grid::TerminalGridWidget;
@@ -82,6 +82,9 @@ pub(crate) struct App {
     // Mouse selection state (click detection, drag tracking).
     mouse: MouseState,
 
+    // System clipboard for copy/paste.
+    clipboard: Clipboard,
+
     // Configuration.
     window_config: WindowConfig,
 }
@@ -105,111 +108,8 @@ impl App {
             cursor_blink: CursorBlink::new(),
             blinking_active: false,
             mouse: MouseState::new(),
+            clipboard: Clipboard::new(),
             window_config,
-        }
-    }
-
-    /// Execute the three-phase rendering pipeline: Extract → Prepare → Render.
-    fn handle_redraw(&mut self) {
-        log::trace!("RedrawRequested");
-        let render_result = {
-            let Some(gpu) = self.gpu.as_ref() else {
-                log::warn!("redraw: no gpu");
-                return;
-            };
-            let Some(renderer) = self.renderer.as_mut() else {
-                log::warn!("redraw: no renderer");
-                return;
-            };
-            let Some(window) = self.window.as_ref() else {
-                log::warn!("redraw: no window");
-                return;
-            };
-            let Some(tab) = self.tab.as_ref() else {
-                log::warn!("redraw: no tab");
-                return;
-            };
-
-            if !window.has_surface_area() {
-                log::warn!("redraw: no surface area");
-                return;
-            }
-
-            let (w, h) = window.size_px();
-            let viewport = ViewportSize::new(w, h);
-            let cell = renderer.cell_metrics();
-
-            // Reuse the FrameInput allocation across frames. First frame
-            // does a fresh allocation; subsequent frames refill in place.
-            let frame = match &mut self.frame {
-                Some(existing) => {
-                    extract_frame_into(tab.terminal(), existing, viewport, cell);
-                    existing
-                }
-                slot @ None => {
-                    *slot = Some(extract_frame(tab.terminal(), viewport, cell));
-                    slot.as_mut().expect("just assigned")
-                }
-            };
-
-            // Override cursor for mark mode: show a hollow block at the mark
-            // cursor position so the user can see where they are navigating.
-            if let Some(mc) = tab.mark_cursor() {
-                if let Some((line, col)) =
-                    mc.to_viewport(frame.content.stable_row_base, frame.rows())
-                {
-                    frame.content.cursor.line = line;
-                    frame.content.cursor.column = Column(col);
-                    frame.content.cursor.shape = CursorShape::HollowBlock;
-                    frame.content.cursor.visible = true;
-                }
-            }
-
-            // Snapshot selection for rendering. The selection lives on Tab
-            // (not inside Term), so we build the FrameSelection after the
-            // terminal lock is released, using the stable_row_base from
-            // the extracted content.
-            frame.selection = tab
-                .selection()
-                .map(|sel| FrameSelection::new(sel, frame.content.stable_row_base));
-
-            // Cache blinking mode for about_to_wait gating.
-            // Reset blink phase on false→true transition so the
-            // cursor starts visible when blinking is first enabled.
-            let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
-            if blinking_now && !self.blinking_active {
-                self.cursor_blink.reset();
-            }
-            self.blinking_active = blinking_now;
-
-            // Cursor blink: the "off" phase hides the cursor. This flag is
-            // passed to the Prepare phase which gates cursor emission —
-            // the extracted frame is never mutated between Extract and Prepare.
-            let cursor_blink_visible = !blinking_now || self.cursor_blink.is_visible();
-
-            // Grid origin from layout bounds. When the layout engine
-            // positions the grid (e.g. below a tab bar), this shifts all
-            // cell rendering.
-            let origin = self
-                .terminal_grid
-                .as_ref()
-                .and_then(TerminalGridWidget::bounds)
-                .map_or((0.0, 0.0), |b| (b.x(), b.y()));
-
-            renderer.prepare(frame, gpu, origin, cursor_blink_visible);
-            renderer.render_to_surface(gpu, window.surface())
-        };
-
-        match render_result {
-            Ok(()) => log::trace!("render ok"),
-            Err(SurfaceError::Lost) => {
-                log::warn!("surface lost, reconfiguring");
-                if let (Some(window), Some(gpu)) = (self.window.as_mut(), self.gpu.as_ref()) {
-                    let (w, h) = window.size_px();
-                    window.resize_surface(w, h, gpu);
-                }
-            }
-            Err(e) => log::error!("render error: {e}"),
         }
     }
 
@@ -231,8 +131,7 @@ impl App {
                         }
                         mark_mode::MarkAction::Exit { copy } => {
                             if copy {
-                                // TODO(section-15): wire clipboard write from selection content.
-                                log::debug!("mark mode: copy requested (clipboard not yet wired)");
+                                self.copy_selection();
                             }
                             self.dirty = true;
                         }
@@ -255,6 +154,15 @@ impl App {
                 }
                 return;
             }
+        }
+
+        // Copy keybindings: Ctrl+Shift+C, smart Ctrl+C, Ctrl+Insert.
+        if matches!(
+            self.try_copy_keybinding(event, self.modifiers),
+            clipboard_ops::CopyAction::Handled,
+        ) {
+            self.dirty = true;
+            return;
         }
 
         // Normal key encoding to PTY.
@@ -424,8 +332,26 @@ impl ApplicationHandler<TermEvent> for App {
                 ..
             } => match state {
                 ElementState::Pressed => self.handle_mouse_press(),
-                ElementState::Released => mouse_selection::handle_release(&mut self.mouse),
+                ElementState::Released => {
+                    let had_drag = self.mouse.is_dragging();
+                    mouse_selection::handle_release(&mut self.mouse);
+                    // CopyOnSelect: auto-copy to primary selection after drag.
+                    // TODO(section-13): wire CopyOnSelect config setting.
+                    if had_drag {
+                        self.copy_selection_to_primary();
+                    }
+                }
             },
+
+            // Right-click: copy if selection exists.
+            // TODO(section-21): when context menu is enabled, show menu instead.
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => {
+                self.copy_selection();
+            }
 
             _ => {}
         }
@@ -453,6 +379,16 @@ impl ApplicationHandler<TermEvent> for App {
             Event::ResetTitle => {
                 if let Some(tab) = &mut self.tab {
                     tab.set_title(String::new());
+                }
+            }
+            Event::ClipboardStore(ty, text) => {
+                self.clipboard.store(ty, &text);
+            }
+            Event::ClipboardLoad(ty, formatter) => {
+                let text = self.clipboard.load(ty);
+                let response = formatter(&text);
+                if let Some(tab) = &self.tab {
+                    tab.write_input(response.as_bytes());
                 }
             }
             Event::PtyWrite(s) => {

@@ -265,13 +265,13 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
 
 **Reference:** `_old/src/selection/text.rs` — carries forward text extraction with wrap handling, spacer skipping, grapheme cluster support.
 
-- [ ] **Copy triggers**:
-  - [ ] Ctrl+Shift+C — copy selection
-  - [ ] Ctrl+C — smart: copy if selection exists, send SIGINT (`\x03`) if not
-  - [ ] Ctrl+Insert — copy selection
-  - [ ] Enter — copy selection (in mark mode, then exit mark mode)
-  - [ ] CopyOnSelect setting: auto-copy on mouse release after selection (does NOT clear selection)
-  - [ ] Right-click: copy if selection exists (when context menu disabled)
+- [x] **Copy triggers**:
+  - [x] Ctrl+Shift+C — copy selection
+  - [x] Ctrl+C — smart: copy if selection exists, send SIGINT (`\x03`) if not
+  - [x] Ctrl+Insert — copy selection
+  - [x] Enter — copy selection (in mark mode, then exit mark mode)
+  - [x] CopyOnSelect setting: auto-copy on mouse release after selection (does NOT clear selection)
+  - [x] Right-click: copy if selection exists (when context menu disabled)
 - [x] **Text extraction** (`extract_text(grid: &Grid, selection: &Selection) -> String`):
   - [x] Convert StableRowIndex to absolute row for iteration
   - [x] Walk selected cells, concatenate characters
@@ -284,20 +284,20 @@ Windows Terminal copies multiple clipboard formats simultaneously. Smart copy be
   - [x] Block selection: add newlines between rows, trim trailing spaces per row, use min_col..max_col bounds
   - [x] Handle grapheme clusters: base char + all zerowidth chars from CellExtra
 - [ ] **Clipboard formats** (placed on clipboard simultaneously):
-  - [ ] `CF_UNICODETEXT` — plain text (always)
-  - [ ] `HTML Format` — HTML with inline styles (if CopyFormatting enabled)
+  - [x] `CF_UNICODETEXT` — plain text (always)
+  - [ ] `HTML Format` — HTML with inline styles (if CopyFormatting enabled) <!-- blocked-by:13 -->
     - [ ] Per-cell foreground/background colors as inline CSS
     - [ ] Font name and size
     - [ ] Bold rendering for BOLD cells
     - [ ] Underline colors
-  - [ ] `Rich Text Format` — RTF with same styling (if CopyFormatting enabled)
-- [ ] **Copy modifiers**:
+  - [ ] `Rich Text Format` — RTF with same styling (if CopyFormatting enabled) <!-- blocked-by:13 -->
+- [ ] **Copy modifiers**: <!-- blocked-by:13 -->
   - [ ] Shift held during copy: collapse multi-line selection to single line (join with spaces)
   - [ ] Alt held during copy: force HTML/RTF formatting regardless of CopyFormatting setting
-- [ ] Selection NOT cleared after copy (user must press Escape or click elsewhere)
-- [ ] **OSC 52 clipboard integration**:
-  - [ ] Application can set clipboard via `ESC]52;c;{base64_data}ST`
-  - [ ] Application can request clipboard (if permitted by config)
+- [x] Selection NOT cleared after copy (user must press Escape or click elsewhere)
+- [x] **OSC 52 clipboard integration**:
+  - [x] Application can set clipboard via `ESC]52;c;{base64_data}ST`
+  - [x] Application can request clipboard (if permitted by config)
 - [x] **Tests** (`oriterm_core/src/selection/tests.rs`):
   - [x] Extract text from single row: correct characters
   - [x] Extract text skips WIDE_CHAR_SPACER
