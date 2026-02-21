@@ -364,8 +364,10 @@ pub(crate) fn handle_release(mouse: &mut MouseState) {
 /// Update the selection endpoint during drag, respecting mode-aware snapping.
 fn update_drag_endpoint(tab: &mut Tab, col: usize, line: usize, side: Side) {
     // Read selection state before locking the terminal.
-    let sel_mode = tab.selection().map(|s| s.mode);
-    let sel_anchor = tab.selection().map(|s| s.anchor);
+    let (sel_mode, sel_anchor) = match tab.selection() {
+        Some(s) => (Some(s.mode), Some(s.anchor)),
+        None => (None, None),
+    };
 
     let new_end = {
         let term = tab.terminal().lock();
@@ -460,27 +462,30 @@ fn handle_auto_scroll(tab: &mut Tab, pos: PhysicalPosition<f64>, ctx: &GridCtx<'
         return;
     }
 
-    let cw = f64::from(ctx.cell.width);
     let side = pixel_to_side(pos, ctx);
     let scrolling_up = y < grid_top;
 
-    let endpoint = {
-        let mut term = tab.terminal().lock();
-        let g = term.grid_mut();
-
-        if scrolling_up {
-            // Mouse above grid: scroll into history.
-            g.scroll_display(1);
-        } else {
-            let grid_bottom = grid_top + g.lines() as f64 * ch;
-            if y < grid_bottom || g.display_offset() == 0 {
-                return;
-            }
-            // Mouse below grid: scroll toward live.
-            g.scroll_display(-1);
+    // Determine scroll direction; bail if mouse is inside the grid or
+    // already at the bottom of history.
+    if scrolling_up {
+        tab.scroll_display(1);
+    } else {
+        let (lines, offset) = {
+            let term = tab.terminal().lock();
+            let g = term.grid();
+            (g.lines(), g.display_offset())
+        };
+        let grid_bottom = grid_top + lines as f64 * ch;
+        if y < grid_bottom || offset == 0 {
+            return;
         }
+        tab.scroll_display(-1);
+    }
 
-        // After scrolling, compute endpoint for the visible edge row.
+    // After scrolling, compute endpoint for the visible edge row.
+    let cw = f64::from(ctx.cell.width);
+    let endpoint = {
+        let term = tab.terminal().lock();
         let g = term.grid();
         let edge_line = if scrolling_up {
             0

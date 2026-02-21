@@ -337,6 +337,14 @@ impl Tab {
         }
     }
 
+    /// Scroll the viewport by `delta` lines (positive = into history).
+    ///
+    /// Delegates to `Grid::scroll_display`. The grid clamps the offset
+    /// to valid bounds, so callers don't need to range-check.
+    pub fn scroll_display(&self, delta: isize) {
+        self.terminal.lock().grid_mut().scroll_display(delta);
+    }
+
     /// Resize the PTY dimensions.
     ///
     /// Terminal grid resize (reflow) is handled separately in Section 12.
