@@ -932,3 +932,512 @@ fn extract_text_single_cell_selection() {
     };
     assert_eq!(extract_text(&grid, &sel), "C");
 }
+
+// -- Line mode tests (missing from original coverage) --
+
+#[test]
+fn new_line_sets_mode_and_points() {
+    let anchor = SelectionPoint {
+        row: sri(0),
+        col: 0,
+        side: Side::Left,
+    };
+    let pivot = SelectionPoint {
+        row: sri(0),
+        col: 79,
+        side: Side::Right,
+    };
+    let sel = Selection::new_line(anchor, pivot);
+    assert_eq!(sel.mode, SelectionMode::Line);
+    assert_eq!(sel.anchor, anchor);
+    assert_eq!(sel.pivot, pivot);
+    assert_eq!(sel.end, anchor);
+}
+
+#[test]
+fn line_mode_contains_all_columns_on_selected_rows() {
+    // Line mode selects full rows. Anchor at col 0, pivot at col max.
+    let sel = Selection {
+        mode: SelectionMode::Line,
+        anchor: SelectionPoint {
+            row: sri(1),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(1),
+            col: 79,
+            side: Side::Right,
+        },
+        end: SelectionPoint {
+            row: sri(3),
+            col: 0,
+            side: Side::Left,
+        },
+    };
+    // Row 1: all columns selected (anchor row, col 0..79).
+    assert!(sel.contains(sri(1), 0));
+    assert!(sel.contains(sri(1), 40));
+    assert!(sel.contains(sri(1), 79));
+    // Row 2: fully interior, all columns selected.
+    assert!(sel.contains(sri(2), 0));
+    assert!(sel.contains(sri(2), 100));
+    // Row 3: end row, but since anchor has col=0 Side::Left, effective_start is 0.
+    // The end point is (3, 0, Left). In ordered(), min is (1,0,Left), max is (1,79,Right).
+    // Wait — ordered() takes min/max of anchor, pivot, end. pivot=(1,79,Right) > end=(3,0,Left)?
+    // (3,0,Left) > (1,79,Right) because row 3 > row 1. So max = (3,0,Left).
+    // effective_end_col for (3, 0, Left) with col > 0 check: col is 0 so returns 0.
+    // So row 3: col 0 is included but col 1 is not. Hmm, that's because end is at col 0.
+    // In a real line selection, the caller would set end to (3, 79, Right) for full row.
+    // Let's test with properly constructed line boundaries.
+    assert!(sel.contains(sri(3), 0));
+    assert!(!sel.contains(sri(0), 0), "row before selection");
+    assert!(!sel.contains(sri(4), 0), "row after selection");
+}
+
+#[test]
+fn line_mode_contains_full_rows_with_proper_boundaries() {
+    // Simulates triple-click on row 1, then drag down to row 3.
+    // Caller sets line boundaries: anchor at line start, pivot at line end,
+    // end at the end of the target line.
+    let sel = Selection {
+        mode: SelectionMode::Line,
+        anchor: SelectionPoint {
+            row: sri(1),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(1),
+            col: 79,
+            side: Side::Right,
+        },
+        end: SelectionPoint {
+            row: sri(3),
+            col: 79,
+            side: Side::Right,
+        },
+    };
+    // All three rows fully selected.
+    for row in 1..=3 {
+        assert!(sel.contains(sri(row), 0), "row {row} col 0");
+        assert!(sel.contains(sri(row), 40), "row {row} col 40");
+        assert!(sel.contains(sri(row), 79), "row {row} col 79");
+    }
+    assert!(!sel.contains(sri(0), 0));
+    assert!(!sel.contains(sri(4), 0));
+}
+
+#[test]
+fn line_mode_extract_text_full_rows() {
+    let mut grid = Grid::new(3, 10);
+    write_str(&mut grid, 0, "AAAAAAAAAA");
+    write_str(&mut grid, 1, "BBBBBBBBBB");
+    write_str(&mut grid, 2, "CCCCCCCCCC");
+
+    // Select rows 0-1 as full lines.
+    let sel = Selection {
+        mode: SelectionMode::Line,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 9,
+            side: Side::Right,
+        },
+        end: SelectionPoint {
+            row: sri(1),
+            col: 9,
+            side: Side::Right,
+        },
+    };
+    assert_eq!(extract_text(&grid, &sel), "AAAAAAAAAA\nBBBBBBBBBB");
+}
+
+#[test]
+fn line_mode_extract_text_with_wrapped_lines() {
+    let mut grid = Grid::new(3, 5);
+    write_str(&mut grid, 0, "hello");
+    grid[crate::index::Line(0)][Column(4)].flags |= crate::cell::CellFlags::WRAP;
+    write_str(&mut grid, 1, "world");
+    write_str(&mut grid, 2, "!!!!!");
+
+    // Line selection spanning rows 0-1 (which are one logical line).
+    let sel = Selection {
+        mode: SelectionMode::Line,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(1),
+            col: 4,
+            side: Side::Right,
+        },
+        end: SelectionPoint {
+            row: sri(1),
+            col: 4,
+            side: Side::Right,
+        },
+    };
+    // Wrapped lines should be joined without newline.
+    assert_eq!(extract_text(&grid, &sel), "helloworld");
+}
+
+// -- Drag workflow tests --
+
+#[test]
+fn char_drag_extends_selection() {
+    // Create selection, move end, verify containment changes.
+    let mut sel = Selection::new_char(sri(5), 10, Side::Left);
+    assert!(sel.is_empty(), "no drag yet");
+    assert!(!sel.contains(sri(5), 11));
+
+    // Simulate drag to col 15.
+    sel.end = SelectionPoint {
+        row: sri(5),
+        col: 15,
+        side: Side::Right,
+    };
+    assert!(!sel.is_empty());
+    assert!(sel.contains(sri(5), 10));
+    assert!(sel.contains(sri(5), 12));
+    assert!(sel.contains(sri(5), 15));
+    assert!(!sel.contains(sri(5), 16));
+
+    // Drag backwards to col 3.
+    sel.end = SelectionPoint {
+        row: sri(5),
+        col: 3,
+        side: Side::Left,
+    };
+    // ordered(): min = end (3, Left), max = anchor (10, Left).
+    // effective_start = 3, effective_end = 9 (Left side on max → col - 1).
+    assert!(sel.contains(sri(5), 3));
+    assert!(sel.contains(sri(5), 9));
+    assert!(
+        !sel.contains(sri(5), 10),
+        "anchor side was Left — as end, effective_end_col = 9"
+    );
+}
+
+#[test]
+fn char_drag_across_rows() {
+    let mut sel = Selection::new_char(sri(2), 5, Side::Left);
+
+    // Drag down to row 4, col 10.
+    sel.end = SelectionPoint {
+        row: sri(4),
+        col: 10,
+        side: Side::Right,
+    };
+    assert!(sel.contains(sri(2), 5));
+    assert!(sel.contains(sri(3), 0), "middle row fully included");
+    assert!(sel.contains(sri(4), 10));
+    assert!(!sel.contains(sri(4), 11));
+    assert!(!sel.contains(sri(1), 0), "above selection");
+}
+
+#[test]
+fn word_mode_drag_extends_by_pivot() {
+    // Word selection: double-click on "hello" → anchor=(0,0,L), pivot=(0,4,R).
+    // The pivot ensures that even when dragging backwards, "hello" stays selected.
+    let sel = Selection {
+        mode: SelectionMode::Word,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 4,
+            side: Side::Right,
+        },
+        end: SelectionPoint {
+            row: sri(0),
+            col: 10,
+            side: Side::Right,
+        },
+    };
+    // ordered() → min of (anchor, pivot, end) = anchor, max = end.
+    // So selection spans col 0..10.
+    assert!(sel.contains(sri(0), 0));
+    assert!(sel.contains(sri(0), 4), "pivot word still included");
+    assert!(sel.contains(sri(0), 10));
+    assert!(!sel.contains(sri(0), 11));
+}
+
+#[test]
+fn word_mode_drag_backwards_preserves_initial_word() {
+    // Double-click on word at cols 5-9 ("world"), then drag backwards to col 0.
+    // The pivot at (0,9,R) ensures "world" stays selected even when end < anchor.
+    let sel = Selection {
+        mode: SelectionMode::Word,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 5,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 9,
+            side: Side::Right,
+        },
+        end: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+    };
+    // ordered() → min = end (0,0,L), max = pivot (0,9,R).
+    assert!(sel.contains(sri(0), 0), "dragged-to area");
+    assert!(sel.contains(sri(0), 5), "original word start");
+    assert!(sel.contains(sri(0), 9), "original word end");
+    assert!(!sel.contains(sri(0), 10));
+}
+
+// -- Emoji / multi-codepoint text extraction --
+
+#[test]
+fn extract_text_emoji_wide_char() {
+    // Skull emoji (💀 U+1F480) has display width 2.
+    let mut grid = Grid::new(1, 20);
+    grid.move_to(0, Column(0));
+    grid.put_char('💀');
+    grid.put_char('A');
+
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(0),
+            col: 2,
+            side: Side::Right,
+        },
+    };
+    assert_eq!(extract_text(&grid, &sel), "💀A");
+}
+
+#[test]
+fn word_boundaries_emoji() {
+    // Emoji should be treated as word characters (alphanumeric by Unicode).
+    // Actually emoji are NOT alphanumeric — they're Symbol_Other.
+    // So they get delimiter_class 2 (punctuation/other).
+    let mut grid = Grid::new(1, 20);
+    grid.move_to(0, Column(0));
+    grid.put_char('💀');
+    grid.put_char('A');
+
+    // Click on emoji at col 0: emoji is class 2, 'A' is class 0 → separate.
+    let (s, e) = word_boundaries(&grid, 0, 0);
+    assert_eq!(s, 0);
+    assert_eq!(e, 1, "emoji + spacer");
+}
+
+// -- Selection across scrollback + visible boundary --
+
+#[test]
+fn extract_text_spanning_scrollback_and_visible() {
+    let mut grid = Grid::with_scrollback(3, 10, 10);
+    // Write content that gets pushed to scrollback.
+    write_str(&mut grid, 0, "scrolled");
+    write_str(&mut grid, 1, "also_scr");
+    write_str(&mut grid, 2, "bottom");
+    grid.scroll_up(2);
+    // Now rows 0-1 are in scrollback, visible area has been shifted.
+    // Write new content in visible area.
+    write_str(&mut grid, 0, "visible0");
+    write_str(&mut grid, 1, "visible1");
+
+    // Select from scrollback row 0 through visible row 0.
+    // Scrollback has 2 rows, so absolute:
+    //   scrollback[0] = "scrolled" (StableRowIndex 0)
+    //   scrollback[1] = "also_scr" (StableRowIndex 1)
+    //   visible[0] = "visible0" (StableRowIndex 2)
+    //   visible[1] = "visible1" (StableRowIndex 3)
+    //   visible[2] = "bottom" (StableRowIndex 4) — wait, scroll_up shifts content.
+    // Let's verify by selecting first two stable rows.
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 0,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(1),
+            col: 7,
+            side: Side::Right,
+        },
+    };
+    let text = extract_text(&grid, &sel);
+    assert_eq!(text, "scrolled\nalso_scr");
+}
+
+// -- Block mode with uneven row content --
+
+#[test]
+fn block_mode_extract_text_short_rows() {
+    // Block selection where some rows have content shorter than the block range.
+    let mut grid = Grid::new(3, 20);
+    write_str(&mut grid, 0, "ABCDEFGHIJ"); // 10 chars
+    write_str(&mut grid, 1, "KL"); // 2 chars, rest are spaces
+    write_str(&mut grid, 2, "UVWXYZ1234"); // 10 chars
+
+    // Block select cols 2-7 across all 3 rows.
+    let sel = Selection {
+        mode: SelectionMode::Block,
+        anchor: SelectionPoint {
+            row: sri(0),
+            col: 2,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(0),
+            col: 2,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(2),
+            col: 7,
+            side: Side::Right,
+        },
+    };
+    // Row 0: CDEFGH, Row 1: cols 2-7 are spaces (trimmed), Row 2: WXYZ12.
+    let text = extract_text(&grid, &sel);
+    assert_eq!(text, "CDEFGH\n\nWXYZ12");
+}
+
+// -- SelectionBounds direct tests --
+
+#[test]
+fn bounds_precomputed_matches_contains() {
+    let sel = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: sri(2),
+            col: 5,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(2),
+            col: 5,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(4),
+            col: 10,
+            side: Side::Right,
+        },
+    };
+    let bounds = sel.bounds();
+    // Verify bounds match direct contains for several points.
+    for row in 0..6 {
+        for col in [0, 5, 10, 15] {
+            assert_eq!(
+                sel.contains(sri(row), col),
+                bounds.contains(sri(row), col),
+                "mismatch at row={row}, col={col}"
+            );
+        }
+    }
+}
+
+#[test]
+fn bounds_block_mode_precomputed() {
+    let sel = Selection {
+        mode: SelectionMode::Block,
+        anchor: SelectionPoint {
+            row: sri(1),
+            col: 3,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: sri(1),
+            col: 3,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: sri(4),
+            col: 8,
+            side: Side::Right,
+        },
+    };
+    let bounds = sel.bounds();
+    assert_eq!(bounds.mode, SelectionMode::Block);
+    assert_eq!(bounds.start.row, sri(1));
+    assert_eq!(bounds.end.row, sri(4));
+    // Interior point.
+    assert!(bounds.contains(sri(2), 5));
+    // Outside.
+    assert!(!bounds.contains(sri(2), 2));
+    assert!(!bounds.contains(sri(2), 9));
+}
+
+// -- Word boundaries at line edges --
+
+#[test]
+fn word_boundaries_word_at_col_zero() {
+    let mut grid = Grid::new(1, 20);
+    write_str(&mut grid, 0, "hello world");
+
+    let (s, e) = word_boundaries(&grid, 0, 0);
+    assert_eq!(s, 0, "word starts at col 0");
+    assert_eq!(e, 4);
+}
+
+#[test]
+fn word_boundaries_word_at_last_col() {
+    let mut grid = Grid::new(1, 10);
+    // "ABC  hello" — "hello" ends at col 9 (last col).
+    write_str(&mut grid, 0, "ABC  hello");
+
+    let (s, e) = word_boundaries(&grid, 0, 9);
+    assert_eq!(s, 5);
+    assert_eq!(e, 9, "word ends at last column");
+}
+
+// -- delimiter_class for Unicode --
+
+#[test]
+fn delimiter_class_cjk_is_word_char() {
+    // CJK ideographs are alphanumeric per char::is_alphanumeric().
+    assert_eq!(delimiter_class('漢'), 0, "CJK should be word class");
+    assert_eq!(delimiter_class('字'), 0);
+    assert_eq!(delimiter_class('好'), 0);
+}
+
+#[test]
+fn delimiter_class_emoji_is_punctuation() {
+    // Emoji are Symbol_Other, not alphanumeric → class 2.
+    assert_eq!(delimiter_class('💀'), 2);
+    assert_eq!(delimiter_class('🎉'), 2);
+}
+
+#[test]
+fn delimiter_class_unicode_letters() {
+    // Non-ASCII alphabetic characters should be word class.
+    assert_eq!(delimiter_class('é'), 0, "accented latin");
+    assert_eq!(delimiter_class('ñ'), 0, "Spanish ñ");
+    assert_eq!(delimiter_class('Ω'), 0, "Greek omega");
+    assert_eq!(delimiter_class('д'), 0, "Cyrillic");
+}

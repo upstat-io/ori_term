@@ -10,7 +10,7 @@ sections:
     status: complete
   - id: "9.2"
     title: Mouse Selection
-    status: not-started
+    status: in-progress
   - id: "9.3"
     title: Keyboard Selection (Mark Mode)
     status: not-started
@@ -115,58 +115,58 @@ Windows Terminal uses a 3-point selection model: anchor, pivot, and endpoint. Th
 
 Windows Terminal-style mouse selection with drag threshold, multi-click modes, and auto-scroll.
 
-**File:** `oriterm/src/app/mouse_selection.rs`
+**File:** `oriterm/src/app/mouse_selection/mod.rs`
 
 **Reference:** `_old/src/app/mouse_selection.rs` — carries forward click counting, word/line selection creation, drag endpoint updates.
 
-- [ ] **Click count detection** (`detect_click_count`):
-  - [ ] Track `last_click_time: Option<Instant>`, `last_click_pos: Option<(usize, usize)>`, `click_count: u8`
-  - [ ] Same position + same window + within 500ms: increment count (1 -> 2 -> 3 -> 1)
-  - [ ] Different position or expired window: reset to 1
-- [ ] **Drag threshold**: Selection only starts after cursor moves >= 1/4 cell width from initial click position
-  - [ ] Track touchdown position separately from selection anchor
-  - [ ] Only initiate selection once threshold exceeded (prevents accidental selection)
-- [ ] **Single click + drag** — Character selection:
-  - [ ] Convert pixel position to cell coordinates (account for display_offset, tab bar offset)
-  - [ ] Determine Side (Left/Right) from pixel sub-cell position
-  - [ ] Clear any existing selection
-  - [ ] Set anchor at click position with `Selection::new_char()`
-  - [ ] Drag extends endpoint via `update_selection_end()`
-- [ ] **Double-click** — Word selection:
-  - [ ] Compute word boundaries around click position (see 9.4)
-  - [ ] Create selection with `Selection::new_word(start_boundary, end_boundary)`
-  - [ ] Pivot set to expanded word boundaries
-  - [ ] Subsequent drag expands by words: compare drag position to anchor, use nearest word boundary
-- [ ] **Triple-click** — Line selection:
-  - [ ] Select entire logical line (follows wrapped lines via WRAPLINE flag)
-  - [ ] Walk backwards through `logical_line_start()` to find first row of logical line
-  - [ ] Walk forwards through `logical_line_end()` to find last row
-  - [ ] Start at (first_row, col 0, Side::Left), end at (last_row, last_col, Side::Right)
-  - [ ] Create selection with `Selection::new_line()`
-- [ ] **Alt+click+drag** — Toggle block/character mode:
-  - [ ] If current mode is Char or Line: switch to `SelectionMode::Block`
-  - [ ] If current mode is Block: switch to `SelectionMode::Char`
-- [ ] **Shift+click** — Extend existing selection:
-  - [ ] If selection exists: update endpoint to clicked position
-  - [ ] If click is beyond anchor: include clicked cell
-  - [ ] If click is before anchor: start from clicked position
-  - [ ] Respect double-wide character boundaries
-- [ ] **Ctrl+click** — Open hyperlink URL:
+- [x] **Click count detection** (via `ClickDetector` from `oriterm_core::selection::click`):
+  - [x] Track `last_click_time: Option<Instant>`, `last_click_pos: Option<(usize, usize)>`, `click_count: u8`
+  - [x] Same position + same window + within 500ms: increment count (1 -> 2 -> 3 -> 1)
+  - [x] Different position or expired window: reset to 1
+- [x] **Drag threshold**: Selection only starts after cursor moves >= 1/4 cell width from initial click position
+  - [x] Track touchdown position separately from selection anchor
+  - [x] Only initiate selection once threshold exceeded (prevents accidental selection)
+- [x] **Single click + drag** — Character selection:
+  - [x] Convert pixel position to cell coordinates (account for display_offset, tab bar offset)
+  - [x] Determine Side (Left/Right) from pixel sub-cell position
+  - [x] Clear any existing selection
+  - [x] Set anchor at click position with `Selection::new_char()`
+  - [x] Drag extends endpoint via `update_selection_end()`
+- [x] **Double-click** — Word selection:
+  - [x] Compute word boundaries around click position (see 9.4)
+  - [x] Create selection with `Selection::new_word(start_boundary, end_boundary)`
+  - [x] Pivot set to expanded word boundaries
+  - [x] Subsequent drag expands by words: compare drag position to anchor, use nearest word boundary
+- [x] **Triple-click** — Line selection:
+  - [x] Select entire logical line (follows wrapped lines via WRAPLINE flag)
+  - [x] Walk backwards through `logical_line_start()` to find first row of logical line
+  - [x] Walk forwards through `logical_line_end()` to find last row
+  - [x] Start at (first_row, col 0, Side::Left), end at (last_row, last_col, Side::Right)
+  - [x] Create selection with `Selection::new_line()`
+- [x] **Alt+click+drag** — Toggle block/character mode:
+  - [x] If current mode is Char or Line: switch to `SelectionMode::Block`
+  - [x] If current mode is Block: switch to `SelectionMode::Char`
+- [x] **Shift+click** — Extend existing selection:
+  - [x] If selection exists: update endpoint to clicked position
+  - [x] If click is beyond anchor: include clicked cell
+  - [x] If click is before anchor: start from clicked position
+  - [x] Respect double-wide character boundaries
+- [ ] **Ctrl+click** — Open hyperlink URL: <!-- blocked-by:14 -->
   - [ ] Check OSC 8 hyperlink on clicked cell (takes priority)
   - [ ] Fall through to implicit URL detection
   - [ ] If URL found: open in default browser, consume click
-- [ ] **Auto-scroll during drag** (mouse above/below viewport):
-  - [ ] When dragging above grid top: scroll viewport up into history (1 line per event)
-  - [ ] When dragging below grid bottom: scroll viewport down toward live (if display_offset > 0)
-  - [ ] Continue extending selection into scrollback during auto-scroll
-- [ ] **Double-wide character handling**:
-  - [ ] Selection never splits a double-wide character
-  - [ ] If click lands on WIDE_CHAR_SPACER: redirect to base cell (col - 1)
-  - [ ] Automatically adjust selection endpoint to cell boundary
-- [ ] **Tests** (`oriterm/src/app/mouse_selection.rs` `#[cfg(test)]`):
-  - [ ] Click count detection: rapid clicks cycle 1 -> 2 -> 3 -> 1
-  - [ ] Click at different position resets to 1
-  - [ ] Expired click window resets to 1
+- [x] **Auto-scroll during drag** (mouse above/below viewport):
+  - [x] When dragging above grid top: scroll viewport up into history (1 line per event)
+  - [x] When dragging below grid bottom: scroll viewport down toward live (if display_offset > 0)
+  - [x] Continue extending selection into scrollback during auto-scroll
+- [x] **Double-wide character handling**:
+  - [x] Selection never splits a double-wide character
+  - [x] If click lands on WIDE_CHAR_SPACER: redirect to base cell (col - 1)
+  - [x] Automatically adjust selection endpoint to cell boundary
+- [x] **Tests** (`oriterm/src/app/mouse_selection/tests.rs`):
+  - [x] Click count detection: rapid clicks cycle 1 -> 2 -> 3 -> 1 (in `oriterm_core::selection::click::tests`)
+  - [x] Click at different position resets to 1
+  - [x] Expired click window resets to 1
   - [ ] Double-click creates Word selection with correct boundaries
   - [ ] Triple-click creates Line selection spanning wrapped lines
   - [ ] Alt+click toggles block mode

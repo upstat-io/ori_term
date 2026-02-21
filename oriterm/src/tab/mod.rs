@@ -277,13 +277,15 @@ impl Tab {
     }
 
     /// Replace the active selection.
-    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
     pub fn set_selection(&mut self, selection: Selection) {
         self.selection = Some(selection);
     }
 
     /// Clear the active selection.
-    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
+    #[allow(
+        dead_code,
+        reason = "used by copy operations, keyboard escape, context menu"
+    )]
     pub fn clear_selection(&mut self) {
         self.selection = None;
     }
@@ -291,7 +293,6 @@ impl Tab {
     /// Update the endpoint of an active selection during drag.
     ///
     /// No-op if no selection exists.
-    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
     pub fn update_selection_end(&mut self, end: SelectionPoint) {
         if let Some(sel) = &mut self.selection {
             sel.end = end;
@@ -303,7 +304,6 @@ impl Tab {
     /// Locks the terminal, checks the `selection_dirty` flag, and clears the
     /// selection if grid content was modified since the last check. Call this
     /// when handling terminal wakeup events.
-    #[allow(dead_code, reason = "wired in Section 9.2 mouse selection")]
     pub fn check_selection_invalidation(&mut self) {
         if self.selection.is_none() {
             // No selection to invalidate — still clear the flag to avoid stale state.
