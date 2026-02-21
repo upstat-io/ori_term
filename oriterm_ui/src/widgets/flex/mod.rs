@@ -209,6 +209,10 @@ impl Widget for FlexWidget {
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
+        // Invalidate cache each frame so children with changed intrinsic sizes
+        // get fresh layout. The cache still prevents redundant recomputation
+        // within a single frame (draw + event handling share the same bounds).
+        *self.cached_layout.borrow_mut() = None;
         let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
 
         for (idx, child) in self.children.iter().enumerate() {

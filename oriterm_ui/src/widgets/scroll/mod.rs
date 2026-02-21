@@ -195,16 +195,18 @@ impl Widget for ScrollWidget {
     }
 
     fn layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        // The scroll container itself uses the child's unconstrained width
-        // but constrains height to Hug (the container's visible size is
-        // determined by the parent, not the child's full height).
-        let child_box = self.child.layout(ctx);
+        // Measure child's unconstrained size via the cache-aware helper.
+        // Uses an infinite viewport to get the natural size, which also
+        // populates cached_child_layout for later draw/event use.
         let unconstrained = Rect::new(0.0, 0.0, f32::INFINITY, f32::INFINITY);
-        let child_node = compute_layout(&child_box, unconstrained);
-        LayoutBox::leaf(child_node.rect.width(), child_node.rect.height()).with_widget_id(self.id)
+        let (w, h) = self.child_natural_size(ctx.measurer, ctx.theme, unconstrained);
+        LayoutBox::leaf(w, h).with_widget_id(self.id)
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
+        // Invalidate cache each frame so children with changed intrinsic sizes
+        // get fresh layout.
+        *self.cached_child_layout.borrow_mut() = None;
         let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
 
         // Clip to visible area.
@@ -272,7 +274,16 @@ impl Widget for ScrollWidget {
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        self.child.handle_hover(event, ctx)
+        let (content_w, content_h) = self.child_natural_size(ctx.measurer, ctx.theme, ctx.bounds);
+        let child_bounds = Rect::new(0.0, 0.0, content_w, content_h);
+        let child_ctx = EventCtx {
+            measurer: ctx.measurer,
+            bounds: child_bounds,
+            is_focused: ctx.focused_widget == Some(self.child.id()),
+            focused_widget: ctx.focused_widget,
+            theme: ctx.theme,
+        };
+        self.child.handle_hover(event, &child_ctx)
     }
 
     fn handle_key(&mut self, event: KeyEvent, ctx: &EventCtx<'_>) -> WidgetResponse {

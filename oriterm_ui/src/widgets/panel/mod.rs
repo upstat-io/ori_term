@@ -163,6 +163,10 @@ impl Widget for PanelWidget {
     }
 
     fn draw(&self, ctx: &mut DrawCtx<'_>) {
+        // Invalidate cache each frame so children with changed intrinsic sizes
+        // get fresh layout.
+        *self.cached_layout.borrow_mut() = None;
+
         // Draw panel background.
         let mut rect_style = RectStyle::filled(self.style.bg).with_radius(self.style.corner_radius);
         if self.style.border_width > 0.0 {

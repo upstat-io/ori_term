@@ -287,7 +287,7 @@ impl OverlayManager {
             OverlayKind::Popup => {
                 // Only dismiss on actual clicks (Down), not moves/scrolls.
                 if matches!(event.kind, MouseEventKind::Down(_)) {
-                    self.overlays.pop();
+                    self.pop_topmost();
                     OverlayEventResult::Dismissed(topmost_id)
                 } else {
                     OverlayEventResult::PassThrough
@@ -314,7 +314,7 @@ impl OverlayManager {
 
         // Escape always pops topmost.
         if event.key == Key::Escape {
-            let id = self.overlays.pop().expect("checked non-empty above").id;
+            let id = self.pop_topmost().expect("checked non-empty above");
             return OverlayEventResult::Dismissed(id);
         }
 
@@ -363,8 +363,10 @@ impl OverlayManager {
             .rev()
             .find(|&i| self.overlays[i].computed_rect.contains(point));
 
-        // Send Leave to old overlay if hover changed.
-        if self.hovered_overlay != new_hover {
+        let hover_changed = self.hovered_overlay != new_hover;
+
+        if hover_changed {
+            // Send Leave to old overlay.
             if let Some(old_idx) = self.hovered_overlay {
                 if let Some(old_overlay) = self.overlays.get_mut(old_idx) {
                     let root_id = old_overlay.widget.id();
@@ -378,33 +380,43 @@ impl OverlayManager {
                     old_overlay.widget.handle_hover(HoverEvent::Leave, &ctx);
                 }
             }
+            self.hovered_overlay = new_hover;
         }
 
-        self.hovered_overlay = new_hover;
-
-        if let Some(idx) = new_hover {
-            let overlay = &mut self.overlays[idx];
-            let id = overlay.id;
-            let root_id = overlay.widget.id();
-            let ctx = EventCtx {
-                measurer,
-                bounds: overlay.computed_rect,
-                is_focused: focused_widget == Some(root_id),
-                focused_widget,
-                theme,
-            };
-            let response = overlay.widget.handle_hover(HoverEvent::Enter, &ctx);
-            return OverlayEventResult::Delivered {
-                overlay_id: id,
-                response,
-            };
-        }
-
-        // Point is outside all overlays.
-        if self.has_modal() {
-            OverlayEventResult::Blocked
-        } else {
-            OverlayEventResult::PassThrough
+        match new_hover {
+            Some(idx) if hover_changed => {
+                // Send Enter to newly hovered overlay.
+                let overlay = &mut self.overlays[idx];
+                let id = overlay.id;
+                let root_id = overlay.widget.id();
+                let ctx = EventCtx {
+                    measurer,
+                    bounds: overlay.computed_rect,
+                    is_focused: focused_widget == Some(root_id),
+                    focused_widget,
+                    theme,
+                };
+                let response = overlay.widget.handle_hover(HoverEvent::Enter, &ctx);
+                OverlayEventResult::Delivered {
+                    overlay_id: id,
+                    response,
+                }
+            }
+            Some(idx) => {
+                // Hover unchanged, still over this overlay — no re-enter.
+                OverlayEventResult::Delivered {
+                    overlay_id: self.overlays[idx].id,
+                    response: WidgetResponse::handled(),
+                }
+            }
+            None => {
+                // Point is outside all overlays.
+                if self.has_modal() {
+                    OverlayEventResult::Blocked
+                } else {
+                    OverlayEventResult::PassThrough
+                }
+            }
         }
     }
 
