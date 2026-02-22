@@ -184,6 +184,18 @@ impl App {
         self.write_paste_to_pty(&text);
     }
 
+    /// Paste text from the primary selection (X11/Wayland middle-click paste).
+    ///
+    /// On Windows/macOS, the primary selection is typically empty (no-op).
+    pub(crate) fn paste_from_primary(&mut self) {
+        let text = self.clipboard.load(ClipboardType::Selection);
+        if text.is_empty() {
+            return;
+        }
+        self.write_paste_to_pty(&text);
+        self.dirty = true;
+    }
+
     /// Paste dropped file paths into the active terminal.
     ///
     /// Paths with spaces are auto-quoted. Multiple paths are space-separated.

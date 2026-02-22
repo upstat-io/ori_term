@@ -5,10 +5,11 @@ use vte::ansi::KeyboardModes;
 use super::TermMode;
 
 #[test]
-fn default_has_show_cursor_and_line_wrap() {
+fn default_has_show_cursor_line_wrap_and_alternate_scroll() {
     let mode = TermMode::default();
     assert!(mode.contains(TermMode::SHOW_CURSOR));
     assert!(mode.contains(TermMode::LINE_WRAP));
+    assert!(mode.contains(TermMode::ALTERNATE_SCROLL));
 }
 
 #[test]
@@ -85,6 +86,7 @@ fn all_flags_are_distinct() {
         TermMode::REPORT_ALTERNATE_KEYS,
         TermMode::REPORT_ALL_KEYS_AS_ESC,
         TermMode::REPORT_ASSOCIATED_TEXT,
+        TermMode::ALTERNATE_SCROLL,
     ];
 
     // Each individual flag has exactly one bit set (excluding composite ANY_MOUSE).

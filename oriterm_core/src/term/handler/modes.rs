@@ -48,7 +48,10 @@ impl<T: EventListener> Term<T> {
             }
             NamedPrivateMode::BracketedPaste => self.mode.insert(TermMode::BRACKETED_PASTE),
             NamedPrivateMode::SyncUpdate => self.mode.insert(TermMode::SYNC_UPDATE),
-            NamedPrivateMode::ColumnMode | NamedPrivateMode::AlternateScroll => {
+            NamedPrivateMode::AlternateScroll => {
+                self.mode.insert(TermMode::ALTERNATE_SCROLL);
+            }
+            NamedPrivateMode::ColumnMode => {
                 debug!("Ignoring DECSET for unimplemented mode {named:?}");
             }
         }
@@ -91,7 +94,10 @@ impl<T: EventListener> Term<T> {
             }
             NamedPrivateMode::BracketedPaste => self.mode.remove(TermMode::BRACKETED_PASTE),
             NamedPrivateMode::SyncUpdate => self.mode.remove(TermMode::SYNC_UPDATE),
-            NamedPrivateMode::ColumnMode | NamedPrivateMode::AlternateScroll => {
+            NamedPrivateMode::AlternateScroll => {
+                self.mode.remove(TermMode::ALTERNATE_SCROLL);
+            }
+            NamedPrivateMode::ColumnMode => {
                 debug!("Ignoring DECRST for unimplemented mode {named:?}");
             }
         }

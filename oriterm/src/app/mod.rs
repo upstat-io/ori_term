@@ -8,14 +8,16 @@
 mod clipboard_ops;
 mod cursor_blink;
 mod init;
+mod keyboard_input;
 mod mark_mode;
+mod mouse_report;
 mod mouse_selection;
 mod redraw;
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
-use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey, SmolStr};
+use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
 use oriterm_core::Event;
@@ -26,7 +28,6 @@ use self::mouse_selection::MouseState;
 use crate::clipboard::Clipboard;
 use crate::font::{HintingMode, SubpixelMode};
 use crate::gpu::{FrameInput, GpuRenderer, GpuState};
-use crate::key_encoding::{self, KeyEventType, KeyInput};
 use crate::tab::{Tab, TermEvent};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
@@ -113,108 +114,6 @@ impl App {
         }
     }
 
-    /// Dispatch a keyboard event through mark mode or key encoding to the PTY.
-    ///
-    /// Mark mode intercepts all key events when active. Otherwise, reads the
-    /// terminal mode, converts winit modifiers to key encoding modifiers,
-    /// encodes the key event, and sends the result to the PTY.
-    fn handle_keyboard_input(&mut self, event: &winit::event::KeyEvent) {
-        // Mark mode: consume ALL key events (including releases) to prevent
-        // leaking input to the PTY while navigating.
-        if let Some(tab) = &mut self.tab {
-            if tab.is_mark_mode() {
-                if event.state == ElementState::Pressed {
-                    let action = mark_mode::handle_mark_mode_key(tab, event, self.modifiers);
-                    match action {
-                        mark_mode::MarkAction::Handled => {
-                            self.dirty = true;
-                        }
-                        mark_mode::MarkAction::Exit { copy } => {
-                            if copy {
-                                self.copy_selection();
-                            }
-                            self.dirty = true;
-                        }
-                        mark_mode::MarkAction::Ignored => {}
-                    }
-                }
-                return;
-            }
-        }
-
-        // Ctrl+Shift+M enters mark mode.
-        // Match on key+modifiers first, consume both press and release to
-        // prevent orphaned release events from leaking to the PTY.
-        if self.modifiers.control_key()
-            && self.modifiers.shift_key()
-            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyM))
-        {
-            if event.state == ElementState::Pressed && !event.repeat {
-                if let Some(tab) = &mut self.tab {
-                    tab.enter_mark_mode();
-                    self.dirty = true;
-                }
-            }
-            return;
-        }
-
-        // Copy keybindings: Ctrl+Shift+C, smart Ctrl+C, Ctrl+Insert.
-        if matches!(
-            self.try_copy_keybinding(event, self.modifiers),
-            clipboard_ops::CopyAction::Handled,
-        ) {
-            self.dirty = true;
-            return;
-        }
-
-        // Paste keybindings: Ctrl+Shift+V, Ctrl+V, Shift+Insert.
-        if matches!(
-            self.try_paste_keybinding(event, self.modifiers),
-            clipboard_ops::PasteAction::Handled,
-        ) {
-            self.dirty = true;
-            return;
-        }
-
-        // Normal key encoding to PTY.
-        let Some(tab) = &self.tab else { return };
-
-        let mode = tab.terminal().lock().mode();
-
-        let event_type = match (event.state, event.repeat) {
-            (ElementState::Released, _) => KeyEventType::Release,
-            (ElementState::Pressed, true) => KeyEventType::Repeat,
-            (ElementState::Pressed, false) => KeyEventType::Press,
-        };
-
-        let bytes = key_encoding::encode_key(&KeyInput {
-            key: &event.logical_key,
-            mods: self.modifiers.into(),
-            mode,
-            text: event.text.as_ref().map(SmolStr::as_str),
-            location: event.location,
-            event_type,
-        });
-
-        if !bytes.is_empty() {
-            tab.scroll_to_bottom();
-            tab.write_input(&bytes);
-            self.cursor_blink.reset();
-            self.dirty = true;
-        }
-    }
-
-    /// Handle IME commit: send committed text directly to the PTY.
-    fn handle_ime_commit(&mut self, text: &str) {
-        let Some(tab) = &self.tab else { return };
-        if !text.is_empty() {
-            tab.scroll_to_bottom();
-            tab.write_input(text.as_bytes());
-            self.cursor_blink.reset();
-            self.dirty = true;
-        }
-    }
-
     /// Handle mouse press for selection.
     fn handle_mouse_press(&mut self) {
         let pos = self.mouse.cursor_pos();
@@ -243,6 +142,67 @@ impl App {
             if mouse_selection::handle_drag(&mut self.mouse, tab, &ctx, position) {
                 self.dirty = true;
             }
+        }
+    }
+
+    /// Handle a mouse button event (left, middle, right).
+    fn handle_mouse_input(&mut self, button: MouseButton, state: ElementState) {
+        match button {
+            MouseButton::Left => {
+                if self.should_report_mouse() {
+                    let kind = match state {
+                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
+                        ElementState::Released => mouse_report::MouseEventKind::Release,
+                    };
+                    self.report_mouse_button(mouse_report::MouseButton::Left, kind);
+                } else {
+                    match state {
+                        ElementState::Pressed => self.handle_mouse_press(),
+                        ElementState::Released => {
+                            let had_drag = self.mouse.is_dragging();
+                            mouse_selection::handle_release(&mut self.mouse);
+                            // CopyOnSelect: auto-copy to primary selection after drag.
+                            // TODO(section-13): wire CopyOnSelect config setting.
+                            if had_drag {
+                                self.copy_selection_to_primary();
+                            }
+                        }
+                    }
+                }
+            }
+            MouseButton::Middle => {
+                if self.should_report_mouse() {
+                    let kind = match state {
+                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
+                        ElementState::Released => mouse_report::MouseEventKind::Release,
+                    };
+                    self.report_mouse_button(mouse_report::MouseButton::Middle, kind);
+                } else if state == ElementState::Pressed {
+                    self.paste_from_primary();
+                } else {
+                    // Release without reporting: no action needed.
+                }
+            }
+            MouseButton::Right => {
+                if self.should_report_mouse() {
+                    let kind = match state {
+                        ElementState::Pressed => mouse_report::MouseEventKind::Press,
+                        ElementState::Released => mouse_report::MouseEventKind::Release,
+                    };
+                    self.report_mouse_button(mouse_report::MouseButton::Right, kind);
+                } else if state == ElementState::Pressed {
+                    let has_sel = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
+                    if has_sel {
+                        self.copy_selection();
+                    } else {
+                        self.paste_from_clipboard();
+                    }
+                    self.dirty = true;
+                } else {
+                    // Release without reporting: no action needed.
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -332,42 +292,21 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse.set_cursor_pos(position);
+                if self.report_mouse_motion(position) {
+                    return;
+                }
                 if self.mouse.left_down() {
                     self.handle_mouse_drag(position);
                 }
             }
 
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Left,
-                ..
-            } => match state {
-                ElementState::Pressed => self.handle_mouse_press(),
-                ElementState::Released => {
-                    let had_drag = self.mouse.is_dragging();
-                    mouse_selection::handle_release(&mut self.mouse);
-                    // CopyOnSelect: auto-copy to primary selection after drag.
-                    // TODO(section-13): wire CopyOnSelect config setting.
-                    if had_drag {
-                        self.copy_selection_to_primary();
-                    }
-                }
-            },
+            WindowEvent::MouseInput { state, button, .. } => {
+                self.handle_mouse_input(button, state);
+            }
 
-            // Right-click: copy if selection exists, paste if not.
-            // TODO(section-21): when context menu is enabled, show menu instead.
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                button: MouseButton::Right,
-                ..
-            } => {
-                let has_selection = self.tab.as_ref().is_some_and(|t| t.selection().is_some());
-                if has_selection {
-                    self.copy_selection();
-                } else {
-                    self.paste_from_clipboard();
-                }
-                self.dirty = true;
+            // Mouse wheel: report, alternate scroll, or viewport scroll.
+            WindowEvent::MouseWheel { delta, .. } => {
+                self.handle_mouse_wheel(delta);
             }
 
             // File drag-and-drop: paste paths into terminal.

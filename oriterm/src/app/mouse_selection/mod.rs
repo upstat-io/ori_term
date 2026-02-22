@@ -34,6 +34,8 @@ pub(crate) struct MouseState {
     click_detector: ClickDetector,
     /// Last known cursor position (for drag events).
     cursor_pos: PhysicalPosition<f64>,
+    /// Last cell reported to the PTY for motion deduplication.
+    last_reported_cell: Option<(usize, usize)>,
 }
 
 impl MouseState {
@@ -45,6 +47,7 @@ impl MouseState {
             drag_active: false,
             click_detector: ClickDetector::new(),
             cursor_pos: PhysicalPosition::new(0.0, 0.0),
+            last_reported_cell: None,
         }
     }
 
@@ -66,6 +69,16 @@ impl MouseState {
     /// Current cursor position.
     pub(crate) fn cursor_pos(&self) -> PhysicalPosition<f64> {
         self.cursor_pos
+    }
+
+    /// Last cell reported to the PTY (for motion deduplication).
+    pub(crate) fn last_reported_cell(&self) -> Option<(usize, usize)> {
+        self.last_reported_cell
+    }
+
+    /// Update the last reported cell for motion deduplication.
+    pub(crate) fn set_last_reported_cell(&mut self, cell: Option<(usize, usize)>) {
+        self.last_reported_cell = cell;
     }
 }
 

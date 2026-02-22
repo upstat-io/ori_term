@@ -263,7 +263,7 @@ selection rendering, invert colors, highlight
 ---
 
 ### Section 10: Mouse Input & Reporting
-**File:** `section-10-mouse-input.md` | **Tier:** 3 | **Status:** Not Started
+**File:** `section-10-mouse-input.md` | **Tier:** 3 | **Status:** Complete
 
 ```
 mouse reporting, mouse mode, 1000, 1002, 1003, 1006
@@ -815,7 +815,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 07 | 2D UI Framework | `section-07-ui-framework.md` | 2 | Not Started |
 | 08 | Keyboard Input | `section-08-keyboard-input.md` | 3 | Not Started |
 | 09 | Selection & Clipboard | `section-09-selection-clipboard.md` | 3 | Not Started |
-| 10 | Mouse Input & Reporting | `section-10-mouse-input.md` | 3 | Not Started |
+| 10 | Mouse Input & Reporting | `section-10-mouse-input.md` | 3 | Complete |
 | 11 | Search | `section-11-search.md` | 3 | Not Started |
 | 12 | Resize & Reflow | `section-12-resize-reflow.md` | 3 | Not Started |
 | 13 | Configuration & Keybindings | `section-13-config-keybindings.md` | 3 | Not Started |

@@ -57,7 +57,8 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::SwapScreenAndSetRestoreCursor => Some(TermMode::ALT_SCREEN),
         NamedPrivateMode::BracketedPaste => Some(TermMode::BRACKETED_PASTE),
         NamedPrivateMode::SyncUpdate => Some(TermMode::SYNC_UPDATE),
-        NamedPrivateMode::ColumnMode | NamedPrivateMode::AlternateScroll => None,
+        NamedPrivateMode::AlternateScroll => Some(TermMode::ALTERNATE_SCROLL),
+        NamedPrivateMode::ColumnMode => None,
     }
 }
 
