@@ -1004,8 +1004,8 @@ fn make_tab(rows: u16, cols: u16) -> crate::tab::Tab {
 }
 
 /// Get a cloned winit `EventLoopProxy` for tests.
-fn test_proxy() -> winit::event_loop::EventLoopProxy<crate::tab::TermEvent> {
-    use crate::tab::TermEvent;
+fn test_proxy() -> winit::event_loop::EventLoopProxy<crate::event::TermEvent> {
+    use crate::event::TermEvent;
     use std::sync::OnceLock;
 
     static PROXY: OnceLock<winit::event_loop::EventLoopProxy<TermEvent>> = OnceLock::new();
@@ -1020,8 +1020,8 @@ fn test_proxy() -> winit::event_loop::EventLoopProxy<crate::tab::TermEvent> {
 }
 
 /// Build a winit event loop usable from test threads.
-fn build_event_loop() -> winit::event_loop::EventLoop<crate::tab::TermEvent> {
-    use crate::tab::TermEvent;
+fn build_event_loop() -> winit::event_loop::EventLoop<crate::event::TermEvent> {
+    use crate::event::TermEvent;
 
     #[cfg(windows)]
     {

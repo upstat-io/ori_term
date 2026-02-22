@@ -9,7 +9,8 @@ use winit::event_loop::EventLoopProxy;
 
 use oriterm_core::{Column, Event, EventListener, Line, Theme};
 
-use super::{EventProxy, Notifier, Tab, TabId, TermEvent};
+use super::{EventProxy, Notifier, Tab, TabId};
+use crate::event::TermEvent;
 use crate::pty::Msg;
 
 // ---------------------------------------------------------------------------

@@ -28,10 +28,11 @@ use self::mouse_selection::MouseState;
 use crate::clipboard::Clipboard;
 use crate::config::Config;
 use crate::config::monitor::ConfigMonitor;
+use crate::event::TermEvent;
 use crate::font::{HintingMode, SubpixelMode};
 use crate::gpu::{FrameInput, GpuRenderer, GpuState};
 use crate::keybindings::{self, KeyBinding};
-use crate::tab::{Tab, TermEvent};
+use crate::tab::Tab;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
@@ -98,6 +99,8 @@ impl App {
     pub(crate) fn new(event_proxy: EventLoopProxy<TermEvent>, config: Config) -> Self {
         let bindings = keybindings::merge_bindings(&config.keybind);
         let monitor = ConfigMonitor::new(event_proxy.clone());
+        let blink_interval =
+            std::time::Duration::from_millis(config.terminal.cursor_blink_interval_ms);
         Self {
             gpu: None,
             renderer: None,
@@ -108,7 +111,7 @@ impl App {
             frame: None,
             dirty: false,
             modifiers: ModifiersState::empty(),
-            cursor_blink: CursorBlink::new(),
+            cursor_blink: CursorBlink::new(blink_interval),
             blinking_active: false,
             mouse: MouseState::new(),
             clipboard: Clipboard::new(),
@@ -391,14 +394,19 @@ impl ApplicationHandler<TermEvent> for App {
                 self.dirty = true;
             }
 
-            // System dark/light theme changed — rebuild palette.
+            // System dark/light theme changed — rebuild palette with config override.
             WindowEvent::ThemeChanged(winit_theme) => {
-                let theme = match winit_theme {
+                // Respect ThemeOverride: if the user forced dark/light, ignore
+                // the system notification. Only Auto delegates to the system.
+                let system_theme = match winit_theme {
                     winit::window::Theme::Dark => oriterm_core::Theme::Dark,
                     winit::window::Theme::Light => oriterm_core::Theme::Light,
                 };
+                let theme = self.config.colors.resolve_theme(|| system_theme);
                 if let Some(tab) = &self.tab {
-                    tab.terminal().lock().set_theme(theme);
+                    let mut term = tab.terminal().lock();
+                    term.set_theme(theme);
+                    config_reload::apply_color_overrides(term.palette_mut(), &self.config.colors);
                 }
                 self.dirty = true;
             }

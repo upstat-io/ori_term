@@ -162,15 +162,22 @@ impl App {
         log::info!("config reload: colors updated (theme={theme:?})");
     }
 
-    /// Detect and apply cursor style changes.
-    fn apply_cursor_changes(&self, new: &Config) {
-        if new.terminal.cursor_style == self.config.terminal.cursor_style {
-            return;
+    /// Detect and apply cursor style and blink interval changes.
+    fn apply_cursor_changes(&mut self, new: &Config) {
+        if new.terminal.cursor_style != self.config.terminal.cursor_style {
+            let shape = new.terminal.cursor_style.to_shape();
+            if let Some(tab) = &self.tab {
+                tab.terminal().lock().set_cursor_shape(shape);
+            }
         }
 
-        let shape = new.terminal.cursor_style.to_shape();
-        if let Some(tab) = &self.tab {
-            tab.terminal().lock().set_cursor_shape(shape);
+        if new.terminal.cursor_blink_interval_ms != self.config.terminal.cursor_blink_interval_ms {
+            let interval = std::time::Duration::from_millis(new.terminal.cursor_blink_interval_ms);
+            self.cursor_blink.set_interval(interval);
+            log::info!(
+                "config reload: cursor blink interval={}ms",
+                new.terminal.cursor_blink_interval_ms
+            );
         }
     }
 

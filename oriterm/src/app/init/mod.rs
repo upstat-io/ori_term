@@ -5,6 +5,7 @@ use winit::event_loop::ActiveEventLoop;
 use oriterm_ui::window::WindowConfig;
 
 use super::{App, DEFAULT_DPI};
+use crate::app::config_reload;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, SubpixelMode};
 use crate::gpu::{GpuRenderer, GpuState};
 use crate::tab::{Tab, TabId};
@@ -122,6 +123,14 @@ impl App {
             theme,
         };
         let tab = Tab::new(tab_id, &tab_cfg, self.event_proxy.clone())?;
+
+        // Apply user color overrides (foreground, background, cursor, ANSI, bright).
+        // Tab::new creates a bare Palette::for_theme; config overrides must be layered on.
+        {
+            let mut term = tab.terminal().lock();
+            config_reload::apply_color_overrides(term.palette_mut(), &self.config.colors);
+        }
+
         let t_tab = t_tab_start.elapsed();
 
         let t_total = t_start.elapsed();

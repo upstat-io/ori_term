@@ -47,7 +47,10 @@ impl App {
             if let Some(binding_key) = keybindings::key_to_binding_key(&event.logical_key) {
                 if let Some(action) = keybindings::find_binding(&self.bindings, &binding_key, mods)
                 {
-                    if self.execute_action(action.clone()) {
+                    // Clone to release the immutable borrow on self.bindings
+                    // before calling execute_action which needs &mut self.
+                    let action = action.clone();
+                    if self.execute_action(&action) {
                         return;
                     }
                 }
@@ -91,7 +94,7 @@ impl App {
     ///
     /// `SmartCopy` returns `false` when no selection exists (fall through to PTY
     /// so Ctrl+C sends SIGINT). Other actions always consume the event.
-    fn execute_action(&mut self, action: Action) -> bool {
+    fn execute_action(&mut self, action: &Action) -> bool {
         match action {
             Action::Copy => {
                 self.copy_selection();

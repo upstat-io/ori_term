@@ -11,6 +11,7 @@ mod app;
 mod cli;
 mod clipboard;
 mod config;
+mod event;
 mod font;
 mod gpu;
 mod key_encoding;
@@ -24,7 +25,7 @@ mod window;
 use clap::Parser;
 
 use crate::config::Config;
-use crate::tab::TermEvent;
+use crate::event::TermEvent;
 
 fn main() {
     let args = cli::Cli::parse();

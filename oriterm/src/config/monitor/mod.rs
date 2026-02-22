@@ -8,7 +8,7 @@ use notify::{RecursiveMode, Watcher};
 use winit::event_loop::EventLoopProxy;
 
 use super::config_path;
-use crate::tab::TermEvent;
+use crate::event::TermEvent;
 
 /// Watches the config file's parent directory for changes and sends
 /// `TermEvent::ConfigReload` through the event loop proxy when the
