@@ -1006,32 +1006,32 @@ fn apply_color_overrides_applies_valid_ansi() {
 
 #[test]
 fn clamp_or_default_normal_value() {
-    assert!((super::clamp_or_default(0.5, 0.0, 1.0, 1.0) - 0.5).abs() < f32::EPSILON);
+    assert!((clamp_or_default(0.5, 0.0, 1.0, 1.0) - 0.5).abs() < f32::EPSILON);
 }
 
 #[test]
 fn clamp_or_default_above_max() {
-    assert!((super::clamp_or_default(2.0, 0.0, 1.0, 1.0) - 1.0).abs() < f32::EPSILON);
+    assert!((clamp_or_default(2.0, 0.0, 1.0, 1.0) - 1.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn clamp_or_default_below_min() {
-    assert!(super::clamp_or_default(-1.0, 0.0, 1.0, 1.0).abs() < f32::EPSILON);
+    assert!(clamp_or_default(-1.0, 0.0, 1.0, 1.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn clamp_or_default_nan_returns_default() {
-    assert!((super::clamp_or_default(f32::NAN, 0.0, 1.0, 0.75) - 0.75).abs() < f32::EPSILON);
+    assert!((clamp_or_default(f32::NAN, 0.0, 1.0, 0.75) - 0.75).abs() < f32::EPSILON);
 }
 
 #[test]
 fn clamp_or_default_inf_clamped() {
-    assert!((super::clamp_or_default(f32::INFINITY, 0.0, 1.0, 0.5) - 1.0).abs() < f32::EPSILON);
+    assert!((clamp_or_default(f32::INFINITY, 0.0, 1.0, 0.5) - 1.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn clamp_or_default_neg_inf_clamped() {
-    assert!(super::clamp_or_default(f32::NEG_INFINITY, 0.0, 1.0, 0.5).abs() < f32::EPSILON);
+    assert!(clamp_or_default(f32::NEG_INFINITY, 0.0, 1.0, 0.5).abs() < f32::EPSILON);
 }
 
 // ---------------------------------------------------------------------------
