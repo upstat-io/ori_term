@@ -1303,6 +1303,196 @@ fn kitty_text_bypasses_plain_text_passthrough() {
     assert_eq!(r, b"\x1b[97;1;97u");
 }
 
+// ==================== Kitty: release gating by mode flags ====================
+
+#[test]
+fn kitty_named_key_release_with_report_events_only() {
+    // REPORT_EVENT_TYPES without REPORT_ALL — named key release should still be sent.
+    let r = enc_event(
+        Key::Named(NamedKey::Enter),
+        Modifiers::empty(),
+        kitty_report_events(),
+        None,
+        KeyEventType::Release,
+    );
+    assert_eq!(r, b"\x1b[13;1:3u");
+}
+
+#[test]
+fn kitty_named_key_release_disambiguate_only() {
+    // DISAMBIGUATE alone — release should be suppressed (no REPORT_EVENT_TYPES).
+    let r = enc_event(
+        Key::Named(NamedKey::Enter),
+        Modifiers::empty(),
+        kitty_disambiguate(),
+        None,
+        KeyEventType::Release,
+    );
+    assert!(r.is_empty());
+}
+
+// ==================== Kitty: bare modifiers with REPORT_ALL ====================
+
+#[test]
+fn kitty_bare_shift_report_all_produces_nothing() {
+    // Bare modifier keys are not in our kitty_codepoint table, so they produce nothing.
+    let r = enc(
+        Key::Named(NamedKey::Shift),
+        Modifiers::SHIFT,
+        kitty_report_all(),
+    );
+    assert!(r.is_empty());
+}
+
+#[test]
+fn kitty_bare_control_report_all_produces_nothing() {
+    let r = enc(
+        Key::Named(NamedKey::Control),
+        Modifiers::CONTROL,
+        kitty_report_all(),
+    );
+    assert!(r.is_empty());
+}
+
+// ==================== Kitty: all flags combined ====================
+
+fn kitty_all_flags() -> TermMode {
+    TermMode::default()
+        | TermMode::DISAMBIGUATE_ESC_CODES
+        | TermMode::REPORT_EVENT_TYPES
+        | TermMode::REPORT_ALL_KEYS_AS_ESC
+        | TermMode::REPORT_ASSOCIATED_TEXT
+}
+
+#[test]
+fn kitty_enter_all_flags_press() {
+    // All 5 mode bits active — Enter press with no text.
+    let r = enc(
+        Key::Named(NamedKey::Enter),
+        Modifiers::empty(),
+        kitty_all_flags(),
+    );
+    assert_eq!(r, b"\x1b[13u");
+}
+
+#[test]
+fn kitty_enter_all_flags_release() {
+    // All flags — release event includes event type suffix.
+    let r = enc_event(
+        Key::Named(NamedKey::Enter),
+        Modifiers::empty(),
+        kitty_all_flags(),
+        None,
+        KeyEventType::Release,
+    );
+    assert_eq!(r, b"\x1b[13;1:3u");
+}
+
+#[test]
+fn kitty_char_all_flags_press_with_text() {
+    // All flags — 'a' press includes associated text.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_all_flags(),
+        "a",
+    );
+    assert_eq!(r, b"\x1b[97;1;97u");
+}
+
+// ==================== Kitty: associated text edge cases ====================
+
+#[test]
+fn kitty_text_del_filtered() {
+    // DEL (0x7F) is filtered from associated text.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text(),
+        "a\x7Fb",
+    );
+    assert_eq!(r, b"\x1b[97;1;97:98u");
+}
+
+#[test]
+fn kitty_text_c1_control_filtered() {
+    // C1 control characters (0x80-0x9F) are filtered from associated text.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text(),
+        "a\u{0085}b",
+    );
+    // U+0085 (NEL) is in C1 range, filtered out.
+    assert_eq!(r, b"\x1b[97;1;97:98u");
+}
+
+#[test]
+fn kitty_text_space_key_with_text() {
+    // Space (codepoint 32) with REPORT_ASSOCIATED_TEXT includes text suffix.
+    let r = enc_event(
+        Key::Named(NamedKey::Space),
+        Modifiers::empty(),
+        kitty_report_text(),
+        Some(" "),
+        KeyEventType::Press,
+    );
+    assert_eq!(r, b"\x1b[32;1;32u");
+}
+
+#[test]
+fn kitty_text_ctrl_shift_letter() {
+    // Ctrl+Shift+A: key codepoint 97, modifier 6 (Ctrl=4 + Shift=1 + 1), text 'A' (65).
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::CONTROL | Modifiers::SHIFT,
+        kitty_report_text(),
+        "A",
+    );
+    assert_eq!(r, b"\x1b[97;6;65u");
+}
+
+#[test]
+fn kitty_text_emoji_codepoint() {
+    // High codepoint emoji in text field.
+    let r = enc_text(
+        Key::Character("a".into()),
+        Modifiers::empty(),
+        kitty_report_text(),
+        "\u{1F600}",
+    );
+    // U+1F600 = 128512
+    assert_eq!(r, b"\x1b[97;1;128512u");
+}
+
+// ==================== Kitty: repeat event for named keys ====================
+
+#[test]
+fn kitty_named_key_repeat() {
+    // F1 repeat with REPORT_EVENT_TYPES — event type suffix :2.
+    let r = enc_event(
+        Key::Named(NamedKey::F1),
+        Modifiers::empty(),
+        kitty_report_events(),
+        None,
+        KeyEventType::Repeat,
+    );
+    assert_eq!(r, b"\x1b[57364;1:2u");
+}
+
+#[test]
+fn kitty_arrow_repeat() {
+    // Arrow key repeat.
+    let r = enc_event(
+        Key::Named(NamedKey::ArrowUp),
+        Modifiers::empty(),
+        kitty_report_events(),
+        None,
+        KeyEventType::Repeat,
+    );
+    assert_eq!(r, b"\x1b[57352;1:2u");
+}
+
 // ==================== Ctrl+/ and Ctrl+@ edge cases ====================
 
 #[test]

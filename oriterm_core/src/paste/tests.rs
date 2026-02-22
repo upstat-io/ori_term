@@ -300,3 +300,60 @@ fn format_empty_paths() {
     let refs: Vec<&Path> = vec![];
     assert_eq!(format_dropped_paths(&refs), "");
 }
+
+#[test]
+fn format_path_with_backslashes() {
+    // Windows-style paths with backslashes.
+    let paths = [Path::new("C:\\Users\\test\\file.txt")];
+    let refs: Vec<&Path> = paths.iter().copied().collect();
+    assert_eq!(format_dropped_paths(&refs), "C:\\Users\\test\\file.txt");
+}
+
+#[test]
+fn format_path_backslash_with_spaces() {
+    // Windows-style path with spaces gets quoted.
+    let paths = [Path::new("C:\\Program Files\\app.exe")];
+    let refs: Vec<&Path> = paths.iter().copied().collect();
+    assert_eq!(
+        format_dropped_paths(&refs),
+        "\"C:\\Program Files\\app.exe\""
+    );
+}
+
+// --- paste: OSC/CSI injection defense ---
+
+#[test]
+fn prepare_bracketed_strips_osc_title_injection() {
+    // OSC sequence (title set) inside bracketed paste — ESC is stripped.
+    let result = prepare_paste("before\x1b]0;evil\x07after", true, false);
+    assert_eq!(result, b"\x1b[200~before]0;evil\x07after\x1b[201~");
+}
+
+#[test]
+fn prepare_bracketed_strips_csi_sgr_injection() {
+    // CSI SGR sequence inside bracketed paste — ESC is stripped.
+    let result = prepare_paste("test\x1b[31mred", true, false);
+    assert_eq!(result, b"\x1b[200~test[31mred\x1b[201~");
+}
+
+#[test]
+fn prepare_bracketed_strips_multiple_esc_sequences() {
+    // Multiple ESC chars scattered through paste text.
+    let result = prepare_paste("\x1bA\x1bB\x1bC", true, false);
+    assert_eq!(result, b"\x1b[200~ABC\x1b[201~");
+}
+
+// --- normalize_line_endings: long chains ---
+
+#[test]
+fn normalize_many_consecutive_crlf() {
+    // 5 consecutive CRLF pairs → 5 consecutive CR.
+    let input = "a\r\n\r\n\r\n\r\n\r\nb";
+    assert_eq!(normalize_line_endings(input), "a\r\r\r\r\rb");
+}
+
+#[test]
+fn normalize_alternating_cr_lf_crlf() {
+    // Mixed: bare CR, bare LF, CRLF — all become CR.
+    assert_eq!(normalize_line_endings("a\rb\nc\r\nd"), "a\rb\rc\rd");
+}
