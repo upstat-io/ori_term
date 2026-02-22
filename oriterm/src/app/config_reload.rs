@@ -291,7 +291,7 @@ pub(crate) fn apply_font_config(
             .fallback
             .iter()
             .position(|fb| fb.family == entry.family)
-            .map(|i| FaceIdx(i as u16 + 4)); // Fallback indices start at 4
+            .map(FaceIdx::from_fallback_index);
         match face_idx {
             Some(idx) => {
                 collection.add_codepoint_mapping(start, end, idx);

@@ -269,14 +269,26 @@ impl FaceIdx {
     /// Regular primary face.
     pub const REGULAR: Self = Self(0);
 
+    /// Number of primary style slots (Regular, Bold, Italic, `BoldItalic`).
+    ///
+    /// Fallback font indices start at this offset.
+    pub const PRIMARY_COUNT: u16 = 4;
+
     /// Sentinel for built-in geometric glyphs (box drawing, blocks, braille, powerline).
     ///
     /// These glyphs are rasterized from cell dimensions, not from any font face.
     pub const BUILTIN: Self = Self(u16::MAX);
 
-    /// Whether this index refers to a fallback font (index >= 4).
+    /// Construct a `FaceIdx` from a zero-based fallback index.
+    ///
+    /// Fallback 0 maps to `FaceIdx(4)`, fallback 1 to `FaceIdx(5)`, etc.
+    pub fn from_fallback_index(idx: usize) -> Self {
+        Self(idx as u16 + Self::PRIMARY_COUNT)
+    }
+
+    /// Whether this index refers to a fallback font (index >= `PRIMARY_COUNT`).
     pub fn is_fallback(self) -> bool {
-        self.0 >= 4 && self != Self::BUILTIN
+        self.0 >= Self::PRIMARY_COUNT && self != Self::BUILTIN
     }
 
     /// Convert to `usize` for array indexing.
@@ -284,12 +296,12 @@ impl FaceIdx {
         self.0 as usize
     }
 
-    /// Fallback index (offset from 4) for indexing into the fallback array.
+    /// Fallback index (zero-based) for indexing into the fallback array.
     ///
     /// Returns `None` if this is a primary face.
     pub fn fallback_index(self) -> Option<usize> {
         if self.is_fallback() {
-            Some(self.0 as usize - 4)
+            Some(self.0 as usize - Self::PRIMARY_COUNT as usize)
         } else {
             None
         }

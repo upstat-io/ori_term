@@ -423,9 +423,9 @@ impl FontCollection {
             return None;
         }
 
-        // Cache hit — early return. Uses `contains_key` + final `get` because
-        // `if let Some(g) = get()` borrows `glyph_cache` for the return
-        // lifetime, conflicting with `insert` on the miss path (E0502).
+        // NLL limitation: `if let Some(g) = get() { return Some(g); }` ties the
+        // immutable borrow to the return lifetime, blocking `insert` on the miss
+        // path (E0502). Two lookups are the idiomatic workaround until Polonius.
         if self.glyph_cache.contains_key(&key) {
             return self.glyph_cache.get(&key);
         }
