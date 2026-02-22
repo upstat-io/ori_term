@@ -1494,3 +1494,183 @@ fn resolve_subpixel_mode_auto_detection() {
         SubpixelMode::None,
     );
 }
+
+// ---------------------------------------------------------------------------
+// resolve_subpixel_mode unknown value fallback
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_subpixel_mode_unknown_value_falls_back() {
+    use crate::font::SubpixelMode;
+
+    let mut cfg = FontConfig::default();
+    cfg.subpixel_mode = Some("garbage".to_owned());
+    // Unknown value → auto-detection based on scale factor.
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0),
+        SubpixelMode::Rgb,
+    );
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0),
+        SubpixelMode::None,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// apply_font_config integration tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn apply_font_config_sets_custom_features() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    cfg.features = vec!["dlig".into(), "-liga".into()];
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    // Before: defaults are liga + calt.
+    assert_eq!(
+        collection
+            .features_for_face(crate::font::FaceIdx::REGULAR)
+            .len(),
+        2
+    );
+
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+
+    // After: features replaced with dlig + -liga.
+    let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
+    assert_eq!(features.len(), 2, "should have 2 features after apply");
+    // dlig enabled (value=1), -liga disabled (value=0).
+    assert_eq!(features[0].value, 1, "dlig should be enabled");
+    assert_eq!(features[1].value, 0, "-liga should be disabled");
+}
+
+#[test]
+fn apply_font_config_empty_features_clears_defaults() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    cfg.features = Vec::new(); // No features.
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+
+    let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
+    assert!(
+        features.is_empty(),
+        "empty config features should clear defaults"
+    );
+}
+
+#[test]
+fn apply_font_config_codepoint_map_invalid_range_skipped() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    cfg.fallback.push(FallbackFontConfig {
+        family: "TestFont".into(),
+        features: None,
+        size_offset: None,
+    });
+    cfg.codepoint_map.push(CodepointMapConfig {
+        range: "ZZZZ".into(), // Invalid hex.
+        family: "TestFont".into(),
+    });
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    // Should not panic — invalid range is logged and skipped.
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+
+    // Collection should have no codepoint mappings.
+    assert!(!collection.has_codepoint_mappings());
+}
+
+#[test]
+fn apply_font_config_codepoint_map_missing_family_skipped() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let mut cfg = FontConfig::default();
+    // No fallbacks configured, but codepoint_map references a family.
+    cfg.codepoint_map.push(CodepointMapConfig {
+        range: "E000-F8FF".into(),
+        family: "NonExistentFont".into(),
+    });
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    // Should not panic — missing family is logged and skipped.
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+
+    // No mappings added since the family wasn't found.
+    assert!(!collection.has_codepoint_mappings());
+}
+
+#[test]
+fn apply_font_config_with_no_user_fallbacks() {
+    use crate::font::collection::FontSet;
+    use crate::font::{FontCollection, GlyphFormat, HintingMode};
+
+    let cfg = FontConfig::default(); // No fallbacks, no codepoint_map.
+
+    let font_set = FontSet::load(None, 400).expect("font must load");
+    let mut collection = FontCollection::new(
+        font_set,
+        12.0,
+        96.0,
+        GlyphFormat::Alpha,
+        400,
+        HintingMode::Full,
+    )
+    .expect("collection must build");
+
+    // Should not panic with zero user fallbacks.
+    crate::app::config_reload::apply_font_config(&mut collection, &cfg, 0);
+
+    // Default features should still be set (from config defaults: calt + liga).
+    let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
+    assert_eq!(features.len(), 2, "default config features are calt + liga");
+}

@@ -1747,3 +1747,170 @@ fn codepoint_map_no_entries_is_noop() {
     assert_ne!(resolved.glyph_id, 0);
     assert_eq!(resolved.face_idx, FaceIdx::REGULAR);
 }
+
+// ── set_features (Section 6.7 config wiring) ──
+
+#[test]
+fn set_features_replaces_defaults() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+
+    // Default: liga + calt (2 features).
+    assert_eq!(fc.features_for_face(FaceIdx::REGULAR).len(), 2);
+
+    // Replace with a single feature: dlig.
+    let new_features = super::parse_features(&["dlig"]);
+    fc.set_features(new_features);
+
+    let features = fc.features_for_face(FaceIdx::REGULAR);
+    assert_eq!(
+        features.len(),
+        1,
+        "should have 1 feature after set_features"
+    );
+    assert_eq!(features[0].value, 1, "dlig should be enabled");
+}
+
+#[test]
+fn set_features_empty_clears_all() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    assert_eq!(fc.features_for_face(FaceIdx::REGULAR).len(), 2);
+
+    fc.set_features(Vec::new());
+
+    assert!(
+        fc.features_for_face(FaceIdx::REGULAR).is_empty(),
+        "empty set_features should clear all features"
+    );
+}
+
+#[test]
+fn set_features_affects_all_primary_faces() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let new_features = super::parse_features(&["dlig", "-calt", "kern"]);
+    fc.set_features(new_features);
+
+    // All 4 primary face slots should reflect collection features.
+    for i in 0..4 {
+        let features = fc.features_for_face(FaceIdx(i));
+        assert_eq!(
+            features.len(),
+            3,
+            "primary face {i} should have 3 features after set_features"
+        );
+    }
+}
+
+// ── set_fallback_meta (Section 6.2/6.7 config wiring) ──
+
+#[test]
+fn set_fallback_meta_applies_size_offset() {
+    let mut fc = system_collection(GlyphFormat::Alpha);
+    let base_size = fc.effective_size(FaceIdx(4));
+
+    // Apply a -2.0 size offset to the first fallback.
+    fc.set_fallback_meta(0, -2.0, None);
+
+    let adjusted_size = fc.effective_size(FaceIdx(4));
+    let expected = base_size - 2.0;
+    assert!(
+        (adjusted_size - expected).abs() < 0.01,
+        "size_offset -2.0 should reduce effective size from {base_size} to ~{expected}, got {adjusted_size}"
+    );
+}
+
+#[test]
+fn set_fallback_meta_applies_feature_override() {
+    let mut fc = system_collection(GlyphFormat::Alpha);
+
+    // Default: fallback uses collection features (liga + calt).
+    assert_eq!(
+        fc.features_for_face(FaceIdx(4)).len(),
+        2,
+        "fallback should start with collection defaults"
+    );
+
+    // Override with per-fallback features.
+    let fb_features = super::parse_features(&["dlig"]);
+    fc.set_fallback_meta(0, 0.0, Some(fb_features));
+
+    let features = fc.features_for_face(FaceIdx(4));
+    assert_eq!(
+        features.len(),
+        1,
+        "fallback should use per-fallback features after override"
+    );
+    assert_eq!(features[0].value, 1, "dlig should be enabled");
+
+    // Primary face should still use collection defaults.
+    assert_eq!(
+        fc.features_for_face(FaceIdx::REGULAR).len(),
+        2,
+        "primary face should be unaffected by fallback override"
+    );
+}
+
+#[test]
+fn set_fallback_meta_out_of_bounds_is_noop() {
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    // embedded_only has 0 fallbacks — index 0 is out of bounds.
+    // Should not panic.
+    fc.set_fallback_meta(0, -2.0, None);
+    fc.set_fallback_meta(99, 5.0, Some(Vec::new()));
+    // Collection still works.
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    assert_ne!(resolved.glyph_id, 0);
+}
+
+#[test]
+fn set_fallback_meta_none_features_inherits_collection() {
+    let mut fc = system_collection(GlyphFormat::Alpha);
+
+    // First set a per-fallback override.
+    let fb_features = super::parse_features(&["dlig"]);
+    fc.set_fallback_meta(0, 0.0, Some(fb_features));
+    assert_eq!(fc.features_for_face(FaceIdx(4)).len(), 1);
+
+    // Then clear it back to None — should inherit collection features again.
+    fc.set_fallback_meta(0, 0.0, None);
+    assert_eq!(
+        fc.features_for_face(FaceIdx(4)).len(),
+        2,
+        "None features should fall back to collection defaults"
+    );
+}
+
+// ── parse_features edge cases ──
+
+#[test]
+fn parse_features_duplicate_tags() {
+    let features = super::parse_features(&["liga", "liga", "-liga"]);
+    // All three should parse — rustybuzz applies them in order.
+    assert_eq!(features.len(), 3, "duplicate tags should all parse");
+    assert_eq!(features[0].value, 1);
+    assert_eq!(features[1].value, 1);
+    assert_eq!(features[2].value, 0);
+}
+
+// ── set_features cache clearing ──
+
+#[test]
+fn set_features_does_not_invalidate_cache() {
+    // set_features changes shaping behavior but existing rasterized bitmaps
+    // remain valid (features affect cluster shaping, not individual glyph
+    // outlines). The cache should NOT be cleared — only set_size, set_hinting,
+    // and set_format clear the cache.
+    let mut fc = embedded_only_collection(GlyphFormat::Alpha);
+    let resolved = fc.resolve('A', GlyphStyle::Regular);
+    let key = RasterKey::from_resolved(resolved, super::size_key(fc.size_px()), true, 0);
+    let _ = fc.rasterize(key);
+    let before = fc.cache_len();
+    assert!(before > 0, "cache should have entries after rasterize");
+
+    fc.set_features(super::parse_features(&["dlig"]));
+
+    assert_eq!(
+        fc.cache_len(),
+        before,
+        "set_features should not clear the glyph cache (features affect shaping, not rasterization)"
+    );
+}
