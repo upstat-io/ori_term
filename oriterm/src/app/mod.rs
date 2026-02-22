@@ -223,6 +223,58 @@ impl App {
             _ => {}
         }
     }
+
+    /// Dispatch a terminal event from the PTY reader thread.
+    fn handle_terminal_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
+        match event {
+            Event::Wakeup => {
+                if let Some(tab) = &mut self.tab {
+                    tab.check_selection_invalidation();
+                }
+                self.dirty = true;
+            }
+            Event::Bell => {
+                if let Some(tab) = &mut self.tab {
+                    tab.set_bell();
+                }
+            }
+            Event::Title(title) => {
+                if let Some(tab) = &mut self.tab {
+                    tab.set_title(title);
+                }
+            }
+            Event::ResetTitle => {
+                if let Some(tab) = &mut self.tab {
+                    tab.set_title(String::new());
+                }
+            }
+            Event::ClipboardStore(ty, text) => {
+                self.clipboard.store(ty, &text);
+            }
+            Event::ClipboardLoad(ty, formatter) => {
+                let text = self.clipboard.load(ty);
+                let response = formatter(&text);
+                if let Some(tab) = &self.tab {
+                    tab.write_input(response.as_bytes());
+                }
+            }
+            Event::PtyWrite(s) => {
+                if let Some(tab) = &self.tab {
+                    tab.write_input(s.as_bytes());
+                }
+            }
+            Event::ChildExit(code) => {
+                log::info!("child process exited with code {code}");
+                if let Some(gpu) = &self.gpu {
+                    gpu.save_pipeline_cache();
+                }
+                event_loop.exit();
+            }
+            _ => {
+                log::debug!("unhandled terminal event: {event:?}");
+            }
+        }
+    }
 }
 
 impl ApplicationHandler<TermEvent> for App {
@@ -353,53 +405,13 @@ impl ApplicationHandler<TermEvent> for App {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: TermEvent) {
-        let TermEvent::Terminal { tab_id: _, event } = event;
         match event {
-            Event::Wakeup => {
-                if let Some(tab) = &mut self.tab {
-                    tab.check_selection_invalidation();
-                }
-                self.dirty = true;
+            TermEvent::ConfigReload => {
+                log::info!("config reload requested");
+                // TODO(section-13.4): apply_config_reload()
             }
-            Event::Bell => {
-                if let Some(tab) = &mut self.tab {
-                    tab.set_bell();
-                }
-            }
-            Event::Title(title) => {
-                if let Some(tab) = &mut self.tab {
-                    tab.set_title(title);
-                }
-            }
-            Event::ResetTitle => {
-                if let Some(tab) = &mut self.tab {
-                    tab.set_title(String::new());
-                }
-            }
-            Event::ClipboardStore(ty, text) => {
-                self.clipboard.store(ty, &text);
-            }
-            Event::ClipboardLoad(ty, formatter) => {
-                let text = self.clipboard.load(ty);
-                let response = formatter(&text);
-                if let Some(tab) = &self.tab {
-                    tab.write_input(response.as_bytes());
-                }
-            }
-            Event::PtyWrite(s) => {
-                if let Some(tab) = &self.tab {
-                    tab.write_input(s.as_bytes());
-                }
-            }
-            Event::ChildExit(code) => {
-                log::info!("child process exited with code {code}");
-                if let Some(gpu) = &self.gpu {
-                    gpu.save_pipeline_cache();
-                }
-                event_loop.exit();
-            }
-            _ => {
-                log::debug!("unhandled terminal event: {event:?}");
+            TermEvent::Terminal { tab_id: _, event } => {
+                self.handle_terminal_event(event_loop, event);
             }
         }
     }

@@ -62,6 +62,8 @@ pub enum TermEvent {
         /// The terminal event (wakeup, title change, bell, etc.).
         event: Event,
     },
+    /// The config file watcher detected a change.
+    ConfigReload,
 }
 
 /// Bridges terminal events to the winit event loop.

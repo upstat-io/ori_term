@@ -9,9 +9,11 @@
 
 mod app;
 mod clipboard;
+mod config;
 mod font;
 mod gpu;
 mod key_encoding;
+mod keybindings;
 mod platform;
 mod pty;
 mod tab;
