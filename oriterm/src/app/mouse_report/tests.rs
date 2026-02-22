@@ -25,6 +25,11 @@ fn button_code_right_press() {
 }
 
 #[test]
+fn button_code_none_press() {
+    assert_eq!(button_code(MouseButton::None, MouseEventKind::Press), 3);
+}
+
+#[test]
 fn button_code_scroll_up() {
     assert_eq!(
         button_code(MouseButton::ScrollUp, MouseEventKind::Press),
@@ -45,6 +50,12 @@ fn button_code_motion_adds_32() {
     assert_eq!(button_code(MouseButton::Left, MouseEventKind::Motion), 32);
     assert_eq!(button_code(MouseButton::Middle, MouseEventKind::Motion), 33);
     assert_eq!(button_code(MouseButton::Right, MouseEventKind::Motion), 34);
+}
+
+#[test]
+fn button_code_none_motion_is_35() {
+    // Mode 1003 no-button motion: base 3 + 32 = 35.
+    assert_eq!(button_code(MouseButton::None, MouseEventKind::Motion), 35);
 }
 
 // -- apply_modifiers tests --
@@ -160,6 +171,49 @@ fn sgr_large_coordinates() {
     assert!(s.contains(";1000;500M"));
 }
 
+#[test]
+fn sgr_middle_release_preserves_button_code() {
+    // SGR release encodes the real button code (not generic 3 like Normal).
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event_with_mods(
+        MouseButton::Middle,
+        MouseEventKind::Release,
+        5,
+        10,
+        MouseModifiers::default(),
+    );
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // Middle button = code 1, coords (6,11), release = 'm'.
+    assert_eq!(s, "\x1b[<1;6;11m");
+}
+
+#[test]
+fn sgr_right_release_preserves_button_code() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event(MouseButton::Right, MouseEventKind::Release, 3, 7);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // Right button = code 2, coords (4,8), release = 'm'.
+    assert_eq!(s, "\x1b[<2;4;8m");
+}
+
+#[test]
+fn sgr_all_modifiers_full_round_trip() {
+    // Shift+Alt+Ctrl right-click through full SGR encoding.
+    let mods = MouseModifiers {
+        shift: true,
+        alt: true,
+        ctrl: true,
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event_with_mods(MouseButton::Right, MouseEventKind::Press, 10, 20, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // Right(2) + shift(4) + alt(8) + ctrl(16) = 30, coords (11,21).
+    assert_eq!(s, "\x1b[<30;11;21M");
+}
+
 // -- Normal (X10) encoding tests --
 
 #[test]
@@ -174,13 +228,30 @@ fn normal_left_click() {
 }
 
 #[test]
-fn normal_coords_clamped_at_222() {
+fn normal_out_of_range_drops_event() {
     let mut buf = [0u8; 32];
-    let len = encode_normal(&mut buf, 0, 500, 500);
+    // Coords > 222 are unencodable — event is silently dropped.
+    assert_eq!(encode_normal(&mut buf, 0, 500, 0), 0);
+    assert_eq!(encode_normal(&mut buf, 0, 0, 500), 0);
+    assert_eq!(encode_normal(&mut buf, 0, 500, 500), 0);
+}
+
+#[test]
+fn normal_at_max_encodable_coord() {
+    let mut buf = [0u8; 32];
+    // 222 is the max encodable coordinate (32 + 1 + 222 = 255).
+    let len = encode_normal(&mut buf, 0, 222, 222);
     assert_eq!(len, 6);
-    // 32 + 1 + 222 = 255 (max u8 value).
     assert_eq!(buf[4], 255);
     assert_eq!(buf[5], 255);
+}
+
+#[test]
+fn normal_just_past_max_drops() {
+    let mut buf = [0u8; 32];
+    // 223 is one past the limit — should drop.
+    assert_eq!(encode_normal(&mut buf, 0, 223, 0), 0);
+    assert_eq!(encode_normal(&mut buf, 0, 0, 223), 0);
 }
 
 #[test]
@@ -190,6 +261,61 @@ fn normal_release_code_is_3() {
     let len = encode_normal(&mut buf, 3, 5, 5);
     assert_eq!(len, 6);
     assert_eq!(buf[3], 35); // 32 + 3
+}
+
+#[test]
+fn normal_release_with_shift_modifier() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event_with_mods(
+        MouseButton::Left,
+        MouseEventKind::Release,
+        0,
+        0,
+        MouseModifiers {
+            shift: true,
+            ..Default::default()
+        },
+    );
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Release code 3 + shift 4 = 7; button byte = 32 + 7 = 39.
+    assert_eq!(bytes[3], 39);
+}
+
+#[test]
+fn normal_release_with_ctrl_modifier() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event_with_mods(
+        MouseButton::Left,
+        MouseEventKind::Release,
+        0,
+        0,
+        MouseModifiers {
+            ctrl: true,
+            ..Default::default()
+        },
+    );
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Release code 3 + ctrl 16 = 19; button byte = 32 + 19 = 51.
+    assert_eq!(bytes[3], 51);
+}
+
+#[test]
+fn normal_release_with_all_modifiers() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event_with_mods(
+        MouseButton::Left,
+        MouseEventKind::Release,
+        0,
+        0,
+        MouseModifiers {
+            shift: true,
+            alt: true,
+            ctrl: true,
+        },
+    );
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Release code 3 + shift(4) + alt(8) + ctrl(16) = 31; byte = 32 + 31 = 63.
+    assert_eq!(bytes[3], 63);
 }
 
 // -- UTF-8 encoding tests --
@@ -203,6 +329,24 @@ fn utf8_small_coords_single_byte() {
     assert_eq!(buf[3], 32); // 32 + 0 (button)
     assert_eq!(buf[4], 38); // 32 + 1 + 5
     assert_eq!(buf[5], 43); // 32 + 1 + 10
+}
+
+#[test]
+fn utf8_boundary_pos_94_single_byte() {
+    // pos=94: val = 32 + 1 + 94 = 127 (still fits in single byte).
+    let mut buf = [0u8; 32];
+    let len = encode_utf8(&mut buf, 0, 94, 94);
+    assert_eq!(len, 3 + 1 + 1 + 1); // header + button + 2 single-byte coords
+    assert_eq!(buf[4], 127);
+    assert_eq!(buf[5], 127);
+}
+
+#[test]
+fn utf8_boundary_pos_95_two_bytes() {
+    // pos=95: val = 32 + 1 + 95 = 128 (needs 2-byte encoding).
+    let mut buf = [0u8; 32];
+    let len = encode_utf8(&mut buf, 0, 95, 95);
+    assert_eq!(len, 3 + 1 + 2 + 2); // header + button + 2 two-byte coords
 }
 
 #[test]
@@ -223,6 +367,16 @@ fn utf8_out_of_range_returns_zero() {
     assert_eq!(len, 0);
 }
 
+#[test]
+fn utf8_max_button_code_with_all_modifiers_in_range() {
+    // Highest realistic code: ScrollDown(65) + shift(4) + alt(8) + ctrl(16) = 93.
+    // Button byte: 32 + 93 = 125 (< 128, single byte — safe).
+    let mut buf = [0u8; 32];
+    let len = encode_utf8(&mut buf, 93, 0, 0);
+    assert!(len > 0);
+    assert_eq!(buf[3], 125);
+}
+
 // -- encode_mouse_event dispatch tests --
 
 fn event(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> MouseEvent {
@@ -232,6 +386,22 @@ fn event(button: MouseButton, kind: MouseEventKind, col: usize, line: usize) -> 
         col,
         line,
         mods: MouseModifiers::default(),
+    }
+}
+
+fn event_with_mods(
+    button: MouseButton,
+    kind: MouseEventKind,
+    col: usize,
+    line: usize,
+    mods: MouseModifiers,
+) -> MouseEvent {
+    MouseEvent {
+        button,
+        kind,
+        col,
+        line,
+        mods,
     }
 }
 
@@ -284,4 +454,83 @@ fn dispatch_sgr_release_uses_lowercase_m() {
     let e = event(MouseButton::Left, MouseEventKind::Release, 0, 0);
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     assert_eq!(*bytes.last().unwrap(), b'm');
+}
+
+// -- No-button motion tests (mode 1003) --
+
+#[test]
+fn no_button_motion_sgr_uses_code_35() {
+    // Mode 1003 buttonless motion: None(3) + motion(32) = 35.
+    let mode = TermMode::MOUSE_MOTION | TermMode::MOUSE_SGR;
+    let e = event(MouseButton::None, MouseEventKind::Motion, 10, 20);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    assert_eq!(s, "\x1b[<35;11;21M");
+}
+
+#[test]
+fn no_button_motion_normal_uses_code_35() {
+    let mode = TermMode::MOUSE_MOTION;
+    let e = event(MouseButton::None, MouseEventKind::Motion, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Button byte: 32 + 35 = 67.
+    assert_eq!(bytes[3], 67);
+}
+
+// -- Modifier combinations on scroll --
+
+#[test]
+fn scroll_up_with_shift_sgr() {
+    let mods = MouseModifiers {
+        shift: true,
+        ..Default::default()
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event_with_mods(MouseButton::ScrollUp, MouseEventKind::Press, 5, 5, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // ScrollUp(64) + shift(4) = 68.
+    assert_eq!(s, "\x1b[<68;6;6M");
+}
+
+#[test]
+fn scroll_down_with_ctrl_sgr() {
+    let mods = MouseModifiers {
+        ctrl: true,
+        ..Default::default()
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event_with_mods(MouseButton::ScrollDown, MouseEventKind::Press, 5, 5, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // ScrollDown(65) + ctrl(16) = 81.
+    assert_eq!(s, "\x1b[<81;6;6M");
+}
+
+#[test]
+fn scroll_up_with_alt_normal() {
+    let mods = MouseModifiers {
+        alt: true,
+        ..Default::default()
+    };
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    let e = event_with_mods(MouseButton::ScrollUp, MouseEventKind::Press, 0, 0, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // ScrollUp(64) + alt(8) = 72; button byte = 32 + 72 = 104.
+    assert_eq!(bytes[3], 104);
+}
+
+// -- Buffer overflow safety --
+
+#[test]
+fn sgr_extreme_coordinates_fit_in_buffer() {
+    // Max realistic SGR: "\x1b[<125;65536;65536M" = ~24 chars, fits in 32.
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR;
+    let e = event(MouseButton::Left, MouseEventKind::Press, 65535, 65535);
+    let report = encode_mouse_event(&e, mode);
+    let bytes = report.as_bytes();
+    assert!(!bytes.is_empty());
+    assert!(bytes.len() <= 32);
+    let s = std::str::from_utf8(bytes).unwrap();
+    assert!(s.ends_with('M'));
 }

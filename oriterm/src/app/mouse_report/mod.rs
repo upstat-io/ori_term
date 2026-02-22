@@ -24,6 +24,8 @@ pub(crate) enum MouseButton {
     Middle,
     /// Right button (code 2).
     Right,
+    /// No button held (code 3, used for mode 1003 buttonless motion).
+    None,
     /// Scroll wheel up (code 64).
     ScrollUp,
     /// Scroll wheel down (code 65).
@@ -87,6 +89,7 @@ fn button_code(button: MouseButton, kind: MouseEventKind) -> u8 {
         MouseButton::Left => 0,
         MouseButton::Middle => 1,
         MouseButton::Right => 2,
+        MouseButton::None => 3,
         MouseButton::ScrollUp => 64,
         MouseButton::ScrollDown => 65,
     };
@@ -179,11 +182,17 @@ fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
 /// Encode a mouse event in Normal (X10) format.
 ///
 /// Format: `\x1b[M` + 3 bytes (button, col, line).
-/// Coordinates are clamped to 222 (32 + 1 + 222 = 255, max `u8` value).
+/// Returns 0 (drops the event) if either coordinate exceeds 222,
+/// since 32 + 1 + 222 = 255 is the max encodable `u8` value.
+/// Sending a clamped coordinate would report a wrong position.
 fn encode_normal(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
+    if col > 222 || line > 222 {
+        return 0;
+    }
+
     let btn = 32 + code;
-    let cx = (32 + 1 + col.min(222)) as u8;
-    let cy = (32 + 1 + line.min(222)) as u8;
+    let cx = (32 + 1 + col) as u8;
+    let cy = (32 + 1 + line) as u8;
 
     let mut cursor = Cursor::new(buf);
     let Ok(()) = cursor.write_all(&[0x1b, b'[', b'M', btn, cx, cy]) else {
@@ -305,9 +314,15 @@ impl App {
         }
         self.mouse.set_last_reported_cell(Some((col, line)));
 
-        // Mode 1003 motion without button uses Left + Motion (code 32).
+        // Drag (button held) uses the actual button code; mode 1003 motion
+        // without a button uses None (code 3+32 = 35).
+        let button = if self.mouse.left_down() {
+            MouseButton::Left
+        } else {
+            MouseButton::None
+        };
         let event = MouseEvent {
-            button: MouseButton::Left,
+            button,
             kind: MouseEventKind::Motion,
             col,
             line,
