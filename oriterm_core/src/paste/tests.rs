@@ -10,6 +10,17 @@ use super::{
 // --- filter_paste ---
 
 #[test]
+fn filter_empty_string() {
+    assert_eq!(filter_paste(""), "");
+}
+
+#[test]
+fn filter_only_tabs_produces_empty() {
+    // All-whitespace (tabs only) filtered to empty — downstream must handle empty result.
+    assert_eq!(filter_paste("\t\t\t"), "");
+}
+
+#[test]
 fn filter_strips_tabs() {
     assert_eq!(filter_paste("hello\tworld"), "helloworld");
     assert_eq!(filter_paste("\t\t"), "");
@@ -58,6 +69,32 @@ fn filter_combined_characters() {
 // --- normalize_line_endings ---
 
 #[test]
+fn normalize_empty_string() {
+    assert_eq!(normalize_line_endings(""), "");
+}
+
+#[test]
+fn normalize_consecutive_lf_preserved() {
+    // Double newline must become double CR, not collapsed.
+    assert_eq!(normalize_line_endings("a\n\nb"), "a\r\rb");
+}
+
+#[test]
+fn normalize_only_newlines() {
+    assert_eq!(normalize_line_endings("\n\n\n"), "\r\r\r");
+}
+
+#[test]
+fn normalize_trailing_newline() {
+    assert_eq!(normalize_line_endings("hello\n"), "hello\r");
+}
+
+#[test]
+fn normalize_leading_newline() {
+    assert_eq!(normalize_line_endings("\nhello"), "\rhello");
+}
+
+#[test]
 fn normalize_crlf_to_cr() {
     assert_eq!(normalize_line_endings("hello\r\nworld"), "hello\rworld");
 }
@@ -91,6 +128,19 @@ fn normalize_consecutive_crlf() {
 // --- strip_escape_chars ---
 
 #[test]
+fn strip_multiple_esc_sequences() {
+    assert_eq!(
+        strip_escape_chars("\x1b[31mred\x1b[0m normal \x1b[1mbold\x1b[0m"),
+        "[31mred[0m normal [1mbold[0m"
+    );
+}
+
+#[test]
+fn strip_only_esc_chars() {
+    assert_eq!(strip_escape_chars("\x1b\x1b\x1b"), "");
+}
+
+#[test]
 fn strip_removes_esc() {
     assert_eq!(strip_escape_chars("hello\x1b[31mworld"), "hello[31mworld");
 }
@@ -113,6 +163,21 @@ fn strip_removes_bracketed_paste_end_marker() {
 // --- count_newlines ---
 
 #[test]
+fn count_empty_string() {
+    assert_eq!(count_newlines(""), 0);
+}
+
+#[test]
+fn count_only_newlines() {
+    assert_eq!(count_newlines("\n\n\n"), 3);
+}
+
+#[test]
+fn count_trailing_newline() {
+    assert_eq!(count_newlines("hello\n"), 1);
+}
+
+#[test]
 fn count_no_newlines() {
     assert_eq!(count_newlines("hello world"), 0);
 }
@@ -133,6 +198,32 @@ fn count_mixed_newlines() {
 }
 
 // --- prepare_paste ---
+
+#[test]
+fn prepare_empty_string_plain() {
+    assert_eq!(prepare_paste("", false, false), b"");
+}
+
+#[test]
+fn prepare_empty_string_bracketed() {
+    // Empty paste with bracketed mode should emit empty brackets.
+    assert_eq!(prepare_paste("", true, false), b"\x1b[200~\x1b[201~");
+}
+
+#[test]
+fn prepare_bracketed_neutralizes_end_marker() {
+    // Text containing the bracketed paste end sequence `\x1b[201~` must be
+    // de-fanged so the application can't be tricked into ending paste early.
+    let result = prepare_paste("injected\x1b[201~tail", true, false);
+    assert_eq!(result, b"\x1b[200~injected[201~tail\x1b[201~");
+}
+
+#[test]
+fn prepare_nul_bytes_passed_through() {
+    // NUL bytes in paste text pass through (terminal/PTY handles them).
+    let result = prepare_paste("a\0b", false, false);
+    assert_eq!(result, b"a\0b");
+}
 
 #[test]
 fn prepare_plain_no_filter() {
@@ -193,6 +284,15 @@ fn format_multiple_paths() {
         format_dropped_paths(&refs),
         "/home/user/a.txt \"/home/user/my file.txt\" /tmp/b.txt"
     );
+}
+
+#[test]
+fn format_path_with_quotes() {
+    // Paths containing double quotes are not double-escaped — they pass through.
+    // Shell interpretation is the user's responsibility.
+    let paths = [Path::new("/home/user/file\"name.txt")];
+    let refs: Vec<&Path> = paths.iter().copied().collect();
+    assert_eq!(format_dropped_paths(&refs), "/home/user/file\"name.txt");
 }
 
 #[test]
