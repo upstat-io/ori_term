@@ -292,7 +292,7 @@ impl App {
         };
 
         let mode = tab.terminal().lock().mode();
-        let has_drag = mode.contains(TermMode::MOUSE_DRAG) && self.mouse.left_down();
+        let has_drag = mode.contains(TermMode::MOUSE_DRAG) && self.mouse.any_button_down();
         let has_motion = mode.contains(TermMode::MOUSE_MOTION);
 
         if !has_drag && !has_motion {
@@ -316,8 +316,13 @@ impl App {
 
         // Drag (button held) uses the actual button code; mode 1003 motion
         // without a button uses None (code 3+32 = 35).
+        // Priority: left > middle > right (matches Alacritty).
         let button = if self.mouse.left_down() {
             MouseButton::Left
+        } else if self.mouse.middle_down() {
+            MouseButton::Middle
+        } else if self.mouse.right_down() {
+            MouseButton::Right
         } else {
             MouseButton::None
         };
@@ -378,7 +383,9 @@ impl App {
             } else {
                 MouseButton::ScrollDown
             };
-            let (col, line) = self.mouse_cell().unwrap_or((0, 0));
+            let Some((col, line)) = self.mouse_cell_clamped() else {
+                return;
+            };
             let event = MouseEvent {
                 button,
                 kind: MouseEventKind::Press,
@@ -423,6 +430,48 @@ impl App {
     /// Convert the current cursor position to a grid cell.
     fn mouse_cell(&self) -> Option<(usize, usize)> {
         self.pixel_to_cell(self.mouse.cursor_pos())
+    }
+
+    /// Convert the current cursor position to a grid cell, clamping to edges.
+    ///
+    /// Unlike [`mouse_cell`], this never returns `None` when the grid and
+    /// renderer are available — positions outside the grid are clamped to
+    /// the nearest edge cell. Returns `None` only if the grid widget or
+    /// renderer is missing.
+    fn mouse_cell_clamped(&self) -> Option<(usize, usize)> {
+        let (grid, renderer) = (self.terminal_grid.as_ref()?, self.renderer.as_ref()?);
+        let ctx = GridCtx {
+            widget: grid,
+            cell: renderer.cell_metrics(),
+        };
+        let pos = self.mouse.cursor_pos();
+
+        // Fast path: position is inside the grid.
+        if let Some(cell) = mouse_selection::pixel_to_cell(pos, &ctx) {
+            return Some(cell);
+        }
+
+        // Clamp to edge: compute the nearest valid cell.
+        let bounds = ctx.widget.bounds()?;
+        let cw = f64::from(ctx.cell.width);
+        let ch = f64::from(ctx.cell.height);
+        if cw <= 0.0 || ch <= 0.0 {
+            return None;
+        }
+        let max_col = ((f64::from(bounds.width()) / cw) as usize).saturating_sub(1);
+        let max_line = ((f64::from(bounds.height()) / ch) as usize).saturating_sub(1);
+
+        let col = if pos.x < f64::from(bounds.x()) {
+            0
+        } else {
+            (((pos.x - f64::from(bounds.x())) / cw) as usize).min(max_col)
+        };
+        let line = if pos.y < f64::from(bounds.y()) {
+            0
+        } else {
+            (((pos.y - f64::from(bounds.y())) / ch) as usize).min(max_line)
+        };
+        Some((col, line))
     }
 
     /// Convert a pixel position to a grid cell, using grid context.

@@ -456,7 +456,7 @@ fn dispatch_sgr_release_uses_lowercase_m() {
     assert_eq!(*bytes.last().unwrap(), b'm');
 }
 
-// -- No-button motion tests (mode 1003) --
+// -- Motion tests (drag and buttonless) --
 
 #[test]
 fn no_button_motion_sgr_uses_code_35() {
@@ -475,6 +475,54 @@ fn no_button_motion_normal_uses_code_35() {
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     // Button byte: 32 + 35 = 67.
     assert_eq!(bytes[3], 67);
+}
+
+#[test]
+fn middle_drag_motion_sgr_uses_code_33() {
+    // Middle button drag: Middle(1) + motion(32) = 33.
+    let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR;
+    let e = event(MouseButton::Middle, MouseEventKind::Motion, 8, 12);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    assert_eq!(s, "\x1b[<33;9;13M");
+}
+
+#[test]
+fn right_drag_motion_sgr_uses_code_34() {
+    // Right button drag: Right(2) + motion(32) = 34.
+    let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR;
+    let e = event(MouseButton::Right, MouseEventKind::Motion, 3, 7);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    assert_eq!(s, "\x1b[<34;4;8M");
+}
+
+#[test]
+fn middle_drag_motion_normal_uses_code_33() {
+    let mode = TermMode::MOUSE_DRAG;
+    let e = event(MouseButton::Middle, MouseEventKind::Motion, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Middle(1) + motion(32) = 33; button byte: 32 + 33 = 65.
+    assert_eq!(bytes[3], 65);
+}
+
+#[test]
+fn right_drag_motion_normal_uses_code_34() {
+    let mode = TermMode::MOUSE_DRAG;
+    let e = event(MouseButton::Right, MouseEventKind::Motion, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Right(2) + motion(32) = 34; button byte: 32 + 34 = 66.
+    assert_eq!(bytes[3], 66);
+}
+
+#[test]
+fn left_drag_motion_sgr_uses_code_32() {
+    // Left button drag: Left(0) + motion(32) = 32.
+    let mode = TermMode::MOUSE_DRAG | TermMode::MOUSE_SGR;
+    let e = event(MouseButton::Left, MouseEventKind::Motion, 3, 7);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    assert_eq!(s, "\x1b[<32;4;8M");
 }
 
 // -- Modifier combinations on scroll --

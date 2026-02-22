@@ -273,12 +273,68 @@ fn mouse_state_release_clears_drag() {
     use super::handle_release;
 
     let mut m = MouseState::new();
-    m.left_down = true;
+    m.set_button_down(winit::event::MouseButton::Left, true);
     m.drag_active = true;
     assert!(m.is_dragging());
 
     handle_release(&mut m);
     assert!(!m.is_dragging());
+}
+
+// --- Button state tracking ---
+
+#[test]
+fn mouse_state_button_tracking_left() {
+    let mut m = MouseState::new();
+    assert!(!m.left_down());
+    m.set_button_down(winit::event::MouseButton::Left, true);
+    assert!(m.left_down());
+    assert!(m.any_button_down());
+    m.set_button_down(winit::event::MouseButton::Left, false);
+    assert!(!m.left_down());
+    assert!(!m.any_button_down());
+}
+
+#[test]
+fn mouse_state_button_tracking_middle() {
+    let mut m = MouseState::new();
+    assert!(!m.middle_down());
+    m.set_button_down(winit::event::MouseButton::Middle, true);
+    assert!(m.middle_down());
+    assert!(m.any_button_down());
+    m.set_button_down(winit::event::MouseButton::Middle, false);
+    assert!(!m.middle_down());
+}
+
+#[test]
+fn mouse_state_button_tracking_right() {
+    let mut m = MouseState::new();
+    assert!(!m.right_down());
+    m.set_button_down(winit::event::MouseButton::Right, true);
+    assert!(m.right_down());
+    assert!(m.any_button_down());
+    m.set_button_down(winit::event::MouseButton::Right, false);
+    assert!(!m.right_down());
+}
+
+#[test]
+fn mouse_state_any_button_down_multiple() {
+    let mut m = MouseState::new();
+    m.set_button_down(winit::event::MouseButton::Left, true);
+    m.set_button_down(winit::event::MouseButton::Right, true);
+    assert!(m.any_button_down());
+    m.set_button_down(winit::event::MouseButton::Left, false);
+    // Right still held.
+    assert!(m.any_button_down());
+    m.set_button_down(winit::event::MouseButton::Right, false);
+    assert!(!m.any_button_down());
+}
+
+#[test]
+fn mouse_state_other_button_is_noop() {
+    let mut m = MouseState::new();
+    m.set_button_down(winit::event::MouseButton::Back, true);
+    assert!(!m.any_button_down());
 }
 
 // --- Off-grid / boundary edge cases ---
@@ -435,10 +491,9 @@ fn drag_not_active_when_button_not_down() {
     // We verify the guard via MouseState directly (can't call handle_drag
     // without a real Tab).
     assert!(!m.is_dragging());
-    assert!(!m.left_down);
+    assert!(!m.left_down());
 
     // Both left_down AND drag_active must be true for is_dragging.
-    m.left_down = false;
     m.drag_active = true;
     assert!(!m.is_dragging());
 }

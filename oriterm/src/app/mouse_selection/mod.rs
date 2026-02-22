@@ -19,13 +19,58 @@ use crate::font::CellMetrics;
 use crate::tab::Tab;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 
+/// Compact bitfield tracking which mouse buttons are currently pressed.
+#[derive(Debug, Clone, Copy, Default)]
+struct ButtonsDown(u8);
+
+impl ButtonsDown {
+    const LEFT: u8 = 1;
+    const MIDDLE: u8 = 2;
+    const RIGHT: u8 = 4;
+
+    /// Set or clear the pressed state for a button.
+    fn set(&mut self, button: winit::event::MouseButton, pressed: bool) {
+        let bit = match button {
+            winit::event::MouseButton::Left => Self::LEFT,
+            winit::event::MouseButton::Middle => Self::MIDDLE,
+            winit::event::MouseButton::Right => Self::RIGHT,
+            _ => return,
+        };
+        if pressed {
+            self.0 |= bit;
+        } else {
+            self.0 &= !bit;
+        }
+    }
+
+    /// Whether the left button is held.
+    fn left(self) -> bool {
+        self.0 & Self::LEFT != 0
+    }
+
+    /// Whether the middle button is held.
+    fn middle(self) -> bool {
+        self.0 & Self::MIDDLE != 0
+    }
+
+    /// Whether the right button is held.
+    fn right(self) -> bool {
+        self.0 & Self::RIGHT != 0
+    }
+
+    /// Whether any button is held.
+    fn any(self) -> bool {
+        self.0 != 0
+    }
+}
+
 /// Tracks mouse state for selection operations.
 ///
 /// Stored on [`super::App`] and updated on `CursorMoved` / `MouseInput`
 /// window events. Owns the click detector and drag state.
 pub(crate) struct MouseState {
-    /// Whether the left mouse button is currently held.
-    left_down: bool,
+    /// Which mouse buttons are currently held.
+    buttons: ButtonsDown,
     /// Pixel position of the initial press (for drag threshold).
     touchdown: Option<PhysicalPosition<f64>>,
     /// Whether the drag threshold has been exceeded (selection started).
@@ -42,7 +87,7 @@ impl MouseState {
     /// Create a new idle mouse state.
     pub(crate) fn new() -> Self {
         Self {
-            left_down: false,
+            buttons: ButtonsDown::default(),
             touchdown: None,
             drag_active: false,
             click_detector: ClickDetector::new(),
@@ -53,12 +98,32 @@ impl MouseState {
 
     /// Whether the left button is held (potential or active drag).
     pub(crate) fn left_down(&self) -> bool {
-        self.left_down
+        self.buttons.left()
+    }
+
+    /// Whether the middle button is held.
+    pub(crate) fn middle_down(&self) -> bool {
+        self.buttons.middle()
+    }
+
+    /// Whether the right button is held.
+    pub(crate) fn right_down(&self) -> bool {
+        self.buttons.right()
+    }
+
+    /// Set the button-down state for a given button.
+    pub(crate) fn set_button_down(&mut self, button: winit::event::MouseButton, pressed: bool) {
+        self.buttons.set(button, pressed);
+    }
+
+    /// Whether any mouse button is currently held.
+    pub(crate) fn any_button_down(&self) -> bool {
+        self.buttons.any()
     }
 
     /// Whether a drag is currently active (threshold exceeded).
     pub(crate) fn is_dragging(&self) -> bool {
-        self.left_down && self.drag_active
+        self.buttons.left() && self.drag_active
     }
 
     /// Update the cursor position (called on every `CursorMoved`).
@@ -162,7 +227,7 @@ pub(crate) fn handle_press(
 
     // Record touchdown for drag threshold.
     mouse.touchdown = Some(pos);
-    mouse.left_down = true;
+    mouse.buttons.set(winit::event::MouseButton::Left, true);
     mouse.drag_active = false;
 
     // Click detection uses pixel-derived coordinates (before grid clamping).
@@ -335,7 +400,7 @@ pub(crate) fn handle_drag(
     ctx: &GridCtx<'_>,
     pos: PhysicalPosition<f64>,
 ) -> bool {
-    if !mouse.left_down {
+    if !mouse.buttons.left() {
         return false;
     }
 
@@ -368,7 +433,7 @@ pub(crate) fn handle_drag(
 ///
 /// Clears the drag state. The selection (if any) remains on the tab.
 pub(crate) fn handle_release(mouse: &mut MouseState) {
-    mouse.left_down = false;
+    mouse.buttons.set(winit::event::MouseButton::Left, false);
     mouse.drag_active = false;
     mouse.touchdown = None;
 }

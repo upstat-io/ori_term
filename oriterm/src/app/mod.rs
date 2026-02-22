@@ -147,6 +147,11 @@ impl App {
 
     /// Handle a mouse button event (left, middle, right).
     fn handle_mouse_input(&mut self, button: MouseButton, state: ElementState) {
+        // Track button state unconditionally — mouse reporting needs this
+        // for drag/motion events even when the press itself was reported.
+        let pressed = state == ElementState::Pressed;
+        self.mouse.set_button_down(button, pressed);
+
         match button {
             MouseButton::Left => {
                 if self.should_report_mouse() {
