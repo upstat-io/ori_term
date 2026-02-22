@@ -1223,3 +1223,274 @@ fn apply_color_overrides_full_16_colors() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Font config: hinting
+// ---------------------------------------------------------------------------
+
+#[test]
+fn hinting_defaults_to_none_option() {
+    let parsed: Config = toml::from_str("").expect("deserialize");
+    assert!(parsed.font.hinting.is_none());
+}
+
+#[test]
+fn hinting_full_from_toml() {
+    let toml_str = r#"
+[font]
+hinting = "full"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.hinting.as_deref(), Some("full"));
+}
+
+#[test]
+fn hinting_none_from_toml() {
+    let toml_str = r#"
+[font]
+hinting = "none"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.hinting.as_deref(), Some("none"));
+}
+
+// ---------------------------------------------------------------------------
+// Font config: subpixel_mode
+// ---------------------------------------------------------------------------
+
+#[test]
+fn subpixel_mode_defaults_to_none_option() {
+    let parsed: Config = toml::from_str("").expect("deserialize");
+    assert!(parsed.font.subpixel_mode.is_none());
+}
+
+#[test]
+fn subpixel_mode_rgb_from_toml() {
+    let toml_str = r#"
+[font]
+subpixel_mode = "rgb"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.subpixel_mode.as_deref(), Some("rgb"));
+}
+
+#[test]
+fn subpixel_mode_bgr_from_toml() {
+    let toml_str = r#"
+[font]
+subpixel_mode = "bgr"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.subpixel_mode.as_deref(), Some("bgr"));
+}
+
+#[test]
+fn subpixel_mode_none_from_toml() {
+    let toml_str = r#"
+[font]
+subpixel_mode = "none"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.subpixel_mode.as_deref(), Some("none"));
+}
+
+// ---------------------------------------------------------------------------
+// Font config: subpixel_positioning
+// ---------------------------------------------------------------------------
+
+#[test]
+fn subpixel_positioning_defaults_to_true() {
+    let parsed: Config = toml::from_str("").expect("deserialize");
+    assert!(parsed.font.subpixel_positioning);
+}
+
+#[test]
+fn subpixel_positioning_false_from_toml() {
+    let toml_str = r#"
+[font]
+subpixel_positioning = false
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!(!parsed.font.subpixel_positioning);
+}
+
+// ---------------------------------------------------------------------------
+// Font config: variations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn variations_defaults_to_empty() {
+    let parsed: Config = toml::from_str("").expect("deserialize");
+    assert!(parsed.font.variations.is_empty());
+}
+
+#[test]
+fn variations_from_toml() {
+    let toml_str = r#"
+[font]
+variations = { wght = 450.0, wdth = 87.5 }
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.variations.len(), 2);
+    assert!((parsed.font.variations["wght"] - 450.0).abs() < f32::EPSILON);
+    assert!((parsed.font.variations["wdth"] - 87.5).abs() < f32::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// Font config: codepoint_map
+// ---------------------------------------------------------------------------
+
+#[test]
+fn codepoint_map_defaults_to_empty() {
+    let parsed: Config = toml::from_str("").expect("deserialize");
+    assert!(parsed.font.codepoint_map.is_empty());
+}
+
+#[test]
+fn codepoint_map_from_toml() {
+    let toml_str = r#"
+[[font.codepoint_map]]
+range = "E000-F8FF"
+family = "Symbols Nerd Font"
+
+[[font.codepoint_map]]
+range = "4E00-9FFF"
+family = "Noto Sans CJK SC"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.codepoint_map.len(), 2);
+    assert_eq!(parsed.font.codepoint_map[0].range, "E000-F8FF");
+    assert_eq!(parsed.font.codepoint_map[0].family, "Symbols Nerd Font");
+    assert_eq!(parsed.font.codepoint_map[1].range, "4E00-9FFF");
+    assert_eq!(parsed.font.codepoint_map[1].family, "Noto Sans CJK SC");
+}
+
+#[test]
+fn codepoint_map_single_codepoint() {
+    let toml_str = r#"
+[[font.codepoint_map]]
+range = "E0B0"
+family = "Powerline Symbols"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.codepoint_map.len(), 1);
+    assert_eq!(parsed.font.codepoint_map[0].range, "E0B0");
+}
+
+// ---------------------------------------------------------------------------
+// Font config: roundtrip with new fields
+// ---------------------------------------------------------------------------
+
+#[test]
+fn font_config_new_fields_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.font.hinting = Some("full".to_owned());
+    cfg.font.subpixel_mode = Some("rgb".to_owned());
+    cfg.font.subpixel_positioning = false;
+    cfg.font.variations.insert("wght".to_owned(), 450.0);
+
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+
+    assert_eq!(parsed.font.hinting.as_deref(), Some("full"));
+    assert_eq!(parsed.font.subpixel_mode.as_deref(), Some("rgb"));
+    assert!(!parsed.font.subpixel_positioning);
+    assert!((parsed.font.variations["wght"] - 450.0).abs() < f32::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// Resolve helpers: hinting and subpixel mode
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_hinting_config_override_full() {
+    use crate::font::HintingMode;
+
+    let mut cfg = FontConfig::default();
+    cfg.hinting = Some("full".to_owned());
+    // Even on a HiDPI display (scale 2.0), explicit config wins.
+    let result = crate::app::config_reload::resolve_hinting(&cfg, 2.0);
+    assert_eq!(result, HintingMode::Full);
+}
+
+#[test]
+fn resolve_hinting_config_override_none() {
+    use crate::font::HintingMode;
+
+    let mut cfg = FontConfig::default();
+    cfg.hinting = Some("none".to_owned());
+    // Even on non-HiDPI (scale 1.0), explicit config wins.
+    let result = crate::app::config_reload::resolve_hinting(&cfg, 1.0);
+    assert_eq!(result, HintingMode::None);
+}
+
+#[test]
+fn resolve_hinting_auto_detection() {
+    use crate::font::HintingMode;
+
+    let cfg = FontConfig::default();
+    assert_eq!(
+        crate::app::config_reload::resolve_hinting(&cfg, 1.0),
+        HintingMode::Full,
+    );
+    assert_eq!(
+        crate::app::config_reload::resolve_hinting(&cfg, 2.0),
+        HintingMode::None,
+    );
+}
+
+#[test]
+fn resolve_hinting_unknown_value_falls_back() {
+    use crate::font::HintingMode;
+
+    let mut cfg = FontConfig::default();
+    cfg.hinting = Some("garbage".to_owned());
+    // Unknown value → auto-detection.
+    let result = crate::app::config_reload::resolve_hinting(&cfg, 1.0);
+    assert_eq!(result, HintingMode::Full);
+}
+
+#[test]
+fn resolve_subpixel_mode_config_override_rgb() {
+    use crate::font::SubpixelMode;
+
+    let mut cfg = FontConfig::default();
+    cfg.subpixel_mode = Some("rgb".to_owned());
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0);
+    assert_eq!(result, SubpixelMode::Rgb);
+}
+
+#[test]
+fn resolve_subpixel_mode_config_override_bgr() {
+    use crate::font::SubpixelMode;
+
+    let mut cfg = FontConfig::default();
+    cfg.subpixel_mode = Some("bgr".to_owned());
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0);
+    assert_eq!(result, SubpixelMode::Bgr);
+}
+
+#[test]
+fn resolve_subpixel_mode_config_override_none() {
+    use crate::font::SubpixelMode;
+
+    let mut cfg = FontConfig::default();
+    cfg.subpixel_mode = Some("none".to_owned());
+    let result = crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0);
+    assert_eq!(result, SubpixelMode::None);
+}
+
+#[test]
+fn resolve_subpixel_mode_auto_detection() {
+    use crate::font::SubpixelMode;
+
+    let cfg = FontConfig::default();
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 1.0),
+        SubpixelMode::Rgb,
+    );
+    assert_eq!(
+        crate::app::config_reload::resolve_subpixel_mode(&cfg, 2.0),
+        SubpixelMode::None,
+    );
+}

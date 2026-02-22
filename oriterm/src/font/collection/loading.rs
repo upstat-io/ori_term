@@ -68,6 +68,39 @@ impl FontSet {
         Self::from_discovery(&result)
     }
 
+    /// Prepend user-configured fallback fonts before system-discovered fallbacks.
+    ///
+    /// Each family name is resolved via platform font discovery. Unresolvable
+    /// families are logged and skipped. Returns the number of successfully
+    /// loaded user fallbacks (for indexing into `FallbackMeta`).
+    pub fn prepend_user_fallbacks(&mut self, families: &[&str]) -> usize {
+        let mut user_fonts = Vec::new();
+        for family in families {
+            match discovery::resolve_user_fallback(family) {
+                Some(fb) => match std::fs::read(&fb.path) {
+                    Ok(bytes) => {
+                        log::info!("font: loaded user fallback {family:?}");
+                        user_fonts.push(FontData {
+                            data: Arc::new(bytes),
+                            index: fb.face_index,
+                        });
+                    }
+                    Err(e) => {
+                        log::warn!("font: failed to load user fallback {family:?}: {e}");
+                    }
+                },
+                None => {
+                    log::warn!("font: user fallback {family:?} not found, skipping");
+                }
+            }
+        }
+        let count = user_fonts.len();
+        // Prepend user fallbacks: they take priority over system fallbacks.
+        user_fonts.append(&mut self.fallbacks);
+        self.fallbacks = user_fonts;
+        count
+    }
+
     /// Build a `FontSet` from a discovery result.
     pub(crate) fn from_discovery(result: &discovery::DiscoveryResult) -> Result<Self, FontError> {
         let primary = &result.primary;

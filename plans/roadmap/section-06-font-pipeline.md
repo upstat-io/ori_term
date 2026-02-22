@@ -10,10 +10,10 @@ sections:
     status: complete
   - id: "6.2"
     title: Fallback Chain + Cap-Height Normalization
-    status: in-progress
+    status: complete
   - id: "6.3"
     title: Run Segmentation
-    status: in-progress
+    status: complete
   - id: "6.4"
     title: Rustybuzz Text Shaping
     status: in-progress
@@ -25,7 +25,7 @@ sections:
     status: complete
   - id: "6.7"
     title: OpenType Feature Control
-    status: in-progress
+    status: complete
   - id: "6.8"
     title: Advanced Atlas (Guillotine + LRU + Multi-Page)
     status: complete
@@ -49,22 +49,22 @@ sections:
     status: complete
   - id: "6.15"
     title: Hinting
-    status: in-progress
+    status: complete
   - id: "6.16"
     title: Subpixel Rendering (LCD)
     status: in-progress
   - id: "6.17"
     title: Subpixel Glyph Positioning
-    status: not-started
+    status: complete
   - id: "6.18"
     title: Visual Regression Testing
     status: complete
   - id: "6.19"
     title: Variable Font Axes
-    status: in-progress
+    status: complete
   - id: "6.20"
     title: Font Codepoint Mapping
-    status: in-progress
+    status: complete
   - id: "6.21"
     title: Section Completion
     status: not-started
@@ -150,7 +150,7 @@ Fallback fonts for characters missing from the primary (CJK, symbols, emoji). Vi
 - [x] Fallback loading:
   - [x] `fallbacks: Vec<FaceData>` — priority-ordered fallback fonts
   - [x] `fallback_meta: Vec<FallbackMeta>` — per-fallback metadata (1:1 with fallbacks)
-  - [ ] User-configured fallbacks loaded first (from config TOML) <!-- blocked-by:13 -->
+  - [x] User-configured fallbacks loaded first (from config TOML)
   - [x] System-discovered fallbacks loaded after
   - [x] Lazy loading: `ensure_fallbacks_loaded()` called once on first use — implemented as eager loading during `FontCollection::new()` (design evolved; no lazy loading needed)
 - [x] Cap-height normalization:
@@ -165,7 +165,7 @@ Fallback fonts for characters missing from the primary (CJK, symbols, emoji). Vi
 - [x] `effective_size(&self, face_idx: FaceIdx) -> f32`
   - [x] Primary faces: base size
   - [x] Fallback faces: `base_size * meta.scale_factor + meta.size_offset`
-- [ ] User-configurable per-fallback: <!-- blocked-by:13 -->
+- [x] User-configurable per-fallback:
   ```toml
   [[font.fallback]]
   family = "Noto Sans CJK"
@@ -344,7 +344,7 @@ Collection-wide and per-fallback OpenType feature settings.
   - [x] `"liga"` → `Feature { tag: tag!("liga"), value: 1, start: 0, end: u32::MAX }`
   - [x] `"-dlig"` → `Feature { tag: tag!("dlig"), value: 0, start: 0, end: u32::MAX }`
 - [x] Features passed to rustybuzz during shaping (`shape_run()` calls `features_for_face()`)
-- [ ] Config integration: <!-- blocked-by:13 -->
+- [x] Config integration:
   ```toml
   [font]
   features = ["liga", "calt", "dlig"]
@@ -692,12 +692,12 @@ Control over glyph hinting — the grid-fitting process that snaps outlines to p
   - [x] `scale_factor < 2.0` → `HintingMode::Full` (non-HiDPI needs grid-fitting)
   - [x] `scale_factor >= 2.0` → `HintingMode::None` (Retina/4K has enough pixels)
   - [x] Re-evaluate on `ScaleFactorChanged` events
-- [ ] User override via config: <!-- blocked-by:13 -->
+- [x] User override via config:
   ```toml
   [font]
   hinting = "full"  # or "none"
   ```
-  - [ ] Config value overrides auto-detection <!-- blocked-by:13 -->
+  - [x] Config value overrides auto-detection
 - [x] Integration with rasterization:
   - [x] `ScalerBuilder::hint(mode == HintingMode::Full)` applied when building scaler
   - [x] Hinted glyphs produce different bitmaps — atlas key must include hinting state
@@ -713,7 +713,7 @@ Control over glyph hinting — the grid-fitting process that snaps outlines to p
 - [x] **Tests**:
   - [x] Hinted glyph bitmap differs from unhinted at same size
   - [x] Auto-detection: scale 1.0 → Full, scale 2.0 → None
-  - [ ] Config override: explicit "none" at scale 1.0 disables hinting <!-- blocked-by:13 -->
+  - [x] Config override: explicit "none" at scale 1.0 disables hinting
   - [x] Atlas invalidated on hinting mode change
 
 ---
@@ -804,7 +804,7 @@ Render glyphs at fractional pixel offsets for tighter, more natural spacing. Mos
   - [x] **Combining marks**: shaper x_offset/y_offset are fractional — rasterize at correct subpixel offset for precise diacritic placement
   - [x] **Ligature internals**: multi-glyph ligatures may have fractional internal offsets
   - [x] **Base grid text**: integer cell boundaries → phase 0. No extra atlas cost.
-- [ ] Config: <!-- blocked-by:13 -->
+- [x] Config:
   ```toml
   [font]
   subpixel_positioning = true  # default true; false snaps everything to integer
@@ -882,14 +882,14 @@ Support variable fonts with configurable axis values (weight, width, slant, etc.
   - [x] Store discovered axes in `FaceData`: `axes: Vec<AxisInfo>` — tag, min, default, max
   - [x] `has_axis(axes, tag) -> bool` — check if font supports an axis
   - [x] `clamp_to_axis(axes, tag, value) -> f32` — clamp to axis range
-- [ ] Config integration: <!-- blocked-by:13 -->
+- [x] Config integration:
   ```toml
   [font]
   variations = { wght = 450, wdth = 87.5 }  # per-axis values
   ```
-  - [ ] Parse `variations: HashMap<String, f32>` from TOML
-  - [ ] Validate values against axis min/max ranges
-  - [ ] Clamp out-of-range values with warning log
+  - [x] Parse `variations: HashMap<String, f32>` from TOML
+  - [x] Validate values against axis min/max ranges
+  - [x] Clamp out-of-range values with warning log
 - [x] Rasterization with variations:
   - [x] Pass variations to swash: `scale_ctx.builder(face).variations(&[(tag, value), ...])`
   - [x] Variable weight replaces synthetic bold when `wght` axis available
@@ -909,7 +909,7 @@ Support variable fonts with configurable axis values (weight, width, slant, etc.
   - [x] Non-variable font: variations ignored gracefully, synthesis still works
   - [x] Fallback faces: empty variations
   - [x] slnt preferred over ital axis
-  - [ ] Config roundtrip: variations parsed from TOML correctly <!-- blocked-by:13 -->
+  - [x] Config roundtrip: variations parsed from TOML correctly
 
 ---
 
@@ -924,7 +924,7 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
 - [x] `CodepointMap` struct:
   - [x] `ranges: Vec<(RangeInclusive<u32>, FaceIdx)>` — codepoint range → font face
   - [x] Sorted by range start for binary search lookup
-- [ ] Config integration: <!-- blocked-by:13 -->
+- [x] Config integration:
   ```toml
   [[font.codepoint_map]]
   range = "E000-F8FF"          # Private Use Area (Nerd Font symbols)
@@ -936,7 +936,7 @@ Force specific Unicode ranges to render with specific fonts, overriding the norm
   ```
   - [x] Parse range as hex: `"E000-F8FF"` → `0xE000..=0xF8FF`
   - [x] Single codepoint: `"E0B0"` → `0xE0B0..=0xE0B0`
-  - [ ] Load referenced font family at collection init time <!-- blocked-by:13 -->
+  - [x] Load referenced font family at collection init time
 - [x] Integration with `find_face_for_char`:
   - [x] Check codepoint map FIRST, before primary and fallback chain
   - [x] If mapped: return mapped face directly (skip normal resolution)

@@ -226,7 +226,6 @@ fn try_ui_fonts() -> Option<DiscoveryResult> {
 ///
 /// On Linux/macOS, builds a font index once and passes it to the platform
 /// resolver. Windows uses DirectWrite and does not need an index.
-#[allow(dead_code, reason = "font discovery consumed in later sections")]
 pub fn resolve_user_fallback(family: &str) -> Option<FallbackDiscovery> {
     #[cfg(target_os = "windows")]
     {

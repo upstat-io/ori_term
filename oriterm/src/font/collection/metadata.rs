@@ -57,7 +57,7 @@ pub(super) fn default_features() -> Vec<rustybuzz::Feature> {
 /// - `"kern=0"` — disable kerning
 ///
 /// Invalid tags are logged and skipped.
-pub(super) fn parse_features(tags: &[&str]) -> Vec<rustybuzz::Feature> {
+pub(crate) fn parse_features(tags: &[&str]) -> Vec<rustybuzz::Feature> {
     tags.iter()
         .filter_map(|tag| match tag.parse::<rustybuzz::Feature>() {
             Ok(f) => Some(f),

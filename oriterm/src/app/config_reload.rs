@@ -5,8 +5,10 @@
 //! fonts, colors, cursor style, window, behavior, bell, keybindings.
 
 use super::{App, DEFAULT_DPI};
-use crate::config::{self, Config};
-use crate::font::{FontCollection, FontSet, HintingMode};
+use crate::config::{self, Config, FontConfig};
+use crate::font::{
+    FaceIdx, FontCollection, FontSet, HintingMode, SubpixelMode, parse_features, parse_hex_range,
+};
 use crate::keybindings;
 
 impl App {
@@ -52,14 +54,19 @@ impl App {
         log::info!("config reload: applied successfully");
     }
 
-    /// Detect and apply font changes (family, size, weight, features, fallback).
+    /// Detect and apply font changes (family, size, weight, features, fallback,
+    /// hinting, subpixel mode, variations, codepoint map).
     fn apply_font_changes(&mut self, new: &Config) {
         let old = &self.config.font;
         let font_changed = (new.font.size - old.size).abs() > f32::EPSILON
             || new.font.family != old.family
             || new.font.weight != old.weight
             || new.font.features != old.features
-            || new.font.fallback != old.fallback;
+            || new.font.fallback != old.fallback
+            || new.font.hinting != old.hinting
+            || new.font.subpixel_mode != old.subpixel_mode
+            || new.font.variations != old.variations
+            || new.font.codepoint_map != old.codepoint_map;
 
         if !font_changed {
             return;
@@ -72,7 +79,7 @@ impl App {
         };
 
         let weight = new.font.effective_weight();
-        let font_set = match FontSet::load(new.font.family.as_deref(), weight) {
+        let mut font_set = match FontSet::load(new.font.family.as_deref(), weight) {
             Ok(fs) => fs,
             Err(e) => {
                 log::warn!("config reload: font load failed: {e}");
@@ -80,18 +87,27 @@ impl App {
             }
         };
 
-        // Get current scale and hinting from the renderer's existing collection.
-        let scale = window.scale_factor().factor();
-        let cur_hinting = HintingMode::from_scale_factor(scale);
-        let cur_format = crate::font::SubpixelMode::from_scale_factor(scale).glyph_format();
+        // Prepend user-configured fallback fonts before system fallbacks.
+        let user_fb_families: Vec<&str> = new
+            .font
+            .fallback
+            .iter()
+            .map(|f| f.family.as_str())
+            .collect();
+        let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
 
-        let collection = match FontCollection::new(
+        // Resolve hinting and subpixel mode: config overrides auto-detection.
+        let scale = window.scale_factor().factor();
+        let hinting = resolve_hinting(&new.font, scale);
+        let format = resolve_subpixel_mode(&new.font, scale).glyph_format();
+
+        let mut collection = match FontCollection::new(
             font_set,
             new.font.size,
             DEFAULT_DPI,
-            cur_format,
+            format,
             weight,
-            cur_hinting,
+            hinting,
         ) {
             Ok(fc) => fc,
             Err(e) => {
@@ -99,6 +115,9 @@ impl App {
                 return;
             }
         };
+
+        // Apply all font config settings.
+        apply_font_config(&mut collection, &new.font, user_fb_count);
 
         let cell = collection.cell_metrics();
         log::info!(
@@ -220,6 +239,111 @@ impl App {
         self.bindings = keybindings::merge_bindings(&new.keybind);
     }
 }
+
+// ── Font config helpers ──
+
+/// Apply all font configuration settings to a collection after creation.
+///
+/// Handles: user features, per-fallback metadata (`size_offset`, features),
+/// user variable font variations, and codepoint-to-font mappings.
+///
+/// `user_fb_count` is the number of user-configured fallbacks that were
+/// successfully loaded and prepended (for matching config indices to
+/// fallback array indices).
+pub(crate) fn apply_font_config(
+    collection: &mut FontCollection,
+    config: &FontConfig,
+    user_fb_count: usize,
+) {
+    // 1. Apply user-configured OpenType features (replace defaults).
+    let feature_refs: Vec<&str> = config.features.iter().map(String::as_str).collect();
+    let features = parse_features(&feature_refs);
+    collection.set_features(features);
+
+    // 2. Apply per-fallback metadata (size_offset, features) to user fallbacks.
+    // User fallbacks occupy indices 0..user_fb_count in the fallback array.
+    // We apply config metadata to each loaded user fallback in order.
+    for (i, fb_config) in config.fallback.iter().enumerate() {
+        if i >= user_fb_count {
+            break;
+        }
+        let fb_features = fb_config.features.as_ref().map(|f| {
+            let refs: Vec<&str> = f.iter().map(String::as_str).collect();
+            parse_features(&refs)
+        });
+        collection.set_fallback_meta(i, fb_config.size_offset.unwrap_or(0.0), fb_features);
+    }
+
+    // 3. Apply codepoint-to-font mappings.
+    // Codepoint map entries reference families by name. The mapped face index
+    // must point to an actual loaded fallback. We search the user fallback
+    // config entries for a matching family name and use that index.
+    for entry in &config.codepoint_map {
+        let Some((start, end)) = parse_hex_range(&entry.range) else {
+            log::warn!(
+                "config: invalid codepoint_map range {:?}, skipping",
+                entry.range
+            );
+            continue;
+        };
+        // Find the fallback index for this family name.
+        let face_idx = config
+            .fallback
+            .iter()
+            .position(|fb| fb.family == entry.family)
+            .map(|i| FaceIdx(i as u16 + 4)); // Fallback indices start at 4
+        match face_idx {
+            Some(idx) => {
+                collection.add_codepoint_mapping(start, end, idx);
+                log::info!(
+                    "config: codepoint map {:?} → {:?} (face {})",
+                    entry.range,
+                    entry.family,
+                    idx.0,
+                );
+            }
+            None => {
+                log::warn!(
+                    "config: codepoint_map family {:?} not found in [[font.fallback]], skipping",
+                    entry.family,
+                );
+            }
+        }
+    }
+}
+
+/// Resolve hinting mode from config, falling back to auto-detection.
+///
+/// Config override takes priority; auto-detection uses display scale factor.
+pub(crate) fn resolve_hinting(config: &FontConfig, scale_factor: f64) -> HintingMode {
+    match config.hinting.as_deref() {
+        Some("full") => HintingMode::Full,
+        Some("none") => HintingMode::None,
+        Some(other) => {
+            log::warn!("config: unknown hinting mode {other:?}, using auto-detection");
+            HintingMode::from_scale_factor(scale_factor)
+        }
+        None => HintingMode::from_scale_factor(scale_factor),
+    }
+}
+
+/// Resolve subpixel mode from config, falling back to auto-detection.
+///
+/// Config override takes priority; auto-detection uses display scale factor.
+pub(crate) fn resolve_subpixel_mode(config: &FontConfig, scale_factor: f64) -> SubpixelMode {
+    match config.subpixel_mode.as_deref() {
+        Some("rgb") => SubpixelMode::Rgb,
+        Some("bgr") => SubpixelMode::Bgr,
+        Some("none") => SubpixelMode::None,
+        Some(other) => {
+            log::warn!("config: unknown subpixel_mode {other:?}, using auto-detection");
+            SubpixelMode::from_scale_factor(scale_factor)
+        }
+        None => SubpixelMode::from_scale_factor(scale_factor),
+    }
+}
+
+// ── Color config helpers ──
 
 /// Apply color overrides from [`ColorConfig`](crate::config::ColorConfig) to a palette.
 ///

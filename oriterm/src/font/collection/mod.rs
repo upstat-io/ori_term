@@ -24,8 +24,7 @@ pub(crate) use codepoint_map::parse_hex_range;
 pub use face::size_key;
 use face::{FaceData, build_face, compute_metrics, rasterize_from_face};
 pub use loading::FontSet;
-#[cfg(test)]
-use metadata::parse_features;
+pub(crate) use metadata::parse_features;
 use metadata::{
     FallbackMeta, MAX_FONT_SIZE, MIN_FONT_SIZE, default_features, effective_size_for,
     face_variations,
@@ -296,6 +295,33 @@ impl FontCollection {
         faces
     }
 
+    // ── Configuration setters ──
+
+    /// Replace collection-wide OpenType features.
+    ///
+    /// Overrides the default `["liga", "calt"]` features. Primary faces (0–3)
+    /// use these features; fallback faces use their per-fallback override if
+    /// configured, otherwise these collection features.
+    pub fn set_features(&mut self, features: Vec<rustybuzz::Feature>) {
+        self.features = features;
+    }
+
+    /// Update a fallback font's metadata (`size_offset` and features).
+    ///
+    /// `fallback_index` is the 0-based position in the fallback array (not
+    /// the global `FaceIdx`). Out-of-range indices are ignored.
+    pub fn set_fallback_meta(
+        &mut self,
+        fallback_index: usize,
+        size_offset: f32,
+        features: Option<Vec<rustybuzz::Feature>>,
+    ) {
+        if let Some(meta) = self.fallback_meta.get_mut(fallback_index) {
+            meta.size_offset = size_offset;
+            meta.features = features;
+        }
+    }
+
     // ── Codepoint map ──
 
     /// Add a codepoint-to-face override.
@@ -303,13 +329,12 @@ impl FontCollection {
     /// Codepoints in `start..=end` will resolve to `face_idx` before
     /// consulting the normal primary + fallback chain. If the mapped face
     /// doesn't contain the codepoint, normal resolution is used.
-    #[allow(dead_code, reason = "wired by config system in Section 13")]
     pub fn add_codepoint_mapping(&mut self, start: u32, end: u32, face_idx: FaceIdx) {
         self.codepoint_map.add(start, end, face_idx);
     }
 
     /// Whether the codepoint map has any entries.
-    #[allow(dead_code, reason = "wired by config system in Section 13")]
+    #[allow(dead_code, reason = "diagnostic predicate for logging and future UI")]
     pub fn has_codepoint_mappings(&self) -> bool {
         !self.codepoint_map.is_empty()
     }

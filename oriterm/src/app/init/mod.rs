@@ -6,7 +6,7 @@ use oriterm_ui::window::WindowConfig;
 
 use super::{App, DEFAULT_DPI};
 use crate::app::config_reload;
-use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode, SubpixelMode};
+use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::{GpuRenderer, GpuState};
 use crate::tab::{Tab, TabId};
 use crate::widgets::terminal_grid::TerminalGridWidget;
@@ -38,32 +38,7 @@ impl App {
         let t_window = t_start.elapsed();
 
         // 2. Spawn font discovery on a background thread (no GPU dependency).
-        let font_weight = self.config.font.effective_weight();
-        let font_size_pt = self.config.font.size;
-        let font_family = self.config.font.family.clone();
-        let font_dpi = DEFAULT_DPI;
-        let font_handle = std::thread::Builder::new()
-            .name("font-discovery".into())
-            .spawn(
-                move || -> Result<(FontCollection, std::time::Duration), crate::font::FontError> {
-                    let t0 = std::time::Instant::now();
-                    let font_set = FontSet::load(font_family.as_deref(), font_weight)?;
-                    // Default to Full hinting; adjusted after window creation
-                    // once the actual display scale factor is known.
-                    let fc = FontCollection::new(
-                        font_set,
-                        font_size_pt,
-                        font_dpi,
-                        GlyphFormat::Alpha,
-                        font_weight,
-                        HintingMode::Full,
-                    )?;
-                    Ok((fc, t0.elapsed()))
-                },
-            )
-            .map_err(|e| -> Box<dyn std::error::Error> {
-                format!("failed to spawn font discovery thread: {e}").into()
-            })?;
+        let font_handle = self.spawn_font_discovery()?;
 
         // 3. Init GPU on main thread (requires window Arc, runs concurrently with fonts).
         let t_gpu_start = std::time::Instant::now();
@@ -74,20 +49,23 @@ impl App {
         let window = TermWindow::from_window(window_arc, &window_config, &gpu)?;
 
         // 5. Join font thread (GPU init + surface setup ran concurrently).
-        let (mut font_collection, t_fonts) = match font_handle.join() {
+        let (mut font_collection, user_fb_count, t_fonts) = match font_handle.join() {
             Ok(Ok(result)) => result,
             Ok(Err(e)) => return Err(e.into()),
             Err(_) => return Err("font discovery thread panicked".into()),
         };
 
         // 5b. Adjust hinting and subpixel mode for the actual display scale factor.
-        // The font thread used Full hinting + Alpha format as defaults; HiDPI
-        // displays (2x+) disable hinting and subpixel rendering.
+        // Config overrides take priority over auto-detection.
         let scale = window.scale_factor().factor();
-        let hinting = HintingMode::from_scale_factor(scale);
+        let hinting = config_reload::resolve_hinting(&self.config.font, scale);
         font_collection.set_hinting(hinting);
-        let subpixel_format = SubpixelMode::from_scale_factor(scale).glyph_format();
+        let subpixel_format =
+            config_reload::resolve_subpixel_mode(&self.config.font, scale).glyph_format();
         font_collection.set_format(subpixel_format);
+
+        // 5c. Apply font config: features, per-fallback metadata, codepoint map.
+        config_reload::apply_font_config(&mut font_collection, &self.config.font, user_fb_count);
 
         // 6. Create GPU renderer (pipelines, atlas, pre-cached ASCII glyphs).
         let t_renderer_start = std::time::Instant::now();
@@ -111,6 +89,90 @@ impl App {
 
         // 9. Spawn the terminal tab (PTY + VTE + Term).
         let t_tab_start = std::time::Instant::now();
+        let tab = self.create_initial_tab(rows, cols)?;
+        let t_tab = t_tab_start.elapsed();
+
+        let t_total = t_start.elapsed();
+        log::info!(
+            "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
+             renderer={t_renderer:?} tab={t_tab:?} total={t_total:?}",
+        );
+        log::info!(
+            "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
+             font={} {:.1}pt",
+            renderer.family_name(),
+            self.config.font.size,
+        );
+
+        // Show window before storing — winit won't deliver RedrawRequested
+        // to an invisible window, so we must be visible first.
+        window.set_visible(true);
+
+        self.gpu = Some(gpu);
+        self.renderer = Some(renderer);
+        self.window = Some(window);
+        self.tab = Some(tab);
+        self.terminal_grid = Some(grid_widget);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Spawn font discovery on a background thread.
+    #[expect(
+        clippy::type_complexity,
+        reason = "thread join handle with font discovery result — not worth a type alias"
+    )]
+    fn spawn_font_discovery(
+        &self,
+    ) -> Result<
+        std::thread::JoinHandle<
+            Result<(FontCollection, usize, std::time::Duration), crate::font::FontError>,
+        >,
+        Box<dyn std::error::Error>,
+    > {
+        let font_weight = self.config.font.effective_weight();
+        let font_size_pt = self.config.font.size;
+        let font_family = self.config.font.family.clone();
+        let font_config = self.config.font.clone();
+        let font_dpi = DEFAULT_DPI;
+
+        std::thread::Builder::new()
+            .name("font-discovery".into())
+            .spawn(move || {
+                let t0 = std::time::Instant::now();
+                let mut font_set = FontSet::load(font_family.as_deref(), font_weight)?;
+
+                // Prepend user-configured fallback fonts.
+                let user_fb_families: Vec<&str> = font_config
+                    .fallback
+                    .iter()
+                    .map(|f| f.family.as_str())
+                    .collect();
+                let user_fb_count = font_set.prepend_user_fallbacks(&user_fb_families);
+
+                // Default to Full hinting + Alpha format; adjusted after window
+                // creation once the actual display scale factor is known.
+                let fc = FontCollection::new(
+                    font_set,
+                    font_size_pt,
+                    font_dpi,
+                    GlyphFormat::Alpha,
+                    font_weight,
+                    HintingMode::Full,
+                )?;
+                Ok((fc, user_fb_count, t0.elapsed()))
+            })
+            .map_err(|e| -> Box<dyn std::error::Error> {
+                format!("failed to spawn font discovery thread: {e}").into()
+            })
+    }
+
+    /// Create the initial terminal tab with color overrides from config.
+    fn create_initial_tab(
+        &self,
+        rows: usize,
+        cols: usize,
+    ) -> Result<Tab, Box<dyn std::error::Error>> {
         let tab_id = TabId::next();
         let theme = self
             .config
@@ -125,36 +187,10 @@ impl App {
         let tab = Tab::new(tab_id, &tab_cfg, self.event_proxy.clone())?;
 
         // Apply user color overrides (foreground, background, cursor, ANSI, bright).
-        // Tab::new creates a bare Palette::for_theme; config overrides must be layered on.
-        {
-            let mut term = tab.terminal().lock();
-            config_reload::apply_color_overrides(term.palette_mut(), &self.config.colors);
-        }
+        let mut term = tab.terminal().lock();
+        config_reload::apply_color_overrides(term.palette_mut(), &self.config.colors);
+        drop(term);
 
-        let t_tab = t_tab_start.elapsed();
-
-        let t_total = t_start.elapsed();
-        log::info!(
-            "app: startup — window={t_window:?} gpu={t_gpu:?} fonts={t_fonts:?} \
-             renderer={t_renderer:?} tab={t_tab:?} total={t_total:?}",
-        );
-        log::info!(
-            "app: initialized — {w}x{h} px, {cols} cols × {rows} rows, \
-             font={} {:.1}pt",
-            renderer.family_name(),
-            font_size_pt,
-        );
-
-        // Show window before storing — winit won't deliver RedrawRequested
-        // to an invisible window, so we must be visible first.
-        window.set_visible(true);
-
-        self.gpu = Some(gpu);
-        self.renderer = Some(renderer);
-        self.window = Some(window);
-        self.tab = Some(tab);
-        self.terminal_grid = Some(grid_widget);
-        self.dirty = true;
-        Ok(())
+        Ok(tab)
     }
 }

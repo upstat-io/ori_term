@@ -39,6 +39,7 @@ impl CodepointMap {
     }
 
     /// Whether the map has any entries.
+    #[allow(dead_code, reason = "diagnostic predicate for logging and future UI")]
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -90,7 +91,6 @@ impl CodepointMap {
 /// - Single: `"E0B0"` parses to `(0xE0B0, 0xE0B0)`.
 ///
 /// Returns `None` if parsing fails or if start exceeds end.
-#[allow(dead_code, reason = "wired by config system in Section 13")]
 pub(crate) fn parse_hex_range(s: &str) -> Option<(u32, u32)> {
     if let Some((start_s, end_s)) = s.split_once('-') {
         let start = u32::from_str_radix(start_s.trim(), 16).ok()?;

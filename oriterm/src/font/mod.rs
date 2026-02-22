@@ -17,7 +17,7 @@ use std::fmt;
 
 use bitflags::bitflags;
 
-#[allow(unused_imports, reason = "wired by config system in Section 13")]
+pub(crate) use collection::parse_features;
 pub(crate) use collection::parse_hex_range;
 pub use collection::{FontCollection, FontSet, RasterizedGlyph, size_key};
 pub use shaper::{ShapedGlyph, ShapingRun, build_col_glyph_map, prepare_line, shape_prepared_runs};
@@ -144,7 +144,6 @@ pub enum GlyphFormat {
     /// 4 bytes/pixel RGBA per-channel subpixel coverage (R-G-B order).
     SubpixelRgb,
     /// 4 bytes/pixel RGBA per-channel subpixel coverage (B-G-R order).
-    #[allow(dead_code, reason = "BGR display support — config in Section 13")]
     SubpixelBgr,
     /// 4 bytes/pixel RGBA premultiplied color (for color emoji).
     Color,
@@ -176,7 +175,6 @@ pub enum SubpixelMode {
     #[default]
     Rgb,
     /// BGR subpixel order (rare panels).
-    #[allow(dead_code, reason = "BGR display support — config in Section 13")]
     Bgr,
     /// Disabled — grayscale alpha rendering only.
     None,
@@ -202,7 +200,7 @@ impl SubpixelMode {
     /// When `opacity < 1.0`, forces grayscale regardless of scale factor.
     #[allow(
         dead_code,
-        reason = "wired when opacity becomes configurable — Section 13"
+        reason = "wired when transparent backgrounds auto-disable subpixel"
     )]
     pub fn for_display(scale_factor: f64, opacity: f64) -> Self {
         if opacity < 1.0 {
@@ -225,7 +223,7 @@ impl SubpixelMode {
     }
 
     /// Whether subpixel rendering is enabled.
-    #[allow(dead_code, reason = "convenience predicate — config in Section 13")]
+    #[allow(dead_code, reason = "convenience predicate for caller code")]
     pub fn is_enabled(self) -> bool {
         !matches!(self, Self::None)
     }
