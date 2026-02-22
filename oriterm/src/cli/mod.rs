@@ -1,13 +1,15 @@
 //! CLI subcommands for headless diagnostics.
 //!
-//! Provides `ls-fonts`, `show-keys`, `list-themes`, `validate-config`, and
-//! `show-config` subcommands that run without opening a window. Standard
-//! in modern terminals (`WezTerm` `ls-fonts`, Ghostty `+list-fonts`).
+//! Provides `ls-fonts`, `show-keys`, `list-themes`, `validate-config`,
+//! `show-config`, and `completions` subcommands that run without opening a
+//! window. Standard in modern terminals (`WezTerm` `ls-fonts`, Ghostty
+//! `+list-fonts`).
 
 use std::fmt::Write;
 use std::process;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 
 use crate::config::Config;
 use crate::font::discovery;
@@ -35,6 +37,8 @@ pub(crate) enum SubCommand {
     ValidateConfig,
     /// Dump the resolved config (defaults + user overrides) as TOML.
     ShowConfig,
+    /// Generate shell completion scripts.
+    Completions(CompletionsArgs),
 }
 
 /// Arguments for the `ls-fonts` subcommand.
@@ -59,6 +63,14 @@ pub(crate) struct ListThemesArgs {
     /// Print a 16-color sample for each theme.
     #[arg(long)]
     preview: bool,
+}
+
+/// Arguments for the `completions` subcommand.
+#[derive(Parser)]
+pub(crate) struct CompletionsArgs {
+    /// Shell to generate completions for.
+    #[arg(value_enum)]
+    pub shell: Shell,
 }
 
 /// Attach to the parent console on Windows so CLI output is visible.
@@ -89,6 +101,7 @@ pub(crate) fn dispatch(cmd: SubCommand) -> ! {
         SubCommand::ListThemes(args) => run_list_themes(&args),
         SubCommand::ValidateConfig => run_validate_config(),
         SubCommand::ShowConfig => run_show_config(),
+        SubCommand::Completions(args) => run_completions(&args),
     }
 }
 
@@ -297,6 +310,53 @@ fn run_show_config() -> ! {
             process::exit(1);
         }
     }
+}
+
+/// `completions` — generate shell completion script for the given shell.
+fn run_completions(args: &CompletionsArgs) -> ! {
+    use std::io::IsTerminal;
+
+    let mut cmd = Cli::command();
+    clap_complete::generate(args.shell, &mut cmd, "oriterm", &mut std::io::stdout());
+
+    // When output goes to a terminal (not redirected to a file), print
+    // install instructions on stderr so the user knows what to do.
+    if std::io::stdout().is_terminal() {
+        eprintln!();
+        match args.shell {
+            Shell::Bash => {
+                eprintln!("# To install, run:");
+                eprintln!(
+                    "#   oriterm completions bash > ~/.local/share/bash-completion/completions/oriterm"
+                );
+            }
+            Shell::Zsh => {
+                eprintln!("# To install, add to your fpath and run:");
+                eprintln!("#   oriterm completions zsh > ~/.zfunc/_oriterm");
+                eprintln!("#   echo 'fpath=(~/.zfunc $fpath)' >> ~/.zshrc");
+            }
+            Shell::Fish => {
+                eprintln!("# To install, run:");
+                eprintln!("#   oriterm completions fish > ~/.config/fish/completions/oriterm.fish");
+            }
+            Shell::PowerShell => {
+                eprintln!("# To install, add to your PowerShell profile:");
+                eprintln!("#   oriterm completions powershell >> $PROFILE");
+            }
+            _ => {}
+        }
+    }
+
+    process::exit(0)
+}
+
+/// Generate completion script into a byte buffer (for testing).
+#[cfg(test)]
+fn generate_completions(shell: Shell) -> Vec<u8> {
+    let mut cmd = Cli::command();
+    let mut buf = Vec::new();
+    clap_complete::generate(shell, &mut cmd, "oriterm", &mut buf);
+    buf
 }
 
 /// Format a single keybinding as `Mods+Key -> Action`.

@@ -1,7 +1,7 @@
 ---
 section: 13
 title: Configuration & Keybindings
-status: in-progress
+status: complete
 tier: 3
 goal: TOML configuration with file watching and hot reload, user-configurable keybindings with defaults
 sections:
@@ -31,15 +31,15 @@ sections:
     status: complete
   - id: "13.9"
     title: Shell Completion Scripts
-    status: not-started
+    status: complete
   - id: "13.10"
     title: Section Completion
-    status: not-started
+    status: complete
 ---
 
 # Section 13: Configuration & Keybindings
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** TOML-based configuration file with typed structs, file system watching for hot reload, and a user-configurable keybinding system with sensible defaults.
 
 **Crate:** `oriterm` (binary)
@@ -400,36 +400,36 @@ Generate shell completion scripts for bash, zsh, fish, and PowerShell.
 
 **Reference:** WezTerm `wezterm shell-completion`, clap `clap_complete` crate
 
-- [ ] Add `clap_complete` dependency
-- [ ] `oriterm completions <shell>` subcommand:
-  - [ ] `oriterm completions bash` — output bash completion script
-  - [ ] `oriterm completions zsh` — output zsh completion script
-  - [ ] `oriterm completions fish` — output fish completion script
-  - [ ] `oriterm completions powershell` — output PowerShell completion script
-  - [ ] Output to stdout (user redirects to appropriate file)
-- [ ] Completions cover: all subcommands, `--config`, `--working-directory`, `--shell`, etc.
-- [ ] Install instructions printed when run without redirection
-- [ ] **Tests:**
-  - [ ] Each shell variant produces non-empty output
-  - [ ] Output contains expected subcommand names
+- [x] Add `clap_complete` dependency
+- [x] `oriterm completions <shell>` subcommand:
+  - [x] `oriterm completions bash` — output bash completion script
+  - [x] `oriterm completions zsh` — output zsh completion script
+  - [x] `oriterm completions fish` — output fish completion script
+  - [x] `oriterm completions powershell` — output PowerShell completion script
+  - [x] Output to stdout (user redirects to appropriate file)
+- [x] Completions cover: all subcommands, `--config`, `--working-directory`, `--shell`, etc.
+- [x] Install instructions printed when run without redirection
+- [x] **Tests:**
+  - [x] Each shell variant produces non-empty output
+  - [x] Output contains expected subcommand names
 
 ---
 
 ## 13.10 Section Completion
 
-- [ ] All 13.1-13.9 items complete
-- [ ] `cargo test -p oriterm` — config and keybinding tests pass
-- [ ] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
-- [ ] Config loads from TOML file on startup (defaults if missing)
-- [ ] Partial TOML fills in defaults for unspecified fields
-- [ ] Invalid TOML logs warning, uses defaults (no crash)
-- [ ] Config file watcher detects changes with 200ms debounce
-- [ ] Hot reload applies font, color, window, behavior, bell, keybinding changes
-- [ ] Font change triggers atlas rebuild + grid resize
-- [ ] Default keybindings work out of the box
-- [ ] User keybindings override defaults
-- [ ] `Action::None` unbinds a default binding
-- [ ] `SendText` action sends literal bytes (with escape sequences) to PTY
-- [ ] Window state (geometry) persisted separately from user config
+- [x] All 13.1-13.9 items complete
+- [x] `cargo test -p oriterm` — config and keybinding tests pass
+- [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
+- [x] Config loads from TOML file on startup (defaults if missing)
+- [x] Partial TOML fills in defaults for unspecified fields
+- [x] Invalid TOML logs warning, uses defaults (no crash)
+- [x] Config file watcher detects changes with 200ms debounce
+- [x] Hot reload applies font, color, window, behavior, bell, keybinding changes
+- [x] Font change triggers atlas rebuild + grid resize
+- [x] Default keybindings work out of the box
+- [x] User keybindings override defaults
+- [x] `Action::None` unbinds a default binding
+- [x] `SendText` action sends literal bytes (with escape sequences) to PTY
+- [x] Window state (geometry) persisted separately from user config
 
 **Exit Criteria:** Config system loads, saves, and hot-reloads without interrupting the terminal session. Keybindings are user-configurable via TOML with sensible defaults. Invalid config never crashes the app.

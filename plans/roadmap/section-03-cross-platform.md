@@ -177,8 +177,7 @@ Clipboard read/write for copy and paste operations.
 - [x] OSC 52 clipboard (application-driven clipboard access):
   - [x] Already works on all platforms (base64 encode/decode is pure Rust)
   - [x] Applications can read/write clipboard via escape sequences
-  - [x] Security: configurable — allow read, write, both, or neither  <!-- blocked-by:13 -->
-- [x] Clipboard trait abstraction:
+  - [x] Security: configurable — allow read, write, both, or neither - [x] Clipboard trait abstraction:
   - [x] `trait ClipboardProvider { fn get_text(&self) -> Option<String>; fn set_text(&self, text: &str) -> bool; }`
   - [x] Platform implementations behind the trait
   - [x] Testable with a mock implementation
@@ -404,8 +403,7 @@ Audit and implement all platform-conditional code paths. Every `#[cfg(target_os 
 - [x] Windows: DirectComposition + DWM blur (see 03.4)
 - [x] Linux: compositor-dependent ARGB visual (see 03.4)
 - [x] macOS: `NSVisualEffectView` vibrancy (see 03.4)
-- [ ] Config: `window.opacity` (0.0-1.0), `window.blur` (bool) <!-- blocked-by:13 -->
-- [x] Graceful degradation: if transparency is not supported, fall back to opaque
+- [ ] Config: `window.opacity` (0.0-1.0), `window.blur` (bool)- [x] Graceful degradation: if transparency is not supported, fall back to opaque
 
 ### Process Management
 
@@ -444,25 +442,19 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] D-Bus communication via `dbus-send` subprocess (avoids heavy `zbus` dependency)
   - [x] Fallback: check `GTK_THEME` environment variable for "dark" substring
   - [x] Fallback: check `$XDG_CURRENT_DESKTOP` and query DE-specific settings
-- [ ] Unified API: <!-- blocked-by:13 -->
-  - [x] `fn system_theme() -> Theme` where `Theme` is `Dark`, `Light`, or `Unknown`
+- [ ] Unified API:  - [x] `fn system_theme() -> Theme` where `Theme` is `Dark`, `Light`, or `Unknown`
   - [x] Called at startup to select default color scheme
-  - [ ] Config override: `appearance.theme = "dark" | "light" | "auto"` — `auto` uses system detection <!-- blocked-by:13 -->
-- [x] Adapt default palette:
+  - [ ] Config override: `appearance.theme = "dark" | "light" | "auto"` — `auto` uses system detection- [x] Adapt default palette:
   - [x] Dark mode: dark background, light text (current default)
   - [x] Light mode: light background, dark text
   - [x] User-configured palette always takes priority over system theme
-- [ ] **Tests:** <!-- blocked-by:13 -->
-  - [x] `system_theme()` returns a valid `Theme` variant on the current platform
-  - [ ] Config override `"dark"` / `"light"` ignores system detection <!-- blocked-by:13 -->
-  - [ ] `"auto"` uses system detection result <!-- blocked-by:13 -->
-
+- [ ] **Tests:**  - [x] `system_theme()` returns a valid `Theme` variant on the current platform
+  - [ ] Config override `"dark"` / `"light"` ignores system detection  - [ ] `"auto"` uses system detection result
 ---
 
 ## 03.8 Section Completion
 
-- [ ] All 03.1-03.7 items complete <!-- blocked-by:13 -->
-- [x] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality
+- [ ] All 03.1-03.7 items complete- [x] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality
 - [x] Terminal runs on Linux with openpty, Vulkan, and clipboard support
   - [ ] Tested on X11 and Wayland
 - [ ] Terminal runs on macOS with openpty, Metal, and clipboard support
@@ -473,8 +465,7 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 - [x] Window decorations appropriate per platform
 - [x] URL opening works per platform
 - [x] Config paths follow platform conventions
-- [ ] Transparency works where compositor supports it <!-- blocked-by:13 -->
-- [x] System theme detection selects appropriate default palette
+- [ ] Transparency works where compositor supports it- [x] System theme detection selects appropriate default palette
 - [x] No platform-specific panics or crashes
 - [x] CI builds for all three platforms
 - [x] `cargo test --target x86_64-pc-windows-gnu` — passes

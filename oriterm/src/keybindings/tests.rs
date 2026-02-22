@@ -286,3 +286,68 @@ fn unescape_truncated_hex() {
     // Bare `\x` with no hex digits at all.
     assert_eq!(unescape_send_text("\\x"), "\0");
 }
+
+#[test]
+fn merge_skips_invalid_key_preserves_rest() {
+    // An entry with an unrecognized key should be skipped silently;
+    // the remaining user bindings and all defaults must survive.
+    let user = vec![
+        KeybindConfig {
+            key: "NotAKey!!!".to_owned(),
+            mods: "Ctrl".to_owned(),
+            action: "Copy".to_owned(),
+        },
+        KeybindConfig {
+            key: "z".to_owned(),
+            mods: "Ctrl".to_owned(),
+            action: "ZoomIn".to_owned(),
+        },
+    ];
+    let bindings = merge_bindings(&user);
+
+    // The valid binding should be present.
+    let key = BindingKey::Character("z".to_owned());
+    assert_eq!(
+        find_binding(&bindings, &key, Modifiers::CONTROL),
+        Some(&Action::ZoomIn)
+    );
+
+    // Default bindings should still be intact.
+    let key_t = BindingKey::Character("t".to_owned());
+    assert_eq!(
+        find_binding(&bindings, &key_t, Modifiers::CONTROL),
+        Some(&Action::NewTab)
+    );
+}
+
+#[test]
+fn merge_skips_invalid_action_preserves_rest() {
+    // An entry with a valid key but unrecognized action should be skipped;
+    // existing default for that key+mods must remain.
+    let user = vec![KeybindConfig {
+        key: "t".to_owned(),
+        mods: "Ctrl".to_owned(),
+        action: "DoSomethingBogus".to_owned(),
+    }];
+    let bindings = merge_bindings(&user);
+
+    // The default Ctrl+T -> NewTab should survive because the
+    // user entry was skipped (invalid action).
+    let key = BindingKey::Character("t".to_owned());
+    assert_eq!(
+        find_binding(&bindings, &key, Modifiers::CONTROL),
+        Some(&Action::NewTab)
+    );
+}
+
+#[test]
+fn parse_mods_unknown_modifier_ignored() {
+    // Unknown modifier names like "Hyper" or "Meta" should be
+    // silently ignored, not produce random modifier bits.
+    assert_eq!(parse_mods("Hyper"), Modifiers::empty());
+    assert_eq!(parse_mods("Meta"), Modifiers::empty());
+    assert_eq!(
+        parse_mods("Ctrl|Hyper|Shift"),
+        Modifiers::CONTROL | Modifiers::SHIFT
+    );
+}

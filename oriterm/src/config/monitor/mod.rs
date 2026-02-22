@@ -138,3 +138,6 @@ impl Drop for ConfigMonitor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

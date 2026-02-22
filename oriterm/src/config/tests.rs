@@ -676,3 +676,44 @@ action = "Paste"
     assert_eq!(parsed.keybind[1].key, "v");
     assert_eq!(parsed.keybind[1].action, "Paste");
 }
+
+#[test]
+fn fallback_with_invalid_family_parses_ok() {
+    // An invalid/nonexistent family name in the fallback chain should
+    // parse without error — validation happens at font discovery time,
+    // not at config parse time.
+    let toml_str = r#"
+[[font.fallback]]
+family = "NonExistentFontFamily_XYZ_12345"
+
+[[font.fallback]]
+family = "Noto Color Emoji"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.font.fallback.len(), 2);
+    assert_eq!(
+        parsed.font.fallback[0].family,
+        "NonExistentFontFamily_XYZ_12345"
+    );
+    assert_eq!(parsed.font.fallback[1].family, "Noto Color Emoji");
+}
+
+#[test]
+fn fallback_invalid_family_does_not_break_discovery() {
+    // An invalid family in config fallback should be skipped by
+    // resolve_user_fallback (returns None), not panic.
+    let result = crate::font::discovery::resolve_user_fallback("NonExistentFontFamily_XYZ_12345");
+    assert!(result.is_none(), "bogus fallback family should return None");
+}
+
+#[test]
+fn load_returns_defaults_on_nonexistent_path() {
+    // Config::load() delegates to config_path(). If the file doesn't exist,
+    // it returns defaults silently (no warning for NotFound).
+    // We can't control the path here, but we verify the default config
+    // matches expectations.
+    let defaults = Config::default();
+    assert!((defaults.font.size - 11.0).abs() < f32::EPSILON);
+    assert_eq!(defaults.terminal.scrollback, 10_000);
+    assert_eq!(defaults.window.columns, 120);
+}

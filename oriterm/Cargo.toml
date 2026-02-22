@@ -10,6 +10,7 @@ oriterm_core = { path = "../oriterm_core" }
 oriterm_ui = { path = "../oriterm_ui" }
 
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 log = "0.4"
 parking_lot = "0.12"
 pollster = "0.4"

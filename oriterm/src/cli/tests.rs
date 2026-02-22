@@ -1,6 +1,10 @@
 //! Tests for CLI subcommands.
 
-use super::{format_action, format_binding, format_binding_key, is_valid_hex_color};
+use clap_complete::Shell;
+
+use super::{
+    format_action, format_binding, format_binding_key, generate_completions, is_valid_hex_color,
+};
 use crate::config::Config;
 use crate::key_encoding::Modifiers;
 use crate::keybindings::{Action, BindingKey, KeyBinding};
@@ -378,4 +382,126 @@ fn validate_keybindings_reports_bad_key_and_bad_action() {
     );
     assert!(errors.iter().any(|e| e.contains("unknown key")));
     assert!(errors.iter().any(|e| e.contains("unknown action")));
+}
+
+// ── Shell completions ──
+
+#[test]
+fn completions_bash_produces_nonempty_output() {
+    let output = generate_completions(Shell::Bash);
+    assert!(!output.is_empty(), "bash completions should not be empty");
+    let text = String::from_utf8(output).expect("valid UTF-8");
+    assert!(
+        text.contains("ls-fonts"),
+        "bash completions should mention ls-fonts subcommand"
+    );
+    assert!(
+        text.contains("show-keys"),
+        "bash completions should mention show-keys subcommand"
+    );
+    assert!(
+        text.contains("completions"),
+        "bash completions should mention completions subcommand"
+    );
+}
+
+#[test]
+fn completions_zsh_produces_nonempty_output() {
+    let output = generate_completions(Shell::Zsh);
+    assert!(!output.is_empty(), "zsh completions should not be empty");
+    let text = String::from_utf8(output).expect("valid UTF-8");
+    assert!(
+        text.contains("ls-fonts"),
+        "zsh completions should mention ls-fonts subcommand"
+    );
+    assert!(
+        text.contains("show-keys"),
+        "zsh completions should mention show-keys subcommand"
+    );
+    assert!(
+        text.contains("completions"),
+        "zsh completions should mention completions subcommand"
+    );
+}
+
+#[test]
+fn completions_fish_produces_nonempty_output() {
+    let output = generate_completions(Shell::Fish);
+    assert!(!output.is_empty(), "fish completions should not be empty");
+    let text = String::from_utf8(output).expect("valid UTF-8");
+    assert!(
+        text.contains("ls-fonts"),
+        "fish completions should mention ls-fonts subcommand"
+    );
+    assert!(
+        text.contains("show-keys"),
+        "fish completions should mention show-keys subcommand"
+    );
+    assert!(
+        text.contains("completions"),
+        "fish completions should mention completions subcommand"
+    );
+}
+
+#[test]
+fn completions_powershell_produces_nonempty_output() {
+    let output = generate_completions(Shell::PowerShell);
+    assert!(
+        !output.is_empty(),
+        "PowerShell completions should not be empty"
+    );
+    let text = String::from_utf8(output).expect("valid UTF-8");
+    assert!(
+        text.contains("ls-fonts"),
+        "PowerShell completions should mention ls-fonts subcommand"
+    );
+    assert!(
+        text.contains("show-keys"),
+        "PowerShell completions should mention show-keys subcommand"
+    );
+    assert!(
+        text.contains("completions"),
+        "PowerShell completions should mention completions subcommand"
+    );
+}
+
+#[test]
+fn completions_contain_all_subcommands() {
+    // Verify all subcommands appear in bash completions (representative shell).
+    let output = generate_completions(Shell::Bash);
+    let text = String::from_utf8(output).expect("valid UTF-8");
+
+    let expected = [
+        "ls-fonts",
+        "show-keys",
+        "list-themes",
+        "validate-config",
+        "show-config",
+        "completions",
+    ];
+    for name in expected {
+        assert!(
+            text.contains(name),
+            "completions should contain subcommand {name:?}"
+        );
+    }
+}
+
+// ── format_binding with SendText action ──
+
+#[test]
+fn format_binding_with_send_text_action() {
+    let b = KeyBinding {
+        key: BindingKey::Character("a".to_owned()),
+        mods: Modifiers::ALT,
+        action: Action::SendText("\x1b[A".to_owned()),
+    };
+    let s = format_binding(&b);
+    assert!(s.contains("Alt"), "should contain Alt modifier: {s}");
+    assert!(s.contains("A"), "should contain key: {s}");
+    assert!(
+        s.contains("SendText:"),
+        "should contain SendText prefix: {s}"
+    );
+    assert!(s.contains("->"), "should contain arrow separator: {s}");
 }
