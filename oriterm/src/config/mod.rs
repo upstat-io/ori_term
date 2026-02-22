@@ -172,12 +172,31 @@ pub enum AlphaBlending {
     LinearCorrected,
 }
 
+/// Theme override for dark/light mode.
+///
+/// When set to `Auto` (or omitted), the system theme is detected at startup.
+/// `Dark` and `Light` force the corresponding palette regardless of system
+/// preference.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeOverride {
+    /// Use the system's dark/light mode preference.
+    #[default]
+    Auto,
+    /// Force dark mode (dark background, light text).
+    Dark,
+    /// Force light mode (light background, dark text).
+    Light,
+}
+
 /// Color scheme and palette configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ColorConfig {
     /// Color scheme name (default: "Catppuccin Mocha").
     pub scheme: String,
+    /// Dark/light mode override (default: auto-detect from system).
+    pub theme: ThemeOverride,
     /// Minimum WCAG 2.0 contrast ratio (1.0 = off, range 1.0-21.0).
     pub minimum_contrast: f32,
     /// Alpha blending mode for text rendering.
@@ -204,6 +223,7 @@ impl Default for ColorConfig {
     fn default() -> Self {
         Self {
             scheme: "Catppuccin Mocha".to_owned(),
+            theme: ThemeOverride::default(),
             minimum_contrast: 1.0,
             alpha_blending: AlphaBlending::default(),
             foreground: None,
@@ -218,10 +238,25 @@ impl Default for ColorConfig {
 }
 
 impl ColorConfig {
-    /// Returns `minimum_contrast` clamped to [1.0, 21.0].
+    /// Returns `minimum_contrast` clamped to [1.0, 21.0], defaulting to 1.0 for NaN.
     #[allow(dead_code, reason = "used in color config application")]
     pub fn effective_minimum_contrast(&self) -> f32 {
-        self.minimum_contrast.clamp(1.0, 21.0)
+        clamp_or_default(self.minimum_contrast, 1.0, 21.0, 1.0)
+    }
+
+    /// Resolve the effective theme given the config override.
+    ///
+    /// `Dark` / `Light` ignore system detection entirely; `Auto` delegates to
+    /// the provided `system_theme` callback.
+    pub fn resolve_theme(
+        &self,
+        detect_system: impl FnOnce() -> oriterm_core::Theme,
+    ) -> oriterm_core::Theme {
+        match self.theme {
+            ThemeOverride::Dark => oriterm_core::Theme::Dark,
+            ThemeOverride::Light => oriterm_core::Theme::Light,
+            ThemeOverride::Auto => detect_system(),
+        }
     }
 }
 
@@ -275,16 +310,16 @@ impl Default for WindowConfig {
 }
 
 impl WindowConfig {
-    /// Returns opacity clamped to [0.0, 1.0].
+    /// Returns opacity clamped to [0.0, 1.0], defaulting to 1.0 for NaN.
     pub fn effective_opacity(&self) -> f32 {
-        self.opacity.clamp(0.0, 1.0)
+        clamp_or_default(self.opacity, 0.0, 1.0, 1.0)
     }
 
     /// Returns tab bar opacity clamped to [0.0, 1.0].
     /// Falls back to `opacity` when not explicitly set.
     #[allow(dead_code, reason = "used in tab bar rendering (Section 16)")]
     pub fn effective_tab_bar_opacity(&self) -> f32 {
-        self.tab_bar_opacity.unwrap_or(self.opacity).clamp(0.0, 1.0)
+        clamp_or_default(self.tab_bar_opacity.unwrap_or(self.opacity), 0.0, 1.0, 1.0)
     }
 }
 
@@ -360,6 +395,18 @@ pub struct KeybindConfig {
     pub mods: String,
     /// Action name (e.g. "Copy", "Paste", "SendText:\x1b[A").
     pub action: String,
+}
+
+/// Clamp a float to `[min, max]`, returning `default` for NaN.
+///
+/// `f32::clamp` passes NaN through unchanged, which can propagate into
+/// rendering calculations. This helper treats NaN as "no valid value".
+fn clamp_or_default(value: f32, min: f32, max: f32, default: f32) -> f32 {
+    if value.is_nan() {
+        default
+    } else {
+        value.clamp(min, max)
+    }
 }
 
 /// Parse a `#RRGGBB` hex color string to [`Rgb`].

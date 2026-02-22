@@ -173,23 +173,29 @@ pub struct Tab {
     mark_cursor: Option<MarkCursor>,
 }
 
+/// Configuration for spawning a new tab.
+pub struct TabConfig {
+    /// Initial terminal rows.
+    pub rows: u16,
+    /// Initial terminal columns.
+    pub cols: u16,
+    /// Scrollback buffer lines.
+    pub scrollback: usize,
+    /// Dark/light theme for the palette.
+    pub theme: oriterm_core::Theme,
+}
+
 impl Tab {
     /// Spawn a new tab with a live shell process.
     ///
     /// Creates the PTY, terminal state machine, and reader thread. The
     /// terminal is wrapped in `Arc<FairMutex>` for concurrent access by
     /// the render thread and PTY reader thread.
-    pub fn new(
-        id: TabId,
-        rows: u16,
-        cols: u16,
-        scrollback: usize,
-        proxy: EventLoopProxy<TermEvent>,
-    ) -> io::Result<Self> {
+    pub fn new(id: TabId, cfg: &TabConfig, proxy: EventLoopProxy<TermEvent>) -> io::Result<Self> {
         // 1. Spawn PTY with the default shell.
         let config = PtyConfig {
-            rows,
-            cols,
+            rows: cfg.rows,
+            cols: cfg.cols,
             ..Default::default()
         };
         let mut pty = spawn_pty(&config)?;
@@ -206,13 +212,12 @@ impl Tab {
             .ok_or_else(|| io::Error::other("PTY control unavailable"))?;
 
         // 3. Create the terminal state machine with an event proxy.
-        let theme = crate::platform::theme::system_theme();
         let event_proxy = EventProxy::new(proxy, id);
         let term = Term::new(
-            usize::from(rows),
-            usize::from(cols),
-            scrollback,
-            theme,
+            usize::from(cfg.rows),
+            usize::from(cfg.cols),
+            cfg.scrollback,
+            cfg.theme,
             event_proxy,
         );
         let terminal = Arc::new(FairMutex::new(term));

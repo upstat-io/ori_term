@@ -134,8 +134,9 @@ impl App {
 
     /// Detect and apply color config changes.
     ///
-    /// Rebuilds the palette from the current theme, applies config color
-    /// overrides, and marks all lines dirty so colors are re-resolved.
+    /// Resolves the effective theme (honoring config override), rebuilds
+    /// the palette, applies config color overrides, and marks all lines
+    /// dirty so colors are re-resolved.
     fn apply_color_changes(&self, new: &Config) {
         if new.colors == self.config.colors {
             return;
@@ -144,8 +145,13 @@ impl App {
         let Some(tab) = &self.tab else { return };
         let mut term = tab.terminal().lock();
 
-        // Rebuild palette from current theme, then apply config overrides.
-        let theme = term.theme();
+        // Resolve theme: config override takes priority over system detection.
+        let theme = new
+            .colors
+            .resolve_theme(crate::platform::theme::system_theme);
+
+        // Update the terminal's stored theme and rebuild the palette.
+        term.set_theme(theme);
         let mut palette = oriterm_core::Palette::for_theme(theme);
         apply_color_overrides(&mut palette, &new.colors);
 
@@ -153,7 +159,7 @@ impl App {
         *term.palette_mut() = palette;
         term.grid_mut().dirty_mut().mark_all();
 
-        log::info!("config reload: colors updated");
+        log::info!("config reload: colors updated (theme={theme:?})");
     }
 
     /// Detect and apply cursor style changes.
@@ -211,7 +217,10 @@ impl App {
 /// Apply color overrides from [`ColorConfig`](crate::config::ColorConfig) to a palette.
 ///
 /// Sets both live and default values so OSC 104 resets to config values.
-fn apply_color_overrides(palette: &mut oriterm_core::Palette, colors: &config::ColorConfig) {
+pub(crate) fn apply_color_overrides(
+    palette: &mut oriterm_core::Palette,
+    colors: &config::ColorConfig,
+) {
     if let Some(rgb) = colors
         .foreground
         .as_deref()

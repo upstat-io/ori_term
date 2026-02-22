@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use winit::event_loop::EventLoopProxy;
 
-use oriterm_core::{Column, Event, EventListener, Line};
+use oriterm_core::{Column, Event, EventListener, Line, Theme};
 
 use super::{EventProxy, Notifier, Tab, TabId, TermEvent};
 use crate::pty::Msg;
@@ -190,7 +190,7 @@ fn tab_spawns_with_live_pty() {
     let proxy = test_proxy();
     let id = TabId::next();
 
-    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+    let tab = Tab::new(id, &tab_cfg(24, 80), proxy).expect("tab creation should succeed");
 
     assert_eq!(tab.id(), id);
     assert_eq!(tab.title(), "");
@@ -203,7 +203,7 @@ fn tab_terminal_is_accessible() {
     let proxy = test_proxy();
     let id = TabId::next();
 
-    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+    let tab = Tab::new(id, &tab_cfg(24, 80), proxy).expect("tab creation should succeed");
 
     // Lock the terminal and verify grid dimensions.
     let term = tab.terminal().lock();
@@ -218,7 +218,7 @@ fn tab_write_input_reaches_pty() {
     let proxy = test_proxy();
     let id = TabId::next();
 
-    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+    let tab = Tab::new(id, &tab_cfg(24, 80), proxy).expect("tab creation should succeed");
 
     // Should not panic — bytes go through Notifier → channel → PTY writer.
     tab.write_input(b"echo hello\r\n");
@@ -230,7 +230,7 @@ fn tab_resize_sends_to_pty() {
     let proxy = test_proxy();
     let id = TabId::next();
 
-    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+    let tab = Tab::new(id, &tab_cfg(24, 80), proxy).expect("tab creation should succeed");
 
     // Should not panic — resize goes through Notifier → channel → PTY control.
     tab.resize(40, 120);
@@ -242,7 +242,7 @@ fn tab_bell_state() {
     let proxy = test_proxy();
     let id = TabId::next();
 
-    let mut tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+    let mut tab = Tab::new(id, &tab_cfg(24, 80), proxy).expect("tab creation should succeed");
 
     assert!(!tab.has_bell());
     tab.set_bell();
@@ -257,7 +257,7 @@ fn tab_title_update() {
     let proxy = test_proxy();
     let id = TabId::next();
 
-    let mut tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+    let mut tab = Tab::new(id, &tab_cfg(24, 80), proxy).expect("tab creation should succeed");
 
     assert_eq!(tab.title(), "");
     tab.set_title("my terminal".into());
@@ -270,7 +270,7 @@ fn tab_drop_is_clean() {
     let proxy = test_proxy();
     let id = TabId::next();
 
-    let tab = Tab::new(id, 24, 80, 1000, proxy).expect("tab creation should succeed");
+    let tab = Tab::new(id, &tab_cfg(24, 80), proxy).expect("tab creation should succeed");
 
     // Drop should send Shutdown, kill child, and join reader thread
     // without panicking.
@@ -437,7 +437,18 @@ fn resize_updates_pty_dimensions() {
 
 /// Create a Tab with default settings and a live PTY.
 fn make_tab(rows: u16, cols: u16) -> Tab {
-    Tab::new(TabId::next(), rows, cols, 1000, test_proxy()).expect("tab creation should succeed")
+    Tab::new(TabId::next(), &tab_cfg(rows, cols), test_proxy())
+        .expect("tab creation should succeed")
+}
+
+/// Build a [`TabConfig`] with defaults suitable for tests.
+fn tab_cfg(rows: u16, cols: u16) -> super::TabConfig {
+    super::TabConfig {
+        rows,
+        cols,
+        scrollback: 1000,
+        theme: Theme::default(),
+    }
 }
 
 /// Poll the terminal grid until `needle` appears in any visible row.

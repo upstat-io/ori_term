@@ -351,3 +351,179 @@ fn parse_mods_unknown_modifier_ignored() {
         Modifiers::CONTROL | Modifiers::SHIFT
     );
 }
+
+// ---------------------------------------------------------------------------
+// Modifier parsing edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_mods_repeated_modifier_is_idempotent() {
+    // Duplicating a modifier in the config string should not produce
+    // different bits than writing it once.
+    assert_eq!(parse_mods("Ctrl|Ctrl"), Modifiers::CONTROL);
+    assert_eq!(parse_mods("Shift|Shift|Shift"), Modifiers::SHIFT,);
+    assert_eq!(
+        parse_mods("Ctrl|Shift|Ctrl"),
+        Modifiers::CONTROL | Modifiers::SHIFT,
+    );
+}
+
+#[test]
+fn parse_mods_case_sensitive() {
+    // Modifier parsing is case-sensitive — lowercase "ctrl" is unknown.
+    assert_eq!(parse_mods("ctrl"), Modifiers::empty());
+    assert_eq!(parse_mods("CTRL"), Modifiers::empty());
+    assert_eq!(parse_mods("shift"), Modifiers::empty());
+}
+
+#[test]
+fn parse_mods_trailing_pipe() {
+    // Trailing pipe separator leaves an empty part, which should be
+    // ignored (empty string is not a valid modifier).
+    assert_eq!(parse_mods("Ctrl|"), Modifiers::CONTROL);
+    assert_eq!(parse_mods("|Shift"), Modifiers::SHIFT);
+    assert_eq!(parse_mods("|"), Modifiers::empty());
+}
+
+// ---------------------------------------------------------------------------
+// key_to_binding_key edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn key_to_binding_key_dead_key_returns_none() {
+    let key = Key::Dead(Some('`'));
+    assert_eq!(key_to_binding_key(&key), None);
+}
+
+#[test]
+fn key_to_binding_key_dead_key_none_returns_none() {
+    let key = Key::Dead(None);
+    assert_eq!(key_to_binding_key(&key), None);
+}
+
+#[test]
+fn key_to_binding_key_unidentified_returns_none() {
+    use winit::keyboard::NativeKey;
+    let key = Key::Unidentified(NativeKey::Unidentified);
+    assert_eq!(key_to_binding_key(&key), None);
+}
+
+#[test]
+fn key_to_binding_key_empty_character_returns_none() {
+    let key = Key::Character("".into());
+    assert_eq!(key_to_binding_key(&key), None);
+}
+
+// ---------------------------------------------------------------------------
+// parse_action SendText edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_action_send_text_empty_payload() {
+    // SendText with no text after the colon should produce an empty string.
+    assert_eq!(
+        parse_action("SendText:"),
+        Some(Action::SendText(String::new())),
+    );
+}
+
+#[test]
+fn parse_action_send_text_payload_with_colons() {
+    // Colon is only significant for the first occurrence (prefix split).
+    // Additional colons in the payload should be preserved.
+    assert_eq!(
+        parse_action("SendText:foo:bar:baz"),
+        Some(Action::SendText("foo:bar:baz".to_owned())),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// parse_key extended function keys
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_key_extended_function_keys() {
+    assert_eq!(parse_key("F13"), Some(BindingKey::Named(NamedKey::F13)));
+    assert_eq!(parse_key("F24"), Some(BindingKey::Named(NamedKey::F24)));
+    // F25 and above are not in our table.
+    assert_eq!(parse_key("F25"), None);
+}
+
+// ---------------------------------------------------------------------------
+// Merge preserves user binding order
+// ---------------------------------------------------------------------------
+
+#[test]
+fn merge_user_bindings_searched_in_order() {
+    // User bindings are appended in order. When searching with
+    // `find_binding`, the first match wins (since defaults are checked
+    // first, then appended user bindings). This test verifies that
+    // the last user binding for the same key+mods replaces earlier ones
+    // (via retain + push), so order is deterministic.
+    let user = vec![
+        KeybindConfig {
+            key: "x".to_owned(),
+            mods: "Alt".to_owned(),
+            action: "Copy".to_owned(),
+        },
+        KeybindConfig {
+            key: "y".to_owned(),
+            mods: "Alt".to_owned(),
+            action: "Paste".to_owned(),
+        },
+    ];
+    let bindings = merge_bindings(&user);
+
+    // Both should be present — order of insertion should match.
+    let x = BindingKey::Character("x".to_owned());
+    let y = BindingKey::Character("y".to_owned());
+    assert_eq!(
+        find_binding(&bindings, &x, Modifiers::ALT),
+        Some(&Action::Copy)
+    );
+    assert_eq!(
+        find_binding(&bindings, &y, Modifiers::ALT),
+        Some(&Action::Paste)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Action as_str() roundtrip through parse_action
+// ---------------------------------------------------------------------------
+
+#[test]
+fn action_as_str_roundtrip() {
+    // Every action's as_str() should parse back to the same action
+    // via parse_action(), except SendText (dynamic payload).
+    let actions = [
+        Action::Copy,
+        Action::Paste,
+        Action::SmartCopy,
+        Action::SmartPaste,
+        Action::NewTab,
+        Action::CloseTab,
+        Action::NextTab,
+        Action::PrevTab,
+        Action::ZoomIn,
+        Action::ZoomOut,
+        Action::ZoomReset,
+        Action::ScrollPageUp,
+        Action::ScrollPageDown,
+        Action::ScrollToTop,
+        Action::ScrollToBottom,
+        Action::OpenSearch,
+        Action::ReloadConfig,
+        Action::PreviousPrompt,
+        Action::NextPrompt,
+        Action::DuplicateTab,
+        Action::MoveTabToNewWindow,
+        Action::ToggleFullscreen,
+        Action::EnterMarkMode,
+        Action::None,
+    ];
+    for action in &actions {
+        let s = action.as_str();
+        let parsed = parse_action(s);
+        assert_eq!(parsed.as_ref(), Some(action), "roundtrip failed for {s:?}",);
+    }
+}

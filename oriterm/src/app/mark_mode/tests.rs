@@ -992,10 +992,15 @@ fn word_right_at_buffer_end_clamps_with_grid() {
 
 /// Create a Tab with default settings and a live PTY.
 fn make_tab(rows: u16, cols: u16) -> crate::tab::Tab {
-    use crate::tab::{Tab, TabId};
+    use crate::tab::{Tab, TabConfig, TabId};
 
-    let proxy = test_proxy();
-    Tab::new(TabId::next(), rows, cols, 1000, proxy).expect("tab creation should succeed")
+    let cfg = TabConfig {
+        rows,
+        cols,
+        scrollback: 1000,
+        theme: oriterm_core::Theme::default(),
+    };
+    Tab::new(TabId::next(), &cfg, test_proxy()).expect("tab creation should succeed")
 }
 
 /// Get a cloned winit `EventLoopProxy` for tests.

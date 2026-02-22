@@ -111,13 +111,17 @@ impl App {
         // 9. Spawn the terminal tab (PTY + VTE + Term).
         let t_tab_start = std::time::Instant::now();
         let tab_id = TabId::next();
-        let tab = Tab::new(
-            tab_id,
-            rows as u16,
-            cols as u16,
-            self.config.terminal.scrollback,
-            self.event_proxy.clone(),
-        )?;
+        let theme = self
+            .config
+            .colors
+            .resolve_theme(crate::platform::theme::system_theme);
+        let tab_cfg = crate::tab::TabConfig {
+            rows: rows as u16,
+            cols: cols as u16,
+            scrollback: self.config.terminal.scrollback,
+            theme,
+        };
+        let tab = Tab::new(tab_id, &tab_cfg, self.event_proxy.clone())?;
         let t_tab = t_tab_start.elapsed();
 
         let t_total = t_start.elapsed();

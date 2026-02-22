@@ -22,10 +22,10 @@ sections:
     status: complete
   - id: "03.6"
     title: Platform-Specific Code Paths
-    status: in-progress
+    status: complete
   - id: "03.7"
     title: System Theme Detection
-    status: in-progress
+    status: complete
   - id: "03.8"
     title: Section Completion
     status: in-progress
@@ -403,7 +403,8 @@ Audit and implement all platform-conditional code paths. Every `#[cfg(target_os 
 - [x] Windows: DirectComposition + DWM blur (see 03.4)
 - [x] Linux: compositor-dependent ARGB visual (see 03.4)
 - [x] macOS: `NSVisualEffectView` vibrancy (see 03.4)
-- [ ] Config: `window.opacity` (0.0-1.0), `window.blur` (bool)- [x] Graceful degradation: if transparency is not supported, fall back to opaque
+- [x] Config: `window.opacity` (0.0-1.0), `window.blur` (bool)
+- [x] Graceful degradation: if transparency is not supported, fall back to opaque
 
 ### Process Management
 
@@ -442,19 +443,24 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
   - [x] D-Bus communication via `dbus-send` subprocess (avoids heavy `zbus` dependency)
   - [x] Fallback: check `GTK_THEME` environment variable for "dark" substring
   - [x] Fallback: check `$XDG_CURRENT_DESKTOP` and query DE-specific settings
-- [ ] Unified API:  - [x] `fn system_theme() -> Theme` where `Theme` is `Dark`, `Light`, or `Unknown`
+- [x] Unified API:
+  - [x] `fn system_theme() -> Theme` where `Theme` is `Dark`, `Light`, or `Unknown`
   - [x] Called at startup to select default color scheme
-  - [ ] Config override: `appearance.theme = "dark" | "light" | "auto"` — `auto` uses system detection- [x] Adapt default palette:
+  - [x] Config override: `colors.theme = "dark" | "light" | "auto"` — `auto` uses system detection
+- [x] Adapt default palette:
   - [x] Dark mode: dark background, light text (current default)
   - [x] Light mode: light background, dark text
   - [x] User-configured palette always takes priority over system theme
-- [ ] **Tests:**  - [x] `system_theme()` returns a valid `Theme` variant on the current platform
-  - [ ] Config override `"dark"` / `"light"` ignores system detection  - [ ] `"auto"` uses system detection result
+- [x] **Tests:**
+  - [x] `system_theme()` returns a valid `Theme` variant on the current platform
+  - [x] Config override `"dark"` / `"light"` ignores system detection
+  - [x] `"auto"` uses system detection result
 ---
 
 ## 03.8 Section Completion
 
-- [ ] All 03.1-03.7 items complete- [x] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality
+- [x] All 03.1-03.7 items complete
+- [x] Terminal runs on Windows with ConPTY, Vulkan/DX12, and full functionality
 - [x] Terminal runs on Linux with openpty, Vulkan, and clipboard support
   - [ ] Tested on X11 and Wayland
 - [ ] Terminal runs on macOS with openpty, Metal, and clipboard support
@@ -465,7 +471,8 @@ Detect the operating system's dark/light mode preference and adapt the terminal'
 - [x] Window decorations appropriate per platform
 - [x] URL opening works per platform
 - [x] Config paths follow platform conventions
-- [ ] Transparency works where compositor supports it- [x] System theme detection selects appropriate default palette
+- [x] Transparency works where compositor supports it
+- [x] System theme detection selects appropriate default palette
 - [x] No platform-specific panics or crashes
 - [x] CI builds for all three platforms
 - [x] `cargo test --target x86_64-pc-windows-gnu` — passes

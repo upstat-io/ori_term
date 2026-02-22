@@ -717,3 +717,509 @@ fn load_returns_defaults_on_nonexistent_path() {
     assert_eq!(defaults.terminal.scrollback, 10_000);
     assert_eq!(defaults.window.columns, 120);
 }
+
+// ---------------------------------------------------------------------------
+// Theme override
+// ---------------------------------------------------------------------------
+
+#[test]
+fn theme_defaults_to_auto() {
+    let parsed: Config = toml::from_str("").expect("deserialize");
+    assert_eq!(parsed.colors.theme, ThemeOverride::Auto);
+}
+
+#[test]
+fn theme_override_dark_from_toml() {
+    let toml_str = r#"
+[colors]
+theme = "dark"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.colors.theme, ThemeOverride::Dark);
+}
+
+#[test]
+fn theme_override_light_from_toml() {
+    let toml_str = r#"
+[colors]
+theme = "light"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.colors.theme, ThemeOverride::Light);
+}
+
+#[test]
+fn theme_override_auto_from_toml() {
+    let toml_str = r#"
+[colors]
+theme = "auto"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.colors.theme, ThemeOverride::Auto);
+}
+
+#[test]
+fn theme_override_unknown_value_is_error() {
+    let toml_str = r#"
+[colors]
+theme = "sepia"
+"#;
+    assert!(toml::from_str::<Config>(toml_str).is_err());
+}
+
+#[test]
+fn theme_override_dark_ignores_system_detection() {
+    use oriterm_core::Theme;
+
+    let cfg = ColorConfig {
+        theme: ThemeOverride::Dark,
+        ..Default::default()
+    };
+    // System would return Light, but config forces Dark.
+    let resolved = cfg.resolve_theme(|| Theme::Light);
+    assert_eq!(resolved, Theme::Dark);
+}
+
+#[test]
+fn theme_override_light_ignores_system_detection() {
+    use oriterm_core::Theme;
+
+    let cfg = ColorConfig {
+        theme: ThemeOverride::Light,
+        ..Default::default()
+    };
+    // System would return Dark, but config forces Light.
+    let resolved = cfg.resolve_theme(|| Theme::Dark);
+    assert_eq!(resolved, Theme::Light);
+}
+
+#[test]
+fn theme_override_auto_uses_system_detection() {
+    use oriterm_core::Theme;
+
+    let cfg = ColorConfig {
+        theme: ThemeOverride::Auto,
+        ..Default::default()
+    };
+    assert_eq!(cfg.resolve_theme(|| Theme::Dark), Theme::Dark);
+    assert_eq!(cfg.resolve_theme(|| Theme::Light), Theme::Light);
+    assert_eq!(cfg.resolve_theme(|| Theme::Unknown), Theme::Unknown);
+}
+
+#[test]
+fn theme_roundtrip_serialization() {
+    let mut cfg = Config::default();
+    cfg.colors.theme = ThemeOverride::Light;
+
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.colors.theme, ThemeOverride::Light);
+}
+
+// ---------------------------------------------------------------------------
+// Config PartialEq correctness (single-field diff detection)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn config_partial_eq_detects_color_diff() {
+    let a = Config::default();
+    let mut b = Config::default();
+    b.colors.foreground = Some("#FF0000".to_owned());
+    assert_ne!(
+        a.colors, b.colors,
+        "single-field change should break equality"
+    );
+}
+
+#[test]
+fn config_partial_eq_detects_theme_diff() {
+    let a = ColorConfig::default();
+    let mut b = ColorConfig::default();
+    b.theme = ThemeOverride::Light;
+    assert_ne!(a, b, "theme change should break ColorConfig equality");
+}
+
+#[test]
+fn config_partial_eq_identical_is_equal() {
+    let a = Config::default();
+    let b = Config::default();
+    assert_eq!(a.colors, b.colors);
+    assert_eq!(a.window.opacity, b.window.opacity);
+}
+
+// ---------------------------------------------------------------------------
+// Font size boundary conditions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn font_size_zero_parses() {
+    let toml_str = r#"
+[font]
+size = 0.0
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!((parsed.font.size).abs() < f32::EPSILON);
+}
+
+#[test]
+fn font_size_negative_parses() {
+    let toml_str = r#"
+[font]
+size = -5.0
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!((parsed.font.size - (-5.0)).abs() < f32::EPSILON);
+}
+
+#[test]
+fn font_size_very_large_parses() {
+    let toml_str = r#"
+[font]
+size = 999.0
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!((parsed.font.size - 999.0).abs() < f32::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// Numeric edge cases (NaN, infinity)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn opacity_nan_defaults_to_one() {
+    // TOML accepts `nan` for floats. NaN is not a valid opacity, so
+    // effective_opacity() should return the default (1.0).
+    let toml_str = r#"
+[window]
+opacity = nan
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!(parsed.window.opacity.is_nan());
+    assert!((parsed.window.effective_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn opacity_inf_clamped_to_one() {
+    let toml_str = r#"
+[window]
+opacity = inf
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!(parsed.window.opacity.is_infinite());
+    // inf.clamp(0.0, 1.0) returns 1.0.
+    assert!((parsed.window.effective_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn opacity_neg_inf_clamped_to_zero() {
+    let toml_str = r#"
+[window]
+opacity = -inf
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert!(parsed.window.opacity.is_infinite());
+    // (-inf).clamp(0.0, 1.0) returns 0.0.
+    assert!(parsed.window.effective_opacity().abs() < f32::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// ANSI color index out-of-range in overrides
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ansi_override_out_of_range_index_ignored() {
+    // ANSI overrides with index >= 8 should be silently skipped
+    // (the apply_color_overrides function logs a warning).
+    let toml_str = r##"
+[colors.ansi]
+8 = "#FF0000"
+99 = "#00FF00"
+"##;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    // The values parse into the HashMap, but apply_color_overrides
+    // will skip them. Verify they're present in the map.
+    assert_eq!(
+        parsed.colors.ansi.get("8").map(|s| s.as_str()),
+        Some("#FF0000")
+    );
+    assert_eq!(
+        parsed.colors.ansi.get("99").map(|s| s.as_str()),
+        Some("#00FF00")
+    );
+}
+
+#[test]
+fn bright_override_out_of_range_index_ignored() {
+    let toml_str = r##"
+[colors.bright]
+8 = "#FF0000"
+"##;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(
+        parsed.colors.bright.get("8").map(|s| s.as_str()),
+        Some("#FF0000")
+    );
+}
+
+#[test]
+fn apply_color_overrides_skips_out_of_range_ansi() {
+    use oriterm_core::{Palette, Theme};
+    use vte::ansi::Color;
+
+    let mut palette = Palette::for_theme(Theme::Dark);
+    let original_8 = palette.resolve(Color::Indexed(8));
+
+    let mut colors = ColorConfig::default();
+    colors.ansi.insert("8".to_owned(), "#FF0000".to_owned());
+
+    crate::app::config_reload::apply_color_overrides(&mut palette, &colors);
+
+    // Index 8 is out of range for ansi (0-7), so it should be unchanged.
+    assert_eq!(palette.resolve(Color::Indexed(8)), original_8);
+}
+
+#[test]
+fn apply_color_overrides_applies_valid_ansi() {
+    use oriterm_core::{Palette, Rgb, Theme};
+    use vte::ansi::Color;
+
+    let mut palette = Palette::for_theme(Theme::Dark);
+
+    let mut colors = ColorConfig::default();
+    colors.ansi.insert("0".to_owned(), "#112233".to_owned());
+
+    crate::app::config_reload::apply_color_overrides(&mut palette, &colors);
+
+    assert_eq!(
+        palette.resolve(Color::Indexed(0)),
+        Rgb {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33
+        },
+    );
+}
+
+// ---------------------------------------------------------------------------
+// clamp_or_default direct tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn clamp_or_default_normal_value() {
+    assert!((super::clamp_or_default(0.5, 0.0, 1.0, 1.0) - 0.5).abs() < f32::EPSILON);
+}
+
+#[test]
+fn clamp_or_default_above_max() {
+    assert!((super::clamp_or_default(2.0, 0.0, 1.0, 1.0) - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn clamp_or_default_below_min() {
+    assert!(super::clamp_or_default(-1.0, 0.0, 1.0, 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn clamp_or_default_nan_returns_default() {
+    assert!((super::clamp_or_default(f32::NAN, 0.0, 1.0, 0.75) - 0.75).abs() < f32::EPSILON);
+}
+
+#[test]
+fn clamp_or_default_inf_clamped() {
+    assert!((super::clamp_or_default(f32::INFINITY, 0.0, 1.0, 0.5) - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn clamp_or_default_neg_inf_clamped() {
+    assert!(super::clamp_or_default(f32::NEG_INFINITY, 0.0, 1.0, 0.5).abs() < f32::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// minimum_contrast NaN/inf
+// ---------------------------------------------------------------------------
+
+#[test]
+fn minimum_contrast_nan_defaults_to_one() {
+    let mut cfg = ColorConfig::default();
+    cfg.minimum_contrast = f32::NAN;
+    assert!((cfg.effective_minimum_contrast() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn minimum_contrast_inf_clamped_to_twenty_one() {
+    let mut cfg = ColorConfig::default();
+    cfg.minimum_contrast = f32::INFINITY;
+    assert!((cfg.effective_minimum_contrast() - 21.0).abs() < f32::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// Bright color override valid range
+// ---------------------------------------------------------------------------
+
+#[test]
+fn apply_color_overrides_bright_maps_to_palette_8_plus() {
+    use oriterm_core::{Palette, Rgb, Theme};
+    use vte::ansi::Color;
+
+    let mut palette = Palette::for_theme(Theme::Dark);
+
+    let mut colors = ColorConfig::default();
+    colors.bright.insert("3".to_owned(), "#FF00FF".to_owned());
+
+    crate::app::config_reload::apply_color_overrides(&mut palette, &colors);
+
+    // bright[3] should map to palette index 11 (3 + 8).
+    assert_eq!(
+        palette.resolve(Color::Indexed(11)),
+        Rgb {
+            r: 0xFF,
+            g: 0x00,
+            b: 0xFF
+        },
+    );
+}
+
+#[test]
+fn apply_color_overrides_bright_out_of_range_skipped() {
+    use oriterm_core::{Palette, Theme};
+    use vte::ansi::Color;
+
+    let mut palette = Palette::for_theme(Theme::Dark);
+    let original_16 = palette.resolve(Color::Indexed(16));
+
+    let mut colors = ColorConfig::default();
+    colors.bright.insert("8".to_owned(), "#FF0000".to_owned());
+
+    crate::app::config_reload::apply_color_overrides(&mut palette, &colors);
+
+    // bright[8] is out of range (0-7), palette[16] unchanged.
+    assert_eq!(palette.resolve(Color::Indexed(16)), original_16);
+}
+
+// ---------------------------------------------------------------------------
+// Non-numeric key in ANSI map
+// ---------------------------------------------------------------------------
+
+#[test]
+fn apply_color_overrides_non_numeric_ansi_key_ignored() {
+    use oriterm_core::{Palette, Theme};
+    use vte::ansi::Color;
+
+    let mut palette = Palette::for_theme(Theme::Dark);
+    let original = [
+        palette.resolve(Color::Indexed(0)),
+        palette.resolve(Color::Indexed(1)),
+        palette.resolve(Color::Indexed(2)),
+    ];
+
+    let mut colors = ColorConfig::default();
+    colors.ansi.insert("abc".to_owned(), "#FF0000".to_owned());
+    colors.ansi.insert("".to_owned(), "#00FF00".to_owned());
+
+    crate::app::config_reload::apply_color_overrides(&mut palette, &colors);
+
+    // No valid numeric keys → no palette changes.
+    assert_eq!(palette.resolve(Color::Indexed(0)), original[0]);
+    assert_eq!(palette.resolve(Color::Indexed(1)), original[1]);
+    assert_eq!(palette.resolve(Color::Indexed(2)), original[2]);
+}
+
+// ---------------------------------------------------------------------------
+// Tab bar opacity NaN fallback
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tab_bar_opacity_nan_defaults_to_one() {
+    let mut cfg = WindowConfig::default();
+    cfg.tab_bar_opacity = Some(f32::NAN);
+    // NaN tab_bar_opacity → clamp_or_default returns 1.0.
+    assert!((cfg.effective_tab_bar_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn tab_bar_opacity_none_with_nan_opacity() {
+    let mut cfg = WindowConfig::default();
+    cfg.opacity = f32::NAN;
+    cfg.tab_bar_opacity = None;
+    // Falls back to opacity (NaN), then clamp_or_default returns 1.0.
+    assert!((cfg.effective_tab_bar_opacity() - 1.0).abs() < f32::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// Cursor color override through apply_color_overrides
+// ---------------------------------------------------------------------------
+
+#[test]
+fn apply_color_overrides_sets_cursor() {
+    use oriterm_core::{Palette, Rgb, Theme};
+
+    let mut palette = Palette::for_theme(Theme::Dark);
+
+    let mut colors = ColorConfig::default();
+    colors.cursor = Some("#AABBCC".to_owned());
+
+    crate::app::config_reload::apply_color_overrides(&mut palette, &colors);
+
+    assert_eq!(
+        palette.cursor_color(),
+        Rgb {
+            r: 0xAA,
+            g: 0xBB,
+            b: 0xCC
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Full 16-color palette override roundtrip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn apply_color_overrides_full_16_colors() {
+    use oriterm_core::{Palette, Rgb, Theme};
+    use vte::ansi::Color;
+
+    let mut palette = Palette::for_theme(Theme::Dark);
+
+    let mut colors = ColorConfig::default();
+    // Set all 8 ANSI colors.
+    for i in 0..8 {
+        let hex = format!("#{:02X}{:02X}00", i * 30, i * 20);
+        colors.ansi.insert(i.to_string(), hex);
+    }
+    // Set all 8 bright colors.
+    for i in 0..8 {
+        let hex = format!("#00{:02X}{:02X}", i * 30, i * 20);
+        colors.bright.insert(i.to_string(), hex);
+    }
+
+    crate::app::config_reload::apply_color_overrides(&mut palette, &colors);
+
+    // Verify ANSI 0-7.
+    for i in 0u8..8 {
+        let expected = Rgb {
+            r: i * 30,
+            g: i * 20,
+            b: 0,
+        };
+        assert_eq!(
+            palette.resolve(Color::Indexed(i)),
+            expected,
+            "ANSI color {i} mismatch",
+        );
+    }
+    // Verify bright 8-15.
+    for i in 0u8..8 {
+        let expected = Rgb {
+            r: 0,
+            g: i * 30,
+            b: i * 20,
+        };
+        assert_eq!(
+            palette.resolve(Color::Indexed(i + 8)),
+            expected,
+            "Bright color {} mismatch",
+            i + 8,
+        );
+    }
+}

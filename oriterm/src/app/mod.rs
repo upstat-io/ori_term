@@ -6,7 +6,7 @@
 //! PTY reader thread.
 
 mod clipboard_ops;
-mod config_reload;
+pub(crate) mod config_reload;
 mod cursor_blink;
 mod init;
 mod keyboard_input;
