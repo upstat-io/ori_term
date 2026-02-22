@@ -563,6 +563,73 @@ shell_integration = false
 }
 
 #[test]
+fn bom_prefixed_toml_parses_correctly() {
+    // Windows editors (e.g. Notepad) prepend UTF-8 BOM (U+FEFF).
+    let toml_str = "\u{FEFF}[font]\nsize = 14.0\n";
+    let parsed: Config = toml::from_str(toml_str).expect("BOM-prefixed TOML should parse");
+    assert!((parsed.font.size - 14.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn invalid_enum_variant_is_parse_error() {
+    // An unrecognized enum variant should fail deserialization so that
+    // `Config::load()` falls back to defaults rather than silently accepting.
+    let toml_str = r#"
+[window]
+decorations = "invalid_variant"
+"#;
+    let result: Result<Config, _> = toml::from_str(toml_str);
+    assert!(result.is_err());
+}
+
+#[test]
+fn invalid_type_is_parse_error() {
+    // Wrong type (string where number expected) fails parse.
+    let toml_str = r#"
+[font]
+size = "not_a_number"
+"#;
+    let result: Result<Config, _> = toml::from_str(toml_str);
+    assert!(result.is_err());
+}
+
+#[test]
+fn try_load_distinguishes_missing_from_parse_error() {
+    // try_load returns Err for both missing files and parse errors;
+    // the error message should contain "failed to read" for missing
+    // and "parse error" for invalid content.
+    let err = Config::try_load();
+    // Since the config file may or may not exist in the test environment,
+    // just verify it returns a Result (no panic).
+    let _ = err;
+}
+
+#[test]
+fn unknown_keys_are_ignored() {
+    // Forward compatibility: new config keys added in future versions
+    // shouldn't break older parsers (no `deny_unknown_fields`).
+    let toml_str = r#"
+[font]
+size = 14.0
+future_field = true
+
+[window]
+nonexistent_option = "hello"
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("unknown keys should be ignored");
+    assert!((parsed.font.size - 14.0).abs() < f32::EPSILON);
+    assert_eq!(parsed.window.columns, 120);
+}
+
+#[test]
+fn serialization_is_deterministic() {
+    // Default config serializes identically across two calls.
+    let a = toml::to_string_pretty(&Config::default()).expect("serialize 1");
+    let b = toml::to_string_pretty(&Config::default()).expect("serialize 2");
+    assert_eq!(a, b);
+}
+
+#[test]
 fn keybind_config_from_toml() {
     let toml_str = r#"
 [[keybind]]

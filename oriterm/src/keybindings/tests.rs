@@ -182,3 +182,107 @@ fn merge_send_text_binding() {
     let action = find_binding(&bindings, &key, Modifiers::ALT);
     assert_eq!(action, Some(&Action::SendText("\x1b[A".to_owned())));
 }
+
+#[test]
+fn merge_duplicate_user_entries_last_wins() {
+    // When user specifies the same key+mods twice, last entry wins.
+    let user = vec![
+        KeybindConfig {
+            key: "t".to_owned(),
+            mods: "Ctrl".to_owned(),
+            action: "CloseTab".to_owned(),
+        },
+        KeybindConfig {
+            key: "t".to_owned(),
+            mods: "Ctrl".to_owned(),
+            action: "ZoomIn".to_owned(),
+        },
+    ];
+    let bindings = merge_bindings(&user);
+    let key = BindingKey::Character("t".to_owned());
+    let action = find_binding(&bindings, &key, Modifiers::CONTROL);
+    assert_eq!(action, Some(&Action::ZoomIn));
+}
+
+#[test]
+fn modifier_strict_equality_no_subset_matching() {
+    // Ctrl+C must not match Ctrl+Shift+C and vice versa.
+    let bindings = default_bindings();
+    let key = BindingKey::Character("c".to_owned());
+
+    // Ctrl alone → SmartCopy.
+    assert_eq!(
+        find_binding(&bindings, &key, Modifiers::CONTROL),
+        Some(&Action::SmartCopy)
+    );
+    // Ctrl+Shift → Copy.
+    assert_eq!(
+        find_binding(&bindings, &key, Modifiers::CONTROL | Modifiers::SHIFT),
+        Some(&Action::Copy)
+    );
+    // Ctrl+Alt → no match (superset not matched).
+    assert_eq!(
+        find_binding(&bindings, &key, Modifiers::CONTROL | Modifiers::ALT),
+        None
+    );
+    // Shift alone → no match (subset not matched).
+    assert_eq!(find_binding(&bindings, &key, Modifiers::SHIFT), None);
+}
+
+#[test]
+fn merge_adds_new_binding_not_in_defaults() {
+    // A user binding for a key+mod combo that doesn't exist in defaults
+    // should be appended.
+    let user = vec![KeybindConfig {
+        key: "z".to_owned(),
+        mods: "Ctrl|Shift".to_owned(),
+        action: "DuplicateTab".to_owned(),
+    }];
+    let bindings = merge_bindings(&user);
+    let key = BindingKey::Character("z".to_owned());
+    let action = find_binding(&bindings, &key, Modifiers::CONTROL | Modifiers::SHIFT);
+    assert_eq!(action, Some(&Action::DuplicateTab));
+}
+
+#[test]
+fn parse_mods_whitespace_around_pipe() {
+    // Spaces around the pipe separator should be trimmed.
+    assert_eq!(
+        parse_mods("Ctrl | Shift"),
+        Modifiers::CONTROL | Modifiers::SHIFT
+    );
+    assert_eq!(parse_mods(" Alt "), Modifiers::ALT);
+    assert_eq!(
+        parse_mods("Ctrl | Shift | Alt"),
+        Modifiers::CONTROL | Modifiers::SHIFT | Modifiers::ALT
+    );
+}
+
+#[test]
+fn parse_key_multi_byte_char() {
+    // Multi-byte characters (CJK, emoji) — `s.len()` can be > 1 byte
+    // but still a single Unicode char.
+    assert_eq!(
+        parse_key("\u{00e9}"),
+        Some(BindingKey::Character("\u{00e9}".to_owned()))
+    );
+    // 3-byte CJK char — `s.len()` is 3, within the <=4 threshold.
+    assert_eq!(
+        parse_key("\u{4e16}"),
+        Some(BindingKey::Character("\u{4e16}".to_owned()))
+    );
+    // 4-byte emoji — `s.len()` is 4, exactly at the <=4 threshold.
+    assert_eq!(
+        parse_key("\u{1f600}"),
+        Some(BindingKey::Character("\u{1f600}".to_owned()))
+    );
+}
+
+#[test]
+fn unescape_truncated_hex() {
+    use super::parse::unescape_send_text;
+    // Truncated hex: `\x1` has only one hex digit — pads with '0'.
+    assert_eq!(unescape_send_text("\\x1"), "\x10");
+    // Bare `\x` with no hex digits at all.
+    assert_eq!(unescape_send_text("\\x"), "\0");
+}
