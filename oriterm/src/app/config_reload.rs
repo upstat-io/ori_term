@@ -154,7 +154,8 @@ impl App {
         }
 
         if let Some(tab) = &self.tab {
-            tab.resize(rows as u16, cols as u16);
+            tab.resize_grid(rows as u16, cols as u16);
+            tab.resize_pty(rows as u16, cols as u16);
         }
     }
 

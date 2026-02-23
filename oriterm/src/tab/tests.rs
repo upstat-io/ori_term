@@ -138,23 +138,6 @@ fn notifier_skips_empty_input() {
 }
 
 #[test]
-fn notifier_sends_resize() {
-    let (_pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
-    let (tx, rx) = mpsc::channel();
-    let notifier = Notifier::new(Box::new(pipe_writer), tx);
-
-    notifier.resize(40, 120);
-
-    match rx.recv().expect("should receive") {
-        Msg::Resize { rows, cols } => {
-            assert_eq!(rows, 40);
-            assert_eq!(cols, 120);
-        }
-        other => panic!("expected Resize, got {other:?}"),
-    }
-}
-
-#[test]
 fn notifier_sends_shutdown() {
     let (_pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
     let (tx, rx) = mpsc::channel();
@@ -177,7 +160,6 @@ fn notifier_survives_dropped_receiver() {
 
     // Should not panic when receiver is gone.
     notifier.notify(b"orphaned");
-    notifier.resize(24, 80);
     notifier.shutdown();
 }
 
@@ -233,8 +215,9 @@ fn tab_resize_sends_to_pty() {
 
     let tab = Tab::new(id, &tab_cfg(24, 80), proxy).expect("tab creation should succeed");
 
-    // Should not panic — resize goes through Notifier → channel → PTY control.
-    tab.resize(40, 120);
+    // Should not panic — grid resize + direct PTY resize.
+    tab.resize_grid(40, 120);
+    tab.resize_pty(40, 120);
 }
 
 #[test]
@@ -417,13 +400,11 @@ fn resize_updates_pty_dimensions() {
         assert_eq!(term.grid().cols(), 80);
     }
 
-    // Resize the PTY to 120x40.
-    tab.resize(40, 120);
+    // Resize the grid and PTY to 120x40.
+    tab.resize_grid(40, 120);
+    tab.resize_pty(40, 120);
 
-    // Wait for the resize to propagate through the PTY event loop.
-    // The PTY reports the new size, but the terminal grid is NOT
-    // resized here — grid reflow is in Section 12. We verify the
-    // PTY accepted the resize without error.
+    // Wait for the shell to process SIGWINCH and redraw.
     thread::sleep(Duration::from_millis(200));
 
     // Send a command after resize to verify the pipeline still works.

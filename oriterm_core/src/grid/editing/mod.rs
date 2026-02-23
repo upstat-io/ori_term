@@ -310,6 +310,13 @@ impl Grid {
                 for line in 0..self.lines {
                     self.rows[line].reset(self.cols, &template);
                 }
+                // Remove reflow overflow from the most recent column resize.
+                // These are stale copies of visible content that wrapped
+                // into scrollback during reflow.
+                for _ in 0..self.resize_pushed {
+                    self.scrollback.pop_newest();
+                }
+                self.resize_pushed = 0;
                 self.dirty.mark_all();
             }
             DisplayEraseMode::Scrollback => {

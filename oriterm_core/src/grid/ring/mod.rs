@@ -111,6 +111,28 @@ impl ScrollbackBuffer {
         Some(mem::replace(&mut self.inner[newest_idx], Row::new(0)))
     }
 
+    /// Drain all rows oldest-first, consuming the buffer contents.
+    ///
+    /// Returns a `Vec<Row>` in chronological order (oldest to newest).
+    /// After this call the buffer is empty. Used by reflow to avoid
+    /// cloning+reversing the entire scrollback.
+    pub(super) fn drain_oldest_first(&mut self) -> Vec<Row> {
+        let n = self.len;
+        if n == 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::with_capacity(n);
+        // Logical index `len - 1` is oldest, `0` is newest.
+        for i in (0..n).rev() {
+            let phys = self.physical_index(i);
+            out.push(mem::replace(&mut self.inner[phys], Row::new(0)));
+        }
+        self.inner.clear();
+        self.len = 0;
+        self.start = 0;
+        out
+    }
+
     /// Clear all stored rows without deallocating.
     pub fn clear(&mut self) {
         self.inner.clear();

@@ -17,7 +17,6 @@ use std::thread::{self, JoinHandle};
 use oriterm_core::{EventListener, FairMutex, Term};
 
 use super::Msg;
-use super::PtyControl;
 
 /// Maximum bytes parsed under one lock acquisition.
 ///
@@ -41,10 +40,8 @@ pub struct PtyEventLoop<T: EventListener> {
     terminal: Arc<FairMutex<Term<T>>>,
     /// PTY output reader (child → parent).
     reader: Box<dyn Read + Send>,
-    /// Command receiver (resize, shutdown from main thread).
+    /// Command receiver (shutdown from main thread).
     rx: mpsc::Receiver<Msg>,
-    /// PTY control handle for resize operations.
-    pty_control: PtyControl,
     /// VTE parser state machine.
     processor: vte::ansi::Processor,
 }
@@ -55,13 +52,11 @@ impl<T: EventListener> PtyEventLoop<T> {
         terminal: Arc<FairMutex<Term<T>>>,
         reader: Box<dyn Read + Send>,
         rx: mpsc::Receiver<Msg>,
-        pty_control: PtyControl,
     ) -> Self {
         Self {
             terminal,
             reader,
             rx,
-            pty_control,
             processor: vte::ansi::Processor::new(),
         }
     }
@@ -136,29 +131,11 @@ impl<T: EventListener> PtyEventLoop<T> {
         }
     }
 
-    /// Drain the command channel (non-blocking).
+    /// Check the command channel for a shutdown signal (non-blocking).
     ///
     /// Returns `false` if a `Shutdown` message was received.
     fn process_commands(&self) -> bool {
-        while let Ok(msg) = self.rx.try_recv() {
-            match msg {
-                Msg::Resize { rows, cols } => {
-                    self.resize_pty(rows, cols);
-                }
-                Msg::Shutdown => return false,
-            }
-        }
-        true
-    }
-
-    /// Resize the OS PTY dimensions.
-    ///
-    /// Grid resize (reflow) is handled by `Tab::resize` on the main thread
-    /// before this message is sent. This only does the OS-level PTY resize.
-    fn resize_pty(&self, rows: u16, cols: u16) {
-        if let Err(e) = self.pty_control.resize(rows, cols) {
-            log::warn!("PTY resize failed: {e}");
-        }
+        !matches!(self.rx.try_recv(), Ok(Msg::Shutdown))
     }
 }
 

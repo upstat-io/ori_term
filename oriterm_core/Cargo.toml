@@ -15,6 +15,7 @@ vte = { version = "0.15.0", features = ["ansi"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+insta = "1"
 
 [[bench]]
 name = "grid"

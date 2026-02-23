@@ -971,3 +971,81 @@ fn delete_chars_between_consecutive_wide_chars() {
     );
     assert_eq!(grid[line][Column(2)].ch, 'E');
 }
+
+// ── Snapshot tests (insta) ──────────────────────────────────────────
+
+#[test]
+fn snapshot_insert_blank_shifts_content() {
+    let mut grid = grid_with_text(3, 10, "ABCDEFGHIJ");
+    grid.cursor_mut().set_col(Column(3));
+    grid.insert_blank(2);
+
+    insta::assert_snapshot!(grid.snapshot(), @r"
+    [Grid 3x10 cursor=(0,3)]
+    |ABC  DEFGH|
+    |          |
+    |          |
+    ");
+}
+
+#[test]
+fn snapshot_delete_chars_removes_content() {
+    let mut grid = grid_with_text(3, 10, "ABCDEFGHIJ");
+    grid.cursor_mut().set_col(Column(2));
+    grid.delete_chars(3);
+
+    insta::assert_snapshot!(grid.snapshot(), @r"
+    [Grid 3x10 cursor=(0,2)]
+    |ABFGHIJ   |
+    |          |
+    |          |
+    ");
+}
+
+#[test]
+fn snapshot_erase_display_below() {
+    let mut grid = Grid::new(3, 10);
+    for line in 0..3 {
+        grid.cursor_mut().set_line(line);
+        grid.cursor_mut().set_col(Column(0));
+        for ch in "XXXXXXXXXX".chars() {
+            grid.put_char(ch);
+        }
+    }
+    grid.cursor_mut().set_line(1);
+    grid.cursor_mut().set_col(Column(5));
+    grid.erase_display(DisplayEraseMode::Below);
+
+    insta::assert_snapshot!(grid.snapshot(), @r"
+    [Grid 3x10 cursor=(1,5)]
+    |XXXXXXXXXX|
+    |XXXXX     |
+    |          |
+    ");
+}
+
+#[test]
+fn snapshot_wide_char_put_and_wrap() {
+    let mut grid = Grid::new(3, 6);
+    grid.put_char('A');
+    grid.put_char('B');
+    grid.put_char('\u{4e16}'); // Wide: cols 2-3.
+    grid.put_char('\u{754c}'); // Wide: cols 4-5 — fits exactly.
+
+    insta::assert_snapshot!(grid.snapshot(), @r"
+    [Grid 3x6 cursor=(0,6)]
+    |AB世_界_|
+    |      |
+    |      |
+    ");
+
+    // Now write another wide char — wraps to next line.
+    grid.put_char('\u{597d}');
+
+    insta::assert_snapshot!(grid.snapshot(), @r"
+    [Grid 3x6 cursor=(1,2)]
+    |AB世_界_+
+    |好_    |
+    |      |
+    ");
+}

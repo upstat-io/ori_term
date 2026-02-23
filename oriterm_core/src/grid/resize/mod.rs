@@ -20,7 +20,7 @@ impl Grid {
     /// truncated or extended (for alternate screen).
     ///
     /// Resets scroll region, clamps cursor, and marks everything dirty.
-    pub fn resize(&mut self, new_cols: usize, new_lines: usize, reflow: bool) {
+    pub fn resize(&mut self, new_lines: usize, new_cols: usize, reflow: bool) {
         if new_cols == 0 || new_lines == 0 {
             return;
         }
@@ -63,6 +63,10 @@ impl Grid {
     }
 
     /// Common post-resize cleanup: scroll region, cursor clamping, dirty.
+    ///
+    /// `dirty.resize()` unconditionally calls `mark_all()`, so all lines
+    /// are guaranteed dirty after this returns. Callers need not mark dirty
+    /// separately.
     fn finalize_resize(&mut self) {
         self.scroll_region = 0..self.lines;
 
@@ -83,7 +87,11 @@ impl Grid {
             }
         }
 
-        self.display_offset = self.display_offset.min(self.scrollback.len());
+        // Reset to live view. Reflow rewrites scrollback entirely, so the
+        // old display_offset no longer points at the same content. Keeping a
+        // stale offset causes the renderer to show corrupted/duplicated
+        // scrollback instead of the live cursor position.
+        self.display_offset = 0;
         self.dirty.resize(self.lines);
     }
 
@@ -108,36 +116,42 @@ impl Grid {
         for _ in 0..trimmed {
             self.rows.pop();
         }
-        let push_count = to_remove - trimmed;
-        for _ in 0..push_count {
-            if self.rows.is_empty() {
-                break;
-            }
-            let row = self.rows.remove(0);
+        let push_count = (to_remove - trimmed).min(self.rows.len());
+        for row in self.rows.drain(..push_count) {
             if self.scrollback.push(row).is_some() {
                 self.total_evicted += 1;
             }
-            let line = self.cursor.line();
-            self.cursor.set_line(line.saturating_sub(1));
         }
+        self.cursor
+            .set_line(self.cursor.line().saturating_sub(push_count));
         self.rows.truncate(new_lines);
         while self.rows.len() < new_lines {
             self.rows.push(Row::new(self.cols));
         }
     }
 
-    /// Grow visible rows: pull from scrollback or append blanks.
+    /// Grow visible rows: consume scrollback slots and add blank rows.
+    ///
+    /// When the cursor is at the bottom, scrollback rows are consumed
+    /// (maintaining stable row indices) but their content is cleared before
+    /// insertion. This prevents stale scrollback content from appearing in
+    /// the visible area where shell incremental-rendering (e.g. Ink) might
+    /// skip overwriting it, causing ghosting.
     fn grow_rows(&mut self, new_lines: usize) {
         let delta = new_lines - self.lines;
         if self.cursor.line() >= self.lines.saturating_sub(1) {
             let from_sb = delta.min(self.scrollback.len());
+            // Consume scrollback slots to maintain StableRowIndex stability,
+            // but don't show stale content — insert blank rows instead.
             for _ in 0..from_sb {
-                if let Some(row) = self.scrollback.pop_newest() {
-                    self.rows.insert(0, row);
-                    let line = self.cursor.line();
-                    self.cursor.set_line(line + 1);
-                }
+                self.scrollback.pop_newest();
             }
+            self.resize_pushed = self.resize_pushed.saturating_sub(from_sb);
+            // Insert blank rows at top, shifting cursor down.
+            let blanks: Vec<Row> = (0..from_sb).map(|_| Row::new(self.cols)).collect();
+            let blank_count = blanks.len();
+            self.rows.splice(0..0, blanks);
+            self.cursor.set_line(self.cursor.line() + blank_count);
             for _ in 0..(delta - from_sb) {
                 self.rows.push(Row::new(self.cols));
             }
@@ -180,39 +194,69 @@ impl Grid {
         let cursor_abs = visible_start + self.cursor.line();
         let cursor_col = self.cursor.col().0;
 
+        // Real history ends where previous reflow overflow begins.
+        // In `all_rows`: [0..history_end) = real history,
+        // [history_end..visible_start) = reflow overflow from last resize,
+        // [visible_start..) = visible rows.
+        let history_boundary = visible_start.saturating_sub(self.resize_pushed);
+
         // Reflow cells into new-width rows.
-        let (result, new_cursor_abs, new_cursor_col) =
-            reflow_cells(&all_rows, old_cols, new_cols, cursor_abs, cursor_col);
+        let (result, new_cursor_abs, new_cursor_col, new_history_boundary) = reflow_cells(
+            &all_rows,
+            old_cols,
+            new_cols,
+            cursor_abs,
+            cursor_col,
+            history_boundary,
+        );
 
         // Distribute into scrollback + visible, update cursor.
-        self.apply_reflow_result(result, new_cols, new_cursor_abs, new_cursor_col);
+        self.apply_reflow_result(
+            result,
+            new_cols,
+            new_cursor_abs,
+            new_cursor_col,
+            new_history_boundary,
+        );
     }
 
     /// Collect all rows (scrollback oldest-first + visible) for reflow.
     fn collect_all_rows(&mut self) -> (Vec<Row>, usize) {
-        let mut all_rows: Vec<Row> = Vec::with_capacity(self.scrollback.len() + self.rows.len());
-        let sb_rows: Vec<Row> = self.scrollback.iter().cloned().collect();
-        for row in sb_rows.into_iter().rev() {
-            all_rows.push(row);
-        }
+        let mut all_rows = self.scrollback.drain_oldest_first();
         let visible_start = all_rows.len();
         all_rows.append(&mut self.rows);
         (all_rows, visible_start)
     }
 
     /// Apply reflow result: split into scrollback + visible, update cursor.
+    ///
+    /// `new_history_boundary` is the output row index where real scrollback
+    /// history ends. Rows beyond that in the scrollback portion are reflow
+    /// overflow (stale copies of visible content that wrapped).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "reflow result distribution: rows, dimensions, cursor, history boundary"
+    )]
     fn apply_reflow_result(
         &mut self,
         mut result: Vec<Row>,
         new_cols: usize,
         new_cursor_abs: usize,
         new_cursor_col: usize,
+        new_history_boundary: usize,
     ) {
-        for row in &mut result {
-            row.resize(new_cols);
-        }
+        // All rows in `result` are already `new_cols` wide (created by
+        // `Row::new(new_cols)` in `reflow_cells`), so no resize needed.
         if result.is_empty() {
             result.push(Row::new(new_cols));
+        }
+
+        // Trim trailing blank rows so they don't push real content into
+        // scrollback. Keep at least `self.lines` rows (visible area) and
+        // enough to include the cursor position.
+        let min_rows = self.lines.max(new_cursor_abs + 1);
+        while result.len() > min_rows && result.last().is_some_and(Row::is_blank) {
+            result.pop();
         }
 
         let total = result.len();
@@ -222,7 +266,10 @@ impl Grid {
             for row in result.drain(..sb_count) {
                 self.scrollback.push(row);
             }
+            // Overflow = scrollback rows beyond the real history boundary.
+            self.resize_pushed = sb_count.saturating_sub(new_history_boundary);
         } else {
+            self.resize_pushed = 0;
             while result.len() < self.lines {
                 result.push(Row::new(new_cols));
             }
@@ -242,21 +289,35 @@ impl Grid {
 
 /// Reflow all rows from old column width to new column width.
 ///
-/// Returns the reflowed rows, new cursor absolute position, and new cursor column.
+/// Returns (reflowed rows, new cursor abs, new cursor col, new history boundary).
+/// `history_boundary` is the source row index where real scrollback history ends.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "reflow state: source rows, dimensions, cursor position, history boundary"
+)]
 fn reflow_cells(
     all_rows: &[Row],
     old_cols: usize,
     new_cols: usize,
     cursor_abs: usize,
     cursor_col: usize,
-) -> (Vec<Row>, usize, usize) {
+    history_boundary: usize,
+) -> (Vec<Row>, usize, usize, usize) {
     let mut new_cursor_abs = 0usize;
     let mut new_cursor_col = 0usize;
+    let mut new_history_boundary = 0usize;
+    let mut history_tracked = false;
     let mut result: Vec<Row> = Vec::with_capacity(all_rows.len());
     let mut out_row = Row::new(new_cols);
     let mut out_col = 0usize;
 
     for (src_idx, src_row) in all_rows.iter().enumerate() {
+        // Track where the history boundary maps in the output.
+        if !history_tracked && src_idx >= history_boundary {
+            new_history_boundary = result.len();
+            history_tracked = true;
+        }
+
         let wrapped = old_cols > 0
             && src_row.cols() >= old_cols
             && src_row[Column(old_cols - 1)]
@@ -301,11 +362,16 @@ fn reflow_cells(
         }
     }
 
+    // If all rows are real history (boundary at or past end).
+    if !history_tracked {
+        new_history_boundary = result.len() + usize::from(out_col > 0);
+    }
+
     if out_col > 0 {
         result.push(out_row);
     }
 
-    (result, new_cursor_abs, new_cursor_col)
+    (result, new_cursor_abs, new_cursor_col, new_history_boundary)
 }
 
 /// Reflow cells from a single source row into the output.

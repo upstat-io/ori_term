@@ -16,6 +16,8 @@ mod mouse_report;
 mod mouse_selection;
 mod redraw;
 
+use std::time::Duration;
+
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
@@ -107,8 +109,7 @@ impl App {
     pub(crate) fn new(event_proxy: EventLoopProxy<TermEvent>, config: Config) -> Self {
         let bindings = keybindings::merge_bindings(&config.keybind);
         let monitor = ConfigMonitor::new(event_proxy.clone());
-        let blink_interval =
-            std::time::Duration::from_millis(config.terminal.cursor_blink_interval_ms);
+        let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
         Self {
             gpu: None,
             renderer: None,
@@ -488,7 +489,8 @@ impl ApplicationHandler<TermEvent> for App {
         // doesn't sleep past it. When blinking is inactive, the default
         // ControlFlow::Wait lets the event loop sleep indefinitely.
         if self.blinking_active {
-            event_loop.set_control_flow(ControlFlow::WaitUntil(self.cursor_blink.next_toggle()));
+            let next_toggle = self.cursor_blink.next_toggle();
+            event_loop.set_control_flow(ControlFlow::WaitUntil(next_toggle));
         }
     }
 }

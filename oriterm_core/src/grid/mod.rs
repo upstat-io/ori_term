@@ -53,6 +53,11 @@ pub struct Grid {
     display_offset: usize,
     /// Rows evicted from scrollback (for `StableRowIndex` stability).
     total_evicted: usize,
+    /// Reflow overflow: scrollback rows created by column reflow that are
+    /// stale copies of visible content (wrapping pushed them). Consumed by
+    /// `scroll_up` and `erase_display(All)` to remove them before the
+    /// shell redraws after SIGWINCH. Not incremented by height changes.
+    resize_pushed: usize,
     /// Tracks which rows have changed since last drain.
     dirty: DirtyTracker,
 }
@@ -86,6 +91,7 @@ impl Grid {
             scrollback: ScrollbackBuffer::new(max_scrollback),
             display_offset: 0,
             total_evicted: 0,
+            resize_pushed: 0,
             dirty: DirtyTracker::new(lines),
         }
     }
@@ -252,6 +258,8 @@ impl IndexMut<Line> for Grid {
         &mut self.rows[line.0 as usize]
     }
 }
+
+pub mod snapshot;
 
 #[cfg(test)]
 mod tests;

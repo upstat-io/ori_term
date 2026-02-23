@@ -51,6 +51,14 @@ impl Grid {
         // Push evicted rows to scrollback when scrolling the full screen.
         let is_full_screen = start == 0 && end == self.lines;
         if is_full_screen {
+            // Remove stale reflow overflow before pushing real content.
+            // After a column resize, overflow rows (from wrapping) sit
+            // at the newest end of scrollback. Pop them so they don't
+            // compound with the real content we're about to push.
+            for _ in 0..self.resize_pushed {
+                self.scrollback.pop_newest();
+            }
+            self.resize_pushed = 0;
             // Keep user's scrollback view stable when new content arrives.
             if self.display_offset > 0 {
                 let max_after_push =
@@ -59,13 +67,14 @@ impl Grid {
             }
 
             for i in 0..count {
-                // Move the row out, leave a zero-alloc placeholder in its place.
-                // The placeholder rotates to the bottom via scroll_range_up,
-                // where reset() will resize it to the correct column count.
+                // Move the row out, leave a zero-alloc placeholder.
+                // The placeholder rotates to the bottom via
+                // scroll_range_up, where reset() will resize it to
+                // the correct column count.
                 let evicted = mem::replace(&mut self.rows[i], Row::new(0));
                 if let Some(mut recycled) = self.scrollback.push(evicted) {
-                    // Scrollback was full: oldest row evicted. Track for
-                    // StableRowIndex stability.
+                    // Scrollback was full: oldest row evicted. Track
+                    // for StableRowIndex stability.
                     self.total_evicted += 1;
                     recycled.reset(self.cols, &Cell::default());
                     self.rows[i] = recycled;

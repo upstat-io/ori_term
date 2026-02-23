@@ -10,58 +10,13 @@ use std::sync::mpsc;
 use oriterm_core::{FairMutex, Term, Theme, VoidListener};
 
 use super::{MAX_LOCKED_PARSE, PtyEventLoop, READ_BUFFER_SIZE};
-use crate::pty::{Msg, PtyControl};
-
-// ---------------------------------------------------------------------------
-// Mock PTY control (resize only, no real PTY)
-// ---------------------------------------------------------------------------
-
-/// Minimal mock implementing `portable_pty::MasterPty` for tests.
-struct MockControl;
-
-impl portable_pty::MasterPty for MockControl {
-    fn resize(&self, _size: portable_pty::PtySize) -> Result<(), anyhow::Error> {
-        Ok(())
-    }
-
-    fn get_size(&self) -> Result<portable_pty::PtySize, anyhow::Error> {
-        Ok(portable_pty::PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-    }
-
-    fn try_clone_reader(&self) -> Result<Box<dyn Read + Send>, anyhow::Error> {
-        unimplemented!("not needed for tests")
-    }
-
-    fn take_writer(&self) -> Result<Box<dyn Write + Send>, anyhow::Error> {
-        unimplemented!("not needed for tests")
-    }
-
-    #[cfg(unix)]
-    fn process_group_leader(&self) -> Option<i32> {
-        None
-    }
-
-    #[cfg(unix)]
-    fn as_raw_fd(&self) -> Option<i32> {
-        None
-    }
-
-    #[cfg(unix)]
-    fn tty_name(&self) -> Option<std::path::PathBuf> {
-        None
-    }
-}
+use crate::pty::Msg;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Build a PtyEventLoop with a mock control handle and the given reader.
+/// Build a PtyEventLoop with the given reader.
 fn build_event_loop(
     reader: Box<dyn Read + Send>,
     _writer: Box<dyn Write + Send>,
@@ -79,12 +34,7 @@ fn build_event_loop(
     )));
     let (tx, rx) = mpsc::channel();
 
-    let event_loop = PtyEventLoop::new(
-        Arc::clone(&terminal),
-        reader,
-        rx,
-        PtyControl::from_raw(Box::new(MockControl)),
-    );
+    let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, rx);
 
     (event_loop, terminal, tx)
 }

@@ -60,12 +60,6 @@ impl From<portable_pty::ExitStatus> for ExitStatus {
 pub struct PtyControl(Box<dyn MasterPty + Send>);
 
 impl PtyControl {
-    /// Construct from a raw `MasterPty` trait object (test use only).
-    #[cfg(test)]
-    pub(crate) fn from_raw(inner: Box<dyn MasterPty + Send>) -> Self {
-        Self(inner)
-    }
-
     /// Resize the PTY to the given dimensions.
     pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
         self.0

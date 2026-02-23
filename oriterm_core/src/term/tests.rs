@@ -1174,3 +1174,87 @@ fn selection_dirty_set_by_alt_screen_via_decset() {
     feed(&mut term, b"\x1b[?1049h");
     assert!(term.is_selection_dirty());
 }
+
+// ── Term::resize integration ────────────────────────────────────────
+
+#[test]
+fn term_resize_changes_both_grids() {
+    let mut term = make_term();
+    assert_eq!(term.grid().lines(), 24);
+    assert_eq!(term.grid().cols(), 80);
+
+    term.resize(10, 40);
+
+    // Primary grid (active) resized.
+    assert_eq!(term.grid().lines(), 10);
+    assert_eq!(term.grid().cols(), 40);
+
+    // Switch to alt and verify it too.
+    term.swap_alt();
+    assert_eq!(term.grid().lines(), 10);
+    assert_eq!(term.grid().cols(), 40);
+}
+
+#[test]
+fn term_resize_preserves_content() {
+    let mut term = make_term();
+    // Write "hello" at (0,0) via VTE.
+    feed(&mut term, b"hello");
+
+    term.resize(10, 40);
+
+    assert_eq!(term.grid()[Line(0)][Column(0)].ch, 'h');
+    assert_eq!(term.grid()[Line(0)][Column(1)].ch, 'e');
+    assert_eq!(term.grid()[Line(0)][Column(4)].ch, 'o');
+}
+
+#[test]
+fn term_resize_marks_selection_dirty() {
+    let mut term = make_term();
+    term.clear_selection_dirty();
+
+    term.resize(10, 40);
+
+    assert!(term.is_selection_dirty());
+}
+
+#[test]
+fn term_resize_marks_all_dirty() {
+    let mut term = make_term();
+    term.grid_mut().dirty_mut().drain().for_each(drop);
+
+    term.resize(10, 40);
+
+    assert!(term.grid().dirty().is_all_dirty());
+}
+
+#[test]
+fn term_resize_zero_is_noop() {
+    let mut term = make_term();
+    term.resize(0, 40);
+    assert_eq!(term.grid().lines(), 24);
+    assert_eq!(term.grid().cols(), 80);
+
+    term.resize(10, 0);
+    assert_eq!(term.grid().lines(), 24);
+    assert_eq!(term.grid().cols(), 80);
+}
+
+#[test]
+fn term_resize_with_vte_wrapped_content() {
+    let mut term = Term::new(5, 10, 100, Theme::default(), VoidListener);
+    // Write 20 chars — fills 10-col row and wraps to next line via VTE handler.
+    feed(&mut term, b"abcdefghijklmnopqrst");
+    // Cursor should be on line 1 after wrap.
+    assert_eq!(term.grid().cursor().line(), 1);
+
+    // Grow to 20 cols — wrapped line should unwrap.
+    term.resize(5, 20);
+
+    assert_eq!(term.grid().cols(), 20);
+    // Content should be on one line now.
+    assert_eq!(term.grid()[Line(0)][Column(0)].ch, 'a');
+    assert_eq!(term.grid()[Line(0)][Column(9)].ch, 'j');
+    assert_eq!(term.grid()[Line(0)][Column(10)].ch, 'k');
+    assert_eq!(term.grid()[Line(0)][Column(19)].ch, 't');
+}

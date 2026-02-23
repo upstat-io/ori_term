@@ -26,13 +26,6 @@ pub use spawn::{PtyConfig, PtyControl, PtyHandle, spawn_pty};
 /// [`PtyEventLoop`].
 #[derive(Debug)]
 pub enum Msg {
-    /// Resize the PTY and terminal grid.
-    Resize {
-        /// New row count.
-        rows: u16,
-        /// New column count.
-        cols: u16,
-    },
     /// Gracefully stop the reader thread.
     Shutdown,
 }

@@ -340,6 +340,87 @@ fn total_lines_reflects_scrollback() {
     assert_eq!(grid.total_lines(), 5);
 }
 
+// drain_oldest_first tests
+
+#[test]
+fn drain_oldest_first_empty_buffer() {
+    let mut sb = ScrollbackBuffer::new(10);
+    let result = sb.drain_oldest_first();
+    assert!(result.is_empty());
+    assert_eq!(sb.len(), 0);
+}
+
+#[test]
+fn drain_oldest_first_growth_phase() {
+    let mut sb = ScrollbackBuffer::new(10);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.push(make_row("CCC"));
+
+    let result = sb.drain_oldest_first();
+    let texts: Vec<String> = result.iter().map(|r| row_text(r)).collect();
+    assert_eq!(texts, vec!["AAA", "BBB", "CCC"]);
+    assert_eq!(sb.len(), 0);
+}
+
+#[test]
+fn drain_oldest_first_wrapped_ring() {
+    // Capacity 3, push 5 rows → ring wraps, start > 0.
+    let mut sb = ScrollbackBuffer::new(3);
+    for i in 0..5 {
+        sb.push(make_row(&format!("R{i}")));
+    }
+    assert_eq!(sb.len(), 3);
+
+    // Should return R2, R3, R4 (oldest to newest).
+    let result = sb.drain_oldest_first();
+    let texts: Vec<String> = result.iter().map(|r| row_text(r)).collect();
+    assert_eq!(texts, vec!["R2", "R3", "R4"]);
+    assert_eq!(sb.len(), 0);
+}
+
+#[test]
+fn drain_oldest_first_exactly_full() {
+    // Capacity 3, push exactly 3 → full but start == 0.
+    let mut sb = ScrollbackBuffer::new(3);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.push(make_row("CCC"));
+
+    let result = sb.drain_oldest_first();
+    let texts: Vec<String> = result.iter().map(|r| row_text(r)).collect();
+    assert_eq!(texts, vec!["AAA", "BBB", "CCC"]);
+    assert_eq!(sb.len(), 0);
+}
+
+#[test]
+fn drain_oldest_first_wrapped_many_extra() {
+    // Capacity 5, push 15 → ring wraps many times.
+    let mut sb = ScrollbackBuffer::new(5);
+    for i in 0..15 {
+        sb.push(make_row(&format!("R{i:02}")));
+    }
+    assert_eq!(sb.len(), 5);
+
+    let result = sb.drain_oldest_first();
+    let texts: Vec<String> = result.iter().map(|r| row_text(r)).collect();
+    assert_eq!(texts, vec!["R10", "R11", "R12", "R13", "R14"]);
+    assert_eq!(sb.len(), 0);
+}
+
+#[test]
+fn drain_oldest_first_usable_after_drain() {
+    let mut sb = ScrollbackBuffer::new(5);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.drain_oldest_first();
+
+    // Buffer should be usable after drain.
+    sb.push(make_row("CCC"));
+    assert_eq!(sb.len(), 1);
+    assert_eq!(row_text(sb.get(0).unwrap()), "CCC");
+}
+
 // Helpers
 
 /// Create a row with ASCII characters (one char per cell).

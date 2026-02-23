@@ -26,7 +26,7 @@ use oriterm_core::{
 pub use mark_cursor::MarkCursor;
 
 use crate::event::TermEvent;
-use crate::pty::{Msg, PtyConfig, PtyEventLoop, PtyHandle, spawn_pty};
+use crate::pty::{Msg, PtyConfig, PtyControl, PtyEventLoop, PtyHandle, spawn_pty};
 
 /// Unique identifier for a tab.
 ///
@@ -78,11 +78,11 @@ impl EventListener for EventProxy {
 ///
 /// Input bytes are written directly to the PTY pipe (avoiding the channel
 /// deadlock where the reader thread blocks on `read()` and never drains
-/// `Msg::Input`). Resize and shutdown commands still go through the channel.
+/// `Msg::Input`). Shutdown commands go through the channel.
 pub struct Notifier {
     /// Direct PTY writer — bypasses the reader thread's command channel.
     writer: std::sync::Mutex<Box<dyn io::Write + Send>>,
-    /// Channel sender for commands (resize, shutdown) to the reader thread.
+    /// Channel sender for commands (shutdown) to the reader thread.
     tx: mpsc::Sender<Msg>,
 }
 
@@ -110,11 +110,6 @@ impl Notifier {
         }
     }
 
-    /// Resize the PTY and terminal grid.
-    pub fn resize(&self, rows: u16, cols: u16) {
-        let _ = self.tx.send(Msg::Resize { rows, cols });
-    }
-
     /// Request the reader thread to shut down.
     pub fn shutdown(&self) {
         let _ = self.tx.send(Msg::Shutdown);
@@ -137,8 +132,10 @@ pub struct Tab {
     id: TabId,
     /// Shared terminal state (accessed by both render and PTY threads).
     terminal: Arc<FairMutex<Term<EventProxy>>>,
-    /// Sends commands (input, resize, shutdown) to the PTY reader thread.
+    /// Sends commands (input, shutdown) to the PTY reader thread.
     notifier: Notifier,
+    /// PTY control handle for resize operations (called from main thread).
+    pty_control: PtyControl,
     /// PTY reader thread join handle.
     reader_thread: Option<JoinHandle<()>>,
     /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
@@ -203,18 +200,22 @@ impl Tab {
         let terminal = Arc::new(FairMutex::new(term));
 
         // 4. Wire the message channel. Writer goes to Notifier for direct
-        //    PTY writes; the reader thread only needs reader + control.
+        //    PTY writes; the reader thread gets the receiver for shutdown.
         let (tx, rx) = mpsc::channel();
         let notifier = Notifier::new(writer, tx);
 
-        // 5. Build and spawn the reader thread.
-        let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, rx, control);
+        // 5. Build and spawn the reader thread. PTY control stays on the
+        //    main thread — resizing the PTY directly avoids a deadlock
+        //    where the reader blocks on `read()` and never drains a
+        //    queued `Msg::Resize`.
+        let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, rx);
         let reader_thread = event_loop.spawn()?;
 
         Ok(Self {
             id,
             terminal,
             notifier,
+            pty_control: control,
             reader_thread: Some(reader_thread),
             pty,
             title: String::new(),
@@ -380,18 +381,32 @@ impl Tab {
         self.terminal.lock().grid_mut().scroll_display(delta);
     }
 
-    /// Resize the terminal grid and PTY to new dimensions.
+    /// Resize the terminal grids to new dimensions (with reflow).
     ///
     /// Resizes both grids (primary with reflow, alternate without) on the
-    /// calling thread, then notifies the PTY event loop to resize the OS
-    /// PTY handle. Grid resize happens first so the grid is at the new
-    /// dimensions before the shell receives SIGWINCH and redraws.
-    pub fn resize(&self, rows: u16, cols: u16) {
-        // Resize the terminal grids (primary + alt).
+    /// calling thread. Does NOT resize the PTY — call [`resize_pty`] separately
+    /// to send SIGWINCH to the shell.
+    ///
+    /// Separated from PTY resize so the caller can debounce SIGWINCH during
+    /// drag resize (avoids TUI redraw storms that cause flicker).
+    ///
+    /// [`resize_pty`]: Self::resize_pty
+    pub fn resize_grid(&self, rows: u16, cols: u16) {
         self.terminal.lock().resize(rows as usize, cols as usize);
+    }
 
-        // Notify PTY event loop to resize the OS PTY handle.
-        self.notifier.resize(rows, cols);
+    /// Resize the OS PTY handle, sending SIGWINCH to the shell.
+    ///
+    /// Called directly on the main thread (not via the reader thread's command
+    /// channel) because the reader thread blocks on `read()` and would not
+    /// process the resize until new PTY output arrives.
+    ///
+    /// The caller should debounce this during drag resize to avoid SIGWINCH
+    /// storms that cause TUI apps to flicker with rapid full-screen redraws.
+    pub fn resize_pty(&self, rows: u16, cols: u16) {
+        if let Err(e) = self.pty_control.resize(rows, cols) {
+            log::warn!("PTY resize failed: {e}");
+        }
     }
 }
 

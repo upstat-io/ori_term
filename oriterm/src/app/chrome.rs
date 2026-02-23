@@ -279,8 +279,14 @@ impl App {
             );
         }
 
+        let (r, c) = (rows as u16, cols as u16);
         if let Some(tab) = &self.tab {
-            tab.resize(rows as u16, cols as u16);
+            // Grid and PTY resize together so the shell always knows the
+            // current dimensions. Desynchronized resize (throttled PTY)
+            // causes the shell to write content at stale dimensions,
+            // producing duplicate/ghost content after reflow.
+            tab.resize_grid(r, c);
+            tab.resize_pty(r, c);
         }
 
         self.dirty = true;

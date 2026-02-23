@@ -364,23 +364,16 @@ impl<T: EventListener> Term<T> {
             return;
         }
 
-        let is_alt = self.mode.contains(TermMode::ALT_SCREEN);
-
         // Primary grid: reflow enabled.
-        self.grid.resize(new_cols, new_lines, true);
+        self.grid.resize(new_lines, new_cols, true);
 
         // Alternate grid: no reflow (apps like vim handle their own layout).
-        self.alt_grid.resize(new_cols, new_lines, false);
+        self.alt_grid.resize(new_lines, new_cols, false);
 
         // Mark selection dirty since cell positions changed.
+        // Note: both grids are already fully marked dirty by
+        // `Grid::finalize_resize` → `dirty.resize()` → `mark_all()`.
         self.selection_dirty = true;
-
-        // Ensure the active grid's dirty tracker reflects the resize.
-        if is_alt {
-            self.alt_grid.dirty_mut().mark_all();
-        } else {
-            self.grid.dirty_mut().mark_all();
-        }
     }
 
     /// Switch between primary and alternate screen.
