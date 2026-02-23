@@ -233,3 +233,83 @@ fn selection_and_clipboard_independent() {
     assert_eq!(cb.load(ClipboardType::Clipboard), "clip only");
     assert_eq!(cb.load(ClipboardType::Selection), "sel only");
 }
+
+// -- HTML clipboard (set_html) --
+
+/// Mock provider that tracks both text and HTML separately.
+struct HtmlMockProvider {
+    text: Option<String>,
+    html: Option<String>,
+}
+
+impl HtmlMockProvider {
+    fn new() -> Self {
+        Self {
+            text: None,
+            html: None,
+        }
+    }
+}
+
+impl ClipboardProvider for HtmlMockProvider {
+    fn get_text(&mut self) -> Option<String> {
+        self.text.clone()
+    }
+
+    fn set_text(&mut self, text: &str) -> bool {
+        self.text = Some(text.to_owned());
+        true
+    }
+
+    fn set_html(&mut self, html: &str, alt_text: &str) -> bool {
+        self.html = Some(html.to_owned());
+        self.text = Some(alt_text.to_owned());
+        true
+    }
+}
+
+#[test]
+fn store_html_sets_both_html_and_alt_text() {
+    let provider = HtmlMockProvider::new();
+    let mut cb = Clipboard {
+        clipboard: Box::new(provider),
+        selection: None,
+    };
+
+    cb.store_html("<b>hello</b>", "hello");
+    // Alt text is accessible via normal load.
+    assert_eq!(cb.load(ClipboardType::Clipboard), "hello");
+}
+
+#[test]
+fn set_html_default_trait_falls_back_to_set_text() {
+    // MockProvider doesn't override set_html, so the default trait
+    // implementation should fall back to set_text with alt_text.
+    let mut provider = MockProvider::new();
+    let result = provider.set_html("<b>hi</b>", "hi");
+    assert!(result, "default set_html should succeed via set_text");
+    assert_eq!(provider.get_text().as_deref(), Some("hi"));
+}
+
+#[test]
+fn store_html_with_failing_provider() {
+    /// Provider that fails set_html.
+    struct FailHtml;
+    impl ClipboardProvider for FailHtml {
+        fn get_text(&mut self) -> Option<String> {
+            None
+        }
+        fn set_text(&mut self, _text: &str) -> bool {
+            false
+        }
+    }
+
+    let mut cb = Clipboard {
+        clipboard: Box::new(FailHtml),
+        selection: None,
+    };
+
+    // Should not panic, just log warning.
+    cb.store_html("<b>x</b>", "x");
+    assert_eq!(cb.load(ClipboardType::Clipboard), "");
+}

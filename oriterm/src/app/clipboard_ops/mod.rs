@@ -188,3 +188,6 @@ impl App {
 fn collapse_lines(text: &str) -> String {
     text.lines().collect::<Vec<_>>().join(" ")
 }
+
+#[cfg(test)]
+mod tests;

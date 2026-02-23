@@ -1511,6 +1511,49 @@ fn word_boundaries_wrapped_line_stays_within_row() {
     assert_eq!((s, e), (0, 4));
 }
 
+// -- Mixed punctuation clusters at word boundaries --
+
+#[test]
+fn word_boundaries_possessive_apostrophe() {
+    // Apostrophe in DEFAULT_WORD_DELIMITERS: "test's" → "test" then "'" then "s".
+    let mut grid = Grid::new(1, 20);
+    write_str(&mut grid, 0, "test's value");
+    let (s, e) = word_boundaries(&grid, 0, 1, DEFAULT_WORD_DELIMITERS);
+    assert_eq!((s, e), (0, 3), "apostrophe in delimiters stops at 'test'");
+}
+
+#[test]
+fn word_boundaries_cpp_plus_plus() {
+    // '+' is not in DEFAULT_WORD_DELIMITERS, so "C++" is one word.
+    let mut grid = Grid::new(1, 20);
+    write_str(&mut grid, 0, "C++ code");
+    let (s, e) = word_boundaries(&grid, 0, 0, DEFAULT_WORD_DELIMITERS);
+    assert_eq!((s, e), (0, 2), "'C++' is one word ('+' not a delimiter)");
+}
+
+#[test]
+fn word_boundaries_ellipsis_prefix() {
+    // '.' is not in DEFAULT_WORD_DELIMITERS, so "...word" is one word.
+    let mut grid = Grid::new(1, 20);
+    write_str(&mut grid, 0, "...word...");
+    let (s, e) = word_boundaries(&grid, 0, 4, DEFAULT_WORD_DELIMITERS);
+    assert_eq!(
+        (s, e),
+        (0, 9),
+        "'...word...' is one word ('.' not a delimiter)"
+    );
+}
+
+#[test]
+fn word_boundaries_parenthesized_word() {
+    // '(' and ')' ARE in DEFAULT_WORD_DELIMITERS.
+    let mut grid = Grid::new(1, 20);
+    write_str(&mut grid, 0, "(hello) world");
+    // Click on 'h' at col 1: stops at '(' and ')'.
+    let (s, e) = word_boundaries(&grid, 0, 1, DEFAULT_WORD_DELIMITERS);
+    assert_eq!((s, e), (1, 5), "parens in delimiters isolate 'hello'");
+}
+
 // -- Out-of-bounds selection (ref: WezTerm drag_selection beyond grid) --
 
 #[test]
