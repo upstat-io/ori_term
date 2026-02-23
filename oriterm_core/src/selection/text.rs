@@ -102,7 +102,7 @@ fn append_cells(buf: &mut String, row: &Row, col_start: usize, col_end: usize) {
 ///
 /// Terminal cells only produce ASCII whitespace (spaces from empty/null cells),
 /// so byte-level trimming is correct and avoids string slicing.
-fn trim_trailing_whitespace(buf: &mut String, from: usize) {
+pub(super) fn trim_trailing_whitespace(buf: &mut String, from: usize) {
     let bytes = buf.as_bytes();
     let mut end = bytes.len();
     while end > from && bytes[end - 1].is_ascii_whitespace() {

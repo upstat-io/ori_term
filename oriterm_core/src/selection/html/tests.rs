@@ -8,7 +8,7 @@ use crate::grid::{Grid, StableRowIndex};
 use crate::index::{Column, Side};
 
 use super::super::{Selection, SelectionMode, SelectionPoint};
-use super::extract_html;
+use super::{extract_html, extract_html_with_text};
 
 /// Helper: create a grid and write text at row 0.
 fn grid_with_text(text: &str) -> Grid {
@@ -575,5 +575,281 @@ fn zerowidth_chars_included_in_html() {
     assert!(
         body.contains('\u{0301}'),
         "combining mark should be in HTML"
+    );
+}
+
+// -- Combined extract_html_with_text --
+
+#[test]
+fn combined_matches_separate_extractions() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::BOLD;
+    grid.cursor_mut().template.fg = Color::Indexed(2); // green
+    for c in "hello".chars() {
+        grid.put_char(c);
+    }
+    grid.cursor_mut().template.flags = CellFlags::empty();
+    grid.cursor_mut().template.fg = Color::Named(NamedColor::Foreground);
+    grid.move_to(1, Column(0));
+    for c in "world".chars() {
+        grid.put_char(c);
+    }
+
+    let palette = Palette::default();
+    let base0 = StableRowIndex::from_visible(&grid, 0);
+    let base1 = StableRowIndex::from_visible(&grid, 1);
+    let mut sel = Selection::new_char(base0, 0, Side::Left);
+    sel.end = SelectionPoint {
+        row: base1,
+        col: 4,
+        side: Side::Right,
+    };
+
+    let html_only = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+    let text_only = crate::selection::extract_text(&grid, &sel);
+    let (html_combined, text_combined) =
+        extract_html_with_text(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert_eq!(
+        html_only, html_combined,
+        "HTML must match separate extraction"
+    );
+    assert_eq!(
+        text_only, text_combined,
+        "text must match separate extraction"
+    );
+}
+
+#[test]
+fn combined_returns_empty_pair_for_invalid_selection() {
+    let grid = Grid::new(5, 20);
+    let sel = Selection::new_char(StableRowIndex(999_999), 0, Side::Left);
+    let palette = Palette::default();
+    let (html, text) = extract_html_with_text(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert!(html.is_empty());
+    assert!(text.is_empty());
+}
+
+#[test]
+fn combined_with_wrapped_lines() {
+    let mut grid = Grid::new(5, 5);
+    grid.move_to(0, Column(0));
+    for c in "hello".chars() {
+        grid.put_char(c);
+    }
+    // Mark row 0 as wrapped.
+    grid[crate::index::Line(0)][Column(4)].flags |= CellFlags::WRAP;
+    grid.move_to(1, Column(0));
+    for c in "world".chars() {
+        grid.put_char(c);
+    }
+
+    let palette = Palette::default();
+    let base0 = StableRowIndex::from_visible(&grid, 0);
+    let base1 = StableRowIndex::from_visible(&grid, 1);
+    let mut sel = Selection::new_char(base0, 0, Side::Left);
+    sel.end = SelectionPoint {
+        row: base1,
+        col: 4,
+        side: Side::Right,
+    };
+
+    let html_only = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+    let text_only = crate::selection::extract_text(&grid, &sel);
+    let (html_combined, text_combined) =
+        extract_html_with_text(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert_eq!(
+        html_only, html_combined,
+        "HTML must match for wrapped lines"
+    );
+    assert_eq!(
+        text_only, text_combined,
+        "text must match for wrapped lines"
+    );
+    // Text joins wrapped lines without newline.
+    assert_eq!(text_combined, "helloworld");
+    // HTML also joins without newline (no \n between rows).
+    let body_start = html_combined.find('>').unwrap() + 1;
+    let body = &html_combined[body_start..html_combined.rfind("</pre>").unwrap()];
+    assert!(
+        !body.contains('\n'),
+        "wrapped lines should not have newline in HTML"
+    );
+}
+
+#[test]
+fn combined_with_block_mode() {
+    let mut grid = Grid::new(5, 10);
+    grid.move_to(0, Column(0));
+    for c in "ABCDEFGHIJ".chars() {
+        grid.put_char(c);
+    }
+    grid.move_to(1, Column(0));
+    for c in "KLMNOPQRST".chars() {
+        grid.put_char(c);
+    }
+
+    let palette = Palette::default();
+    let base0 = StableRowIndex::from_visible(&grid, 0);
+    let base1 = StableRowIndex::from_visible(&grid, 1);
+
+    let sel = Selection {
+        mode: SelectionMode::Block,
+        anchor: SelectionPoint {
+            row: base0,
+            col: 2,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: base0,
+            col: 2,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: base1,
+            col: 5,
+            side: Side::Right,
+        },
+    };
+
+    let html_only = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+    let text_only = crate::selection::extract_text(&grid, &sel);
+    let (html_combined, text_combined) =
+        extract_html_with_text(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert_eq!(html_only, html_combined, "HTML must match for block mode");
+    assert_eq!(text_only, text_combined, "text must match for block mode");
+    assert_eq!(text_combined, "CDEF\nMNOP");
+}
+
+#[test]
+fn combined_with_hidden_cells() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.put_char('A');
+    grid.put_char('B');
+    grid.put_char('C');
+
+    // Mark 'B' as HIDDEN.
+    grid[crate::index::Line(0)][Column(1)].flags |= CellFlags::HIDDEN;
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 2);
+
+    let html_only = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+    let text_only = crate::selection::extract_text(&grid, &sel);
+    let (html_combined, text_combined) =
+        extract_html_with_text(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert_eq!(
+        html_only, html_combined,
+        "HTML must match with HIDDEN cells"
+    );
+    assert_eq!(
+        text_only, text_combined,
+        "text must match with HIDDEN cells"
+    );
+
+    // Text includes HIDDEN cells (matches extract_text behavior).
+    assert!(
+        text_combined.contains('B'),
+        "text should include HIDDEN cell"
+    );
+
+    // HTML skips HIDDEN cells.
+    let body_start = html_combined.find('>').unwrap() + 1;
+    let body = &html_combined[body_start..html_combined.rfind("</pre>").unwrap()];
+    assert!(!body.contains('B'), "HTML should skip HIDDEN cell");
+}
+
+#[test]
+fn combined_with_wide_chars() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.put_char('漢'); // wide: cols 0-1
+    grid.put_char('X'); // col 2
+
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 2);
+
+    let html_only = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+    let text_only = crate::selection::extract_text(&grid, &sel);
+    let (html_combined, text_combined) =
+        extract_html_with_text(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert_eq!(html_only, html_combined, "HTML must match with wide chars");
+    assert_eq!(text_only, text_combined, "text must match with wide chars");
+    assert_eq!(text_combined, "漢X");
+}
+
+#[test]
+fn combined_with_styled_multi_row() {
+    let mut grid = Grid::new(5, 20);
+    grid.move_to(0, Column(0));
+    grid.cursor_mut().template.flags = CellFlags::BOLD;
+    for c in "bold".chars() {
+        grid.put_char(c);
+    }
+    grid.cursor_mut().template.flags = CellFlags::ITALIC;
+    grid.move_to(1, Column(0));
+    for c in "italic".chars() {
+        grid.put_char(c);
+    }
+
+    let palette = Palette::default();
+    let base0 = StableRowIndex::from_visible(&grid, 0);
+    let base1 = StableRowIndex::from_visible(&grid, 1);
+    let mut sel = Selection::new_char(base0, 0, Side::Left);
+    sel.end = SelectionPoint {
+        row: base1,
+        col: 5,
+        side: Side::Right,
+    };
+
+    let html_only = extract_html(&grid, &sel, &palette, "Mono", 10.0);
+    let text_only = crate::selection::extract_text(&grid, &sel);
+    let (html_combined, text_combined) =
+        extract_html_with_text(&grid, &sel, &palette, "Mono", 10.0);
+
+    assert_eq!(
+        html_only, html_combined,
+        "HTML must match for styled multi-row"
+    );
+    assert_eq!(
+        text_only, text_combined,
+        "text must match for styled multi-row"
+    );
+    assert!(html_combined.contains("font-weight:bold"));
+    assert!(html_combined.contains("font-style:italic"));
+    assert_eq!(text_combined, "bold\nitalic");
+}
+
+#[test]
+fn combined_all_whitespace_selection() {
+    // Grid with no content — all cells are default (null → space).
+    let grid = Grid::new(5, 10);
+    let palette = Palette::default();
+    let sel = char_selection(&grid, 0, 9);
+
+    let text_only = crate::selection::extract_text(&grid, &sel);
+    let (html_combined, text_combined) =
+        extract_html_with_text(&grid, &sel, &palette, "Mono", 10.0);
+
+    // Text: all spaces get trimmed → empty.
+    assert_eq!(text_only, text_combined);
+    assert!(
+        text_combined.is_empty(),
+        "all-whitespace text should be empty after trim"
+    );
+
+    // HTML: body is trimmed too, so no content between <pre> tags.
+    let body_start = html_combined.find('>').unwrap() + 1;
+    let body = &html_combined[body_start..html_combined.rfind("</pre>").unwrap()];
+    assert!(
+        body.is_empty(),
+        "all-whitespace HTML body should be empty after trim"
     );
 }

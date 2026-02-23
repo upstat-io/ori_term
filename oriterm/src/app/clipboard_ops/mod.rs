@@ -11,7 +11,7 @@ use winit::keyboard::ModifiersState;
 use oriterm_core::TermMode;
 use oriterm_core::event::ClipboardType;
 use oriterm_core::paste;
-use oriterm_core::selection::{extract_html, extract_text};
+use oriterm_core::selection::{extract_html_with_text, extract_text};
 
 use super::App;
 
@@ -81,17 +81,16 @@ impl App {
         let sel = tab.selection()?;
         let renderer = self.renderer.as_ref()?;
         let term = tab.terminal().lock();
-        let text = extract_text(term.grid(), sel);
-        if text.is_empty() {
-            return None;
-        }
-        let html = extract_html(
+        let (html, text) = extract_html_with_text(
             term.grid(),
             sel,
             term.palette(),
             renderer.family_name(),
             self.config.font.size,
         );
+        if text.is_empty() {
+            return None;
+        }
         Some((html, text))
     }
 
@@ -134,7 +133,6 @@ impl App {
             return;
         }
         self.write_paste_to_pty(&text);
-        self.dirty = true;
     }
 
     /// Paste dropped file paths into the active terminal.

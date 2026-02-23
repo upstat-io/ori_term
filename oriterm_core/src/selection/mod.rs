@@ -16,7 +16,7 @@ pub use boundaries::{
     DEFAULT_WORD_DELIMITERS, logical_line_end, logical_line_start, word_boundaries,
 };
 pub use click::ClickDetector;
-pub use html::extract_html;
+pub use html::{extract_html, extract_html_with_text};
 pub use text::extract_text;
 
 use std::cmp::Ordering;

@@ -247,6 +247,7 @@ impl App {
                     self.report_mouse_button(mouse_report::MouseButton::Middle, kind, mode);
                 } else if state == ElementState::Pressed {
                     self.paste_from_primary();
+                    self.dirty = true;
                 } else {
                     // Release without reporting: no action needed.
                 }

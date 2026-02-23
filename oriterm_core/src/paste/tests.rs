@@ -357,3 +357,17 @@ fn normalize_alternating_cr_lf_crlf() {
     // Mixed: bare CR, bare LF, CRLF — all become CR.
     assert_eq!(normalize_line_endings("a\rb\nc\r\nd"), "a\rb\rc\rd");
 }
+
+// --- plain mode passes ESC through ---
+
+#[test]
+fn prepare_plain_preserves_esc_sequences() {
+    // In plain (non-bracketed) mode, ESC chars pass through to the PTY.
+    // Only bracketed mode strips ESC. This is intentional: plain-mode pastes
+    // may legitimately contain escape sequences.
+    let result = prepare_paste("before\x1b[201~after", false, false);
+    assert_eq!(
+        result, b"before\x1b[201~after",
+        "plain mode should not strip ESC"
+    );
+}
