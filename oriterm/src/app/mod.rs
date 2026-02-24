@@ -318,6 +318,11 @@ impl ApplicationHandler<TermEvent> for App {
                 self.mouse.set_cursor_pos(position);
                 self.update_chrome_hover(position);
 
+                // Forward move events to overlays for per-widget hover tracking.
+                if self.try_overlay_mouse_move(position) {
+                    return;
+                }
+
                 // Skip terminal mouse handling when the cursor is in the
                 // chrome caption area. This avoids acquiring the terminal
                 // lock on every cursor move over the title bar.

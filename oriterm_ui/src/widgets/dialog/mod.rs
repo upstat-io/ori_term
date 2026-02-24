@@ -13,9 +13,8 @@ use std::rc::Rc;
 
 use crate::draw::RectStyle;
 use crate::geometry::Rect;
-use crate::input::{HoverEvent, Key, KeyEvent, MouseEvent};
-use crate::layout::{Direction, Justify, LayoutBox, LayoutNode, SizeSpec};
-use crate::text::TextStyle;
+use crate::input::{HoverEvent, Key, KeyEvent, MouseEvent, MouseEventKind};
+use crate::layout::{LayoutBox, LayoutNode};
 use crate::widget_id::WidgetId;
 
 use super::button::ButtonWidget;
@@ -82,6 +81,8 @@ pub struct DialogWidget {
     /// Tab (`:focus-visible` behavior). This avoids a subtle focus-ring
     /// artifact on the default button when the dialog first opens.
     focus_visible: bool,
+    /// Index of the button currently hovered by the mouse (footer child index).
+    hovered_button: Option<usize>,
     /// Cached layout result, keyed by bounds.
     cached_layout: RefCell<Option<(Rect, Rc<LayoutNode>)>>,
 }
@@ -109,6 +110,7 @@ impl DialogWidget {
             style,
             focused_button: DialogButton::Ok,
             focus_visible: false,
+            hovered_button: None,
             cached_layout: RefCell::new(None),
         }
     }
@@ -207,82 +209,6 @@ impl DialogWidget {
         self.cancel_button = ButtonWidget::new(&self.cancel_label).with_style(cancel_style);
     }
 
-    /// Build the title text style.
-    fn title_style(&self) -> TextStyle {
-        TextStyle::new(self.style.title_font_size, self.style.title_fg)
-            .with_weight(crate::text::FontWeight::Bold)
-    }
-
-    /// Build the message text style.
-    fn message_style(&self) -> TextStyle {
-        TextStyle::new(self.style.message_font_size, self.style.message_fg)
-    }
-
-    /// Build the preview content text style.
-    fn preview_text_style(&self) -> TextStyle {
-        TextStyle::new(self.style.message_font_size, self.style.message_fg)
-    }
-
-    /// Build the two-zone layout: content zone + footer zone.
-    fn build_layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
-        let content_inner_w = DIALOG_WIDTH - self.style.padding.width();
-
-        // Title leaf.
-        let title_m = ctx
-            .measurer
-            .measure(&self.title, &self.title_style(), content_inner_w);
-        let title_leaf = LayoutBox::leaf(content_inner_w, title_m.height);
-
-        // Message leaf.
-        let msg_m = ctx
-            .measurer
-            .measure(&self.message, &self.message_style(), content_inner_w);
-        let msg_leaf = LayoutBox::leaf(content_inner_w, msg_m.height);
-
-        // Content zone children: title, message, optional preview.
-        let mut content_children = vec![title_leaf, msg_leaf];
-
-        if let Some(ref content) = self.content {
-            let preview_inner_w = content_inner_w - self.style.preview_padding.width();
-            // Measure a single line to get line height, then multiply by line count.
-            let line_m = ctx
-                .measurer
-                .measure("X", &self.preview_text_style(), preview_inner_w);
-            let line_h = line_m.height;
-            let line_count = content.text.lines().count().max(1);
-            let preview_h = (line_count as f32 * line_h + self.style.preview_padding.height())
-                .min(self.style.preview_max_height);
-            content_children.push(LayoutBox::leaf(content_inner_w, preview_h));
-        }
-
-        let content_zone = LayoutBox::flex(Direction::Column, content_children)
-            .with_padding(self.style.padding)
-            .with_gap(self.style.content_spacing)
-            .with_width(SizeSpec::Fill);
-
-        // Footer zone: buttons right-aligned.
-        let ok_box = self.ok_button.layout(ctx);
-        let footer_zone = match self.buttons {
-            DialogButtons::OkOnly => LayoutBox::flex(Direction::Row, vec![ok_box])
-                .with_justify(Justify::End)
-                .with_padding(self.style.footer_padding)
-                .with_width(SizeSpec::Fill),
-            DialogButtons::OkCancel => {
-                let cancel_box = self.cancel_button.layout(ctx);
-                LayoutBox::flex(Direction::Row, vec![cancel_box, ok_box])
-                    .with_justify(Justify::End)
-                    .with_gap(self.style.button_gap)
-                    .with_padding(self.style.footer_padding)
-                    .with_width(SizeSpec::Fill)
-            }
-        };
-
-        // Dialog root: content zone + footer zone, no gap.
-        LayoutBox::flex(Direction::Column, vec![content_zone, footer_zone])
-            .with_width(SizeSpec::Fixed(DIALOG_WIDTH))
-            .with_widget_id(self.id)
-    }
-
     /// Determine which button corresponds to a given widget ID.
     fn button_for_id(&self, id: WidgetId) -> Option<DialogButton> {
         if id == self.ok_button.id() {
@@ -327,6 +253,85 @@ impl DialogWidget {
                 WidgetResponse::redraw().with_action(WidgetAction::DismissOverlay(self.id))
             }
             None => WidgetResponse::handled(),
+        }
+    }
+
+    /// Update per-button hover state based on mouse position.
+    ///
+    /// Sends `HoverEvent::Leave` to the previously hovered button and
+    /// `HoverEvent::Enter` to the newly hovered button when the mouse
+    /// moves between buttons (or enters/leaves the button area).
+    fn update_button_hover(
+        &mut self,
+        event: &MouseEvent,
+        ctx: &EventCtx<'_>,
+        footer_node: &LayoutNode,
+    ) -> WidgetResponse {
+        // Find which button (if any) the mouse is over.
+        let new_hover = footer_node
+            .children
+            .iter()
+            .position(|btn_node| btn_node.rect.contains(event.pos));
+
+        if new_hover == self.hovered_button {
+            return WidgetResponse::handled();
+        }
+
+        let focused = self.focused_button;
+
+        // Leave the old button.
+        if let Some(old_idx) = self.hovered_button {
+            if let Some(btn_node) = footer_node.children.get(old_idx) {
+                let (button, btn_kind) = self.button_at_index(old_idx);
+                let btn_ctx = EventCtx {
+                    measurer: ctx.measurer,
+                    bounds: btn_node.content_rect,
+                    is_focused: focused == btn_kind,
+                    focused_widget: ctx.focused_widget,
+                    theme: ctx.theme,
+                };
+                button.handle_hover(HoverEvent::Leave, &btn_ctx);
+            }
+        }
+
+        // Enter the new button.
+        if let Some(new_idx) = new_hover {
+            if let Some(btn_node) = footer_node.children.get(new_idx) {
+                let (button, btn_kind) = self.button_at_index(new_idx);
+                let btn_ctx = EventCtx {
+                    measurer: ctx.measurer,
+                    bounds: btn_node.content_rect,
+                    is_focused: focused == btn_kind,
+                    focused_widget: ctx.focused_widget,
+                    theme: ctx.theme,
+                };
+                button.handle_hover(HoverEvent::Enter, &btn_ctx);
+            }
+        }
+
+        self.hovered_button = new_hover;
+        WidgetResponse::redraw()
+    }
+
+    /// Clear all per-button hover state.
+    fn clear_button_hover(&mut self, ctx: &EventCtx<'_>) {
+        if let Some(old_idx) = self.hovered_button.take() {
+            let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
+            let children = &layout.children;
+            if children.len() >= 2 {
+                if let Some(btn_node) = children[1].children.get(old_idx) {
+                    let focused = self.focused_button;
+                    let (button, btn_kind) = self.button_at_index(old_idx);
+                    let btn_ctx = EventCtx {
+                        measurer: ctx.measurer,
+                        bounds: btn_node.content_rect,
+                        is_focused: focused == btn_kind,
+                        focused_widget: ctx.focused_widget,
+                        theme: ctx.theme,
+                    };
+                    button.handle_hover(HoverEvent::Leave, &btn_ctx);
+                }
+            }
         }
     }
 }
@@ -401,6 +406,11 @@ impl Widget for DialogWidget {
             return WidgetResponse::ignored();
         }
 
+        // Track per-button hover on mouse move.
+        if event.kind == MouseEventKind::Move {
+            return self.update_button_hover(event, ctx, &children[1]);
+        }
+
         // Footer zone is children[1]; buttons are its children.
         let focused = self.focused_button;
         for (i, btn_node) in children[1].children.iter().enumerate() {
@@ -425,24 +435,9 @@ impl Widget for DialogWidget {
     }
 
     fn handle_hover(&mut self, event: HoverEvent, ctx: &EventCtx<'_>) -> WidgetResponse {
-        let layout = self.get_or_compute_layout(ctx.measurer, ctx.theme, ctx.bounds);
-        let children = &layout.children;
-        if children.len() < 2 {
-            return WidgetResponse::ignored();
-        }
-
-        // Footer zone is children[1]; buttons are its children.
-        let focused = self.focused_button;
-        for (i, btn_node) in children[1].children.iter().enumerate() {
-            let (button, btn_kind) = self.button_at_index(i);
-            let btn_ctx = EventCtx {
-                measurer: ctx.measurer,
-                bounds: btn_node.content_rect,
-                is_focused: focused == btn_kind,
-                focused_widget: ctx.focused_widget,
-                theme: ctx.theme,
-            };
-            button.handle_hover(event, &btn_ctx);
+        // On dialog-level Leave, clear any per-button hover state.
+        if event == HoverEvent::Leave {
+            self.clear_button_hover(ctx);
         }
         WidgetResponse::handled()
     }

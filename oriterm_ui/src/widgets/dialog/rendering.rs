@@ -4,10 +4,11 @@ use std::rc::Rc;
 
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
-use crate::layout::{LayoutNode, compute_layout};
+use crate::layout::{Direction, Justify, LayoutBox, LayoutNode, SizeSpec, compute_layout};
+use crate::text::TextStyle;
 use crate::theme::UiTheme;
 
-use super::{DialogContent, DialogWidget, DrawCtx, LayoutCtx};
+use super::{DIALOG_WIDTH, DialogButtons, DialogContent, DialogWidget, DrawCtx, LayoutCtx};
 use crate::widgets::Widget;
 
 impl DialogWidget {
@@ -31,6 +32,82 @@ impl DialogWidget {
         let node = Rc::new(compute_layout(&layout_box, bounds));
         *self.cached_layout.borrow_mut() = Some((bounds, Rc::clone(&node)));
         node
+    }
+
+    /// Build the title text style.
+    pub(super) fn title_style(&self) -> TextStyle {
+        TextStyle::new(self.style.title_font_size, self.style.title_fg)
+            .with_weight(crate::text::FontWeight::Bold)
+    }
+
+    /// Build the message text style.
+    pub(super) fn message_style(&self) -> TextStyle {
+        TextStyle::new(self.style.message_font_size, self.style.message_fg)
+    }
+
+    /// Build the preview content text style.
+    pub(super) fn preview_text_style(&self) -> TextStyle {
+        TextStyle::new(self.style.message_font_size, self.style.message_fg)
+    }
+
+    /// Build the two-zone layout: content zone + footer zone.
+    pub(super) fn build_layout(&self, ctx: &LayoutCtx<'_>) -> LayoutBox {
+        let content_inner_w = DIALOG_WIDTH - self.style.padding.width();
+
+        // Title leaf.
+        let title_m = ctx
+            .measurer
+            .measure(&self.title, &self.title_style(), content_inner_w);
+        let title_leaf = LayoutBox::leaf(content_inner_w, title_m.height);
+
+        // Message leaf.
+        let msg_m = ctx
+            .measurer
+            .measure(&self.message, &self.message_style(), content_inner_w);
+        let msg_leaf = LayoutBox::leaf(content_inner_w, msg_m.height);
+
+        // Content zone children: title, message, optional preview.
+        let mut content_children = vec![title_leaf, msg_leaf];
+
+        if let Some(ref content) = self.content {
+            let preview_inner_w = content_inner_w - self.style.preview_padding.width();
+            // Measure a single line to get line height, then multiply by line count.
+            let line_m = ctx
+                .measurer
+                .measure("X", &self.preview_text_style(), preview_inner_w);
+            let line_h = line_m.height;
+            let line_count = content.text.lines().count().max(1);
+            let preview_h = (line_count as f32 * line_h + self.style.preview_padding.height())
+                .min(self.style.preview_max_height);
+            content_children.push(LayoutBox::leaf(content_inner_w, preview_h));
+        }
+
+        let content_zone = LayoutBox::flex(Direction::Column, content_children)
+            .with_padding(self.style.padding)
+            .with_gap(self.style.content_spacing)
+            .with_width(SizeSpec::Fill);
+
+        // Footer zone: buttons right-aligned.
+        let ok_box = self.ok_button.layout(ctx);
+        let footer_zone = match self.buttons {
+            DialogButtons::OkOnly => LayoutBox::flex(Direction::Row, vec![ok_box])
+                .with_justify(Justify::End)
+                .with_padding(self.style.footer_padding)
+                .with_width(SizeSpec::Fill),
+            DialogButtons::OkCancel => {
+                let cancel_box = self.cancel_button.layout(ctx);
+                LayoutBox::flex(Direction::Row, vec![cancel_box, ok_box])
+                    .with_justify(Justify::End)
+                    .with_gap(self.style.button_gap)
+                    .with_padding(self.style.footer_padding)
+                    .with_width(SizeSpec::Fill)
+            }
+        };
+
+        // Dialog root: content zone + footer zone, no gap.
+        LayoutBox::flex(Direction::Column, vec![content_zone, footer_zone])
+            .with_width(SizeSpec::Fixed(DIALOG_WIDTH))
+            .with_widget_id(self.id)
     }
 
     /// Draw the buttons inside the footer layout node.

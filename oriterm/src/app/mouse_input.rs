@@ -53,6 +53,46 @@ impl App {
         true
     }
 
+    /// Route a cursor move event through the overlay manager.
+    ///
+    /// Returns `true` if an overlay consumed the event (caller should skip
+    /// terminal mouse handling). Enables per-button hover tracking inside
+    /// dialogs and other overlay widgets.
+    pub(super) fn try_overlay_mouse_move(
+        &mut self,
+        position: winit::dpi::PhysicalPosition<f64>,
+    ) -> bool {
+        if self.overlays.is_empty() {
+            return false;
+        }
+        let Some(window) = &self.window else {
+            return false;
+        };
+        let scale = window.scale_factor().factor() as f32;
+        let logical =
+            oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
+        let ui_event = oriterm_ui::input::MouseEvent {
+            kind: oriterm_ui::input::MouseEventKind::Move,
+            pos: logical,
+            modifiers: oriterm_ui::input::Modifiers::NONE,
+        };
+        let measurer = self
+            .renderer
+            .as_ref()
+            .map(|r| crate::font::UiFontMeasurer::new(r.active_ui_collection(), scale));
+        let measurer: &dyn oriterm_ui::widgets::TextMeasurer = match &measurer {
+            Some(m) => m,
+            None => return true,
+        };
+        let theme = oriterm_ui::theme::UiTheme::dark();
+        let result = self
+            .overlays
+            .process_mouse_event(&ui_event, measurer, &theme, None);
+        self.handle_overlay_result(result);
+        // Only consume if a modal overlay blocked or handled it.
+        self.overlays.has_modal()
+    }
+
     /// Handle mouse press for selection.
     pub(super) fn handle_mouse_press(&mut self) {
         let pos = self.mouse.cursor_pos();
