@@ -127,15 +127,7 @@ impl App {
             PasteWarning::Threshold(n) => newlines + 1 >= n as usize,
         };
 
-        // Bracketed paste = application handles newlines safely (Ghostty pattern).
-        let bracketed = self.tab.as_ref().is_some_and(|tab| {
-            tab.terminal()
-                .lock()
-                .mode()
-                .contains(TermMode::BRACKETED_PASTE)
-        });
-
-        if needs_warning && !bracketed {
+        if needs_warning {
             log::debug!(
                 "paste warning: {} lines, showing confirmation dialog",
                 newlines + 1
