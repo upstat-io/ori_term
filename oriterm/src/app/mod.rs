@@ -27,6 +27,7 @@ use winit::window::WindowId;
 use oriterm_core::{Event, TermMode};
 
 use self::cursor_blink::CursorBlink;
+use self::keyboard_input::ImeState;
 use self::mouse_selection::MouseState;
 use crate::clipboard::Clipboard;
 use crate::config::Config;
@@ -100,13 +101,8 @@ pub(crate) struct App {
     // Config file watcher (kept alive for the lifetime of the app).
     _config_monitor: Option<ConfigMonitor>,
 
-    // IME composition state.
-    /// Whether an IME composition session is currently active.
-    ime_active: bool,
-    /// Current IME preedit (composition) text. Empty = no active preedit.
-    ime_preedit: String,
-    /// Cursor byte offset within the preedit text (from winit).
-    ime_preedit_cursor: Option<usize>,
+    // IME composition state machine.
+    ime: ImeState,
 }
 
 impl App {
@@ -137,9 +133,7 @@ impl App {
             config,
             bindings,
             _config_monitor: monitor,
-            ime_active: false,
-            ime_preedit: String::new(),
-            ime_preedit_cursor: None,
+            ime: ImeState::new(),
         }
     }
 

@@ -103,10 +103,10 @@ impl App {
 
             // IME preedit: overlay composition text at the cursor position
             // (underlined) so it flows through the normal shaping pipeline.
-            if !self.ime_preedit.is_empty() {
-                frame.preedit.clone_from(&self.ime_preedit);
+            if !self.ime.preedit.is_empty() {
+                frame.preedit.clone_from(&self.ime.preedit);
                 let cols = frame.columns();
-                overlay_preedit_cells(&self.ime_preedit, &mut frame.content, cols);
+                overlay_preedit_cells(&self.ime.preedit, &mut frame.content, cols);
             }
 
             // Mark-mode cursor override: hollow block at the mark position.
@@ -182,7 +182,7 @@ impl App {
         // Keep the IME candidate window positioned at the cursor while
         // composition is active. Called after rendering to avoid borrow
         // conflicts with the renderer's mutable borrow.
-        if !self.ime_preedit.is_empty() {
+        if !self.ime.preedit.is_empty() {
             self.update_ime_cursor_area();
         }
     }

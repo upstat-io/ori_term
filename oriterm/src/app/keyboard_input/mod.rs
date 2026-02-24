@@ -10,6 +10,75 @@ use super::{App, mark_mode};
 use crate::key_encoding::{self, KeyEventType, KeyInput};
 use crate::keybindings::{self, Action};
 
+/// IME composition state machine.
+///
+/// Tracks whether an IME session is active, the current preedit text, and
+/// the cursor position within the preedit. Extracted from [`App`] to enable
+/// isolated testing of state transitions.
+pub(super) struct ImeState {
+    /// Whether an IME composition session is currently active.
+    pub active: bool,
+    /// Current IME preedit (composition) text. Empty = no active preedit.
+    pub preedit: String,
+    /// Cursor byte offset within the preedit text (from winit).
+    pub preedit_cursor: Option<usize>,
+}
+
+/// Side effect to perform after an IME state transition.
+#[derive(Debug, PartialEq)]
+pub(super) enum ImeEffect {
+    /// State updated, request a redraw.
+    Redraw,
+    /// Preedit changed, update IME cursor area and redraw.
+    UpdateCursorArea,
+    /// Text committed, send to PTY.
+    Commit(String),
+}
+
+impl ImeState {
+    /// Create a new IME state with no active composition.
+    pub fn new() -> Self {
+        Self {
+            active: false,
+            preedit: String::new(),
+            preedit_cursor: None,
+        }
+    }
+
+    /// Whether raw key events should be suppressed (IME is composing).
+    pub fn should_suppress_key(&self) -> bool {
+        self.active && !self.preedit.is_empty()
+    }
+
+    /// Process an IME event, updating internal state and returning the
+    /// side effect for App to perform.
+    pub fn handle_event(&mut self, ime: winit::event::Ime) -> ImeEffect {
+        match ime {
+            winit::event::Ime::Enabled => {
+                self.active = true;
+                ImeEffect::Redraw
+            }
+            winit::event::Ime::Preedit(text, cursor) => {
+                self.preedit = text;
+                self.preedit_cursor = cursor.map(|(start, _)| start);
+                ImeEffect::UpdateCursorArea
+            }
+            winit::event::Ime::Commit(text) => {
+                self.preedit.clear();
+                self.preedit_cursor = None;
+                self.active = false;
+                ImeEffect::Commit(text)
+            }
+            winit::event::Ime::Disabled => {
+                self.active = false;
+                self.preedit.clear();
+                self.preedit_cursor = None;
+                ImeEffect::Redraw
+            }
+        }
+    }
+}
+
 impl App {
     /// Dispatch a keyboard event through mark mode, keybindings, or PTY encoding.
     ///
@@ -21,7 +90,7 @@ impl App {
         // Suppress raw key events during active IME composition.
         // The IME subsystem sends Ime::Commit when done; raw KeyboardInput
         // events during composition are intermediate and must not reach the PTY.
-        if self.ime_active && !self.ime_preedit.is_empty() {
+        if self.ime.should_suppress_key() {
             return;
         }
 
@@ -205,28 +274,14 @@ impl App {
 
     /// Dispatch an IME event: preedit, commit, enabled, or disabled.
     pub(super) fn handle_ime_event(&mut self, ime: winit::event::Ime) {
-        match ime {
-            winit::event::Ime::Enabled => {
-                self.ime_active = true;
-                self.dirty = true;
-            }
-            winit::event::Ime::Preedit(text, cursor) => {
-                self.ime_preedit = text;
-                self.ime_preedit_cursor = cursor.map(|(start, _)| start);
+        match self.ime.handle_event(ime) {
+            ImeEffect::Redraw => self.dirty = true,
+            ImeEffect::UpdateCursorArea => {
                 self.update_ime_cursor_area();
                 self.dirty = true;
             }
-            winit::event::Ime::Commit(text) => {
-                self.ime_preedit.clear();
-                self.ime_preedit_cursor = None;
-                self.ime_active = false;
+            ImeEffect::Commit(text) => {
                 self.handle_ime_commit(&text);
-            }
-            winit::event::Ime::Disabled => {
-                self.ime_active = false;
-                self.ime_preedit.clear();
-                self.ime_preedit_cursor = None;
-                self.dirty = true;
             }
         }
     }
