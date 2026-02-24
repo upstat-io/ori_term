@@ -104,7 +104,6 @@ impl App {
             // IME preedit: overlay composition text at the cursor position
             // (underlined) so it flows through the normal shaping pipeline.
             if !self.ime.preedit.is_empty() {
-                frame.preedit.clone_from(&self.ime.preedit);
                 let cols = frame.columns();
                 overlay_preedit_cells(&self.ime.preedit, &mut frame.content, cols);
             }

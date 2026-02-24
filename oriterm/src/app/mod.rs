@@ -169,6 +169,19 @@ impl App {
         self.dirty = true;
     }
 
+    /// Save pipeline cache and exit the process.
+    ///
+    /// Centralizes shutdown to avoid duplicating cleanup logic across
+    /// `ChildExit`, `CloseRequested`, and `WindowClose`. wgpu
+    /// `Device::drop()` calls `vkDeviceWaitIdle()` which blocks for
+    /// seconds — the OS reclaims all GPU resources on process exit anyway.
+    fn shutdown(&self, code: i32) -> ! {
+        if let Some(gpu) = &self.gpu {
+            gpu.save_pipeline_cache_async();
+        }
+        std::process::exit(code)
+    }
+
     /// Read the terminal mode, locking briefly.
     ///
     /// Returns `None` if no tab is present.
@@ -329,10 +342,7 @@ impl App {
             }
             Event::ChildExit(code) => {
                 log::info!("child process exited with code {code}");
-                if let Some(gpu) = &self.gpu {
-                    gpu.save_pipeline_cache_async();
-                }
-                std::process::exit(code);
+                self.shutdown(code);
             }
             _ => {
                 log::debug!("unhandled terminal event: {event:?}");
@@ -360,10 +370,7 @@ impl ApplicationHandler<TermEvent> for App {
     ) {
         match event {
             WindowEvent::CloseRequested => {
-                if let Some(gpu) = &self.gpu {
-                    gpu.save_pipeline_cache_async();
-                }
-                std::process::exit(0);
+                self.shutdown(0);
             }
 
             WindowEvent::Resized(size) => {

@@ -54,13 +54,7 @@ impl App {
                 true
             }
             WidgetAction::WindowClose => {
-                if let Some(gpu) = &self.gpu {
-                    gpu.save_pipeline_cache_async();
-                }
-                // Exit immediately. wgpu Device::drop() calls
-                // vkDeviceWaitIdle() which blocks for seconds — the OS
-                // reclaims all GPU resources on process exit anyway.
-                std::process::exit(0);
+                self.shutdown(0);
             }
             _ => false,
         }

@@ -114,7 +114,6 @@ fn frame_input_grid_dimensions() {
         search_matches: Vec::new(),
         hovered_cell: None,
         mark_cursor: None,
-        preedit: String::new(),
     };
 
     assert_eq!(input.columns(), 100);
@@ -135,7 +134,6 @@ fn frame_input_needs_full_repaint() {
         search_matches: Vec::new(),
         hovered_cell: None,
         mark_cursor: None,
-        preedit: String::new(),
     };
 
     assert!(input.needs_full_repaint());
@@ -155,7 +153,6 @@ fn frame_input_incremental_repaint() {
         search_matches: Vec::new(),
         hovered_cell: None,
         mark_cursor: None,
-        preedit: String::new(),
     };
 
     assert!(!input.needs_full_repaint());

@@ -288,12 +288,16 @@ impl App {
 
     /// Update the IME candidate window position to match the terminal cursor.
     ///
-    /// Tells the OS where to place the IME candidate/composition popup so it
-    /// appears near the cursor. Uses 2× cell width for the exclusion zone
-    /// (Alacritty convention — avoids tight exclusion on right edge).
+    /// Reads cursor position from the extracted frame rather than re-locking
+    /// the terminal — this is both cheaper (no mutex acquisition) and more
+    /// correct (matches the visual frame just rendered). Before the first
+    /// frame, `self.frame` is `None` and we skip the update.
+    ///
+    /// Uses 2× cell width for the exclusion zone (Alacritty convention —
+    /// avoids tight exclusion on right edge).
     pub(super) fn update_ime_cursor_area(&self) {
         let Some(window) = &self.window else { return };
-        let Some(tab) = &self.tab else { return };
+        let Some(frame) = &self.frame else { return };
         let Some(renderer) = &self.renderer else {
             return;
         };
@@ -305,11 +309,8 @@ impl App {
         };
 
         let metrics = renderer.cell_metrics();
-        let term = tab.terminal().lock();
-        let cursor = term.grid().cursor();
-        let cursor_line = cursor.line();
-        let cursor_col = cursor.col().0;
-        drop(term);
+        let cursor_line = frame.content.cursor.line;
+        let cursor_col = frame.content.cursor.column.0;
 
         // Pixel position of the cursor cell, relative to the window.
         let x = f64::from(bounds.x()) + cursor_col as f64 * f64::from(metrics.width);
