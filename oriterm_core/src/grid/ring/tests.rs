@@ -421,6 +421,251 @@ fn drain_oldest_first_usable_after_drain() {
     assert_eq!(row_text(sb.get(0).unwrap()), "CCC");
 }
 
+// pop_newest + push interaction tests
+
+#[test]
+#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
+fn pop_newest_then_push_full_buffer_preserves_new_entry() {
+    // Fill to capacity, pop newest, then push a new row.
+    // The new row must be retrievable as the newest entry.
+    let mut sb = ScrollbackBuffer::new(3);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.push(make_row("CCC"));
+    assert_eq!(sb.len(), 3);
+
+    // Pop newest (CCC).
+    let popped = sb.pop_newest().unwrap();
+    assert_eq!(row_text(&popped), "CCC");
+    assert_eq!(sb.len(), 2);
+
+    // Push a new row. Should NOT evict — there's room for one more.
+    let evicted = sb.push(make_row("DDD"));
+    assert!(
+        evicted.is_none(),
+        "buffer had room after pop, should not evict"
+    );
+    assert_eq!(sb.len(), 3);
+
+    // Verify order: DDD (newest), BBB, AAA (oldest).
+    assert_eq!(row_text(sb.get(0).unwrap()), "DDD");
+    assert_eq!(row_text(sb.get(1).unwrap()), "BBB");
+    assert_eq!(row_text(sb.get(2).unwrap()), "AAA");
+}
+
+#[test]
+#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
+fn pop_newest_twice_then_push_twice_preserves_order() {
+    let mut sb = ScrollbackBuffer::new(3);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.push(make_row("CCC"));
+
+    sb.pop_newest(); // remove CCC
+    sb.pop_newest(); // remove BBB
+    assert_eq!(sb.len(), 1);
+
+    sb.push(make_row("DDD"));
+    sb.push(make_row("EEE"));
+    assert_eq!(sb.len(), 3);
+
+    assert_eq!(row_text(sb.get(0).unwrap()), "EEE");
+    assert_eq!(row_text(sb.get(1).unwrap()), "DDD");
+    assert_eq!(row_text(sb.get(2).unwrap()), "AAA");
+}
+
+#[test]
+#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
+fn pop_newest_then_push_after_wrap_preserves_data() {
+    // Buffer wraps (start > 0), then pop + push.
+    let mut sb = ScrollbackBuffer::new(3);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.push(make_row("CCC"));
+    sb.push(make_row("DDD")); // evicts AAA, start wraps
+    sb.push(make_row("EEE")); // evicts BBB, start wraps again
+
+    assert_eq!(sb.len(), 3);
+    assert_eq!(row_text(sb.get(0).unwrap()), "EEE");
+    assert_eq!(row_text(sb.get(1).unwrap()), "DDD");
+    assert_eq!(row_text(sb.get(2).unwrap()), "CCC");
+
+    // Pop newest (EEE).
+    sb.pop_newest();
+    assert_eq!(sb.len(), 2);
+    assert_eq!(row_text(sb.get(0).unwrap()), "DDD");
+    assert_eq!(row_text(sb.get(1).unwrap()), "CCC");
+
+    // Push new row.
+    let evicted = sb.push(make_row("FFF"));
+    assert!(
+        evicted.is_none(),
+        "buffer had room after pop, should not evict"
+    );
+    assert_eq!(sb.len(), 3);
+
+    assert_eq!(row_text(sb.get(0).unwrap()), "FFF");
+    assert_eq!(row_text(sb.get(1).unwrap()), "DDD");
+    assert_eq!(row_text(sb.get(2).unwrap()), "CCC");
+}
+
+#[test]
+#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
+fn pop_newest_then_push_growth_phase_no_placeholder_leak() {
+    // Buffer not yet full (growth phase). Pop then push should not
+    // leave a placeholder visible at any logical index.
+    let mut sb = ScrollbackBuffer::new(5);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.push(make_row("CCC"));
+    assert_eq!(sb.len(), 3);
+
+    sb.pop_newest(); // remove CCC
+    assert_eq!(sb.len(), 2);
+
+    sb.push(make_row("DDD"));
+    assert_eq!(sb.len(), 3);
+
+    // No entry should be a null/placeholder row.
+    assert_eq!(row_text(sb.get(0).unwrap()), "DDD");
+    assert_eq!(row_text(sb.get(1).unwrap()), "BBB");
+    assert_eq!(row_text(sb.get(2).unwrap()), "AAA");
+}
+
+#[test]
+#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
+fn repeated_pop_push_cycles_preserve_integrity() {
+    // Simulate what happens during repeated resize + scroll_up cycles.
+    let mut sb = ScrollbackBuffer::new(5);
+    for i in 0..5 {
+        sb.push(make_row(&format!("R{i}")));
+    }
+    assert_eq!(sb.len(), 5);
+
+    // Each cycle: pop 1 (resize overflow), then push 1 (new content).
+    for i in 5..10 {
+        sb.pop_newest();
+        sb.push(make_row(&format!("R{i}")));
+    }
+
+    assert_eq!(sb.len(), 5);
+    // Newest should be R9, oldest should be R5.
+    // Each cycle removed the newest and added a new one, so the buffer
+    // should contain R5, R6, R7, R8, R9.
+    assert_eq!(row_text(sb.get(0).unwrap()), "R9");
+    assert_eq!(row_text(sb.get(1).unwrap()), "R8");
+    assert_eq!(row_text(sb.get(2).unwrap()), "R7");
+    assert_eq!(row_text(sb.get(3).unwrap()), "R6");
+    assert_eq!(row_text(sb.get(4).unwrap()), "R5");
+}
+
+#[test]
+#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
+fn iter_after_pop_push_matches_get() {
+    let mut sb = ScrollbackBuffer::new(3);
+    sb.push(make_row("AAA"));
+    sb.push(make_row("BBB"));
+    sb.push(make_row("CCC"));
+
+    sb.pop_newest();
+    sb.push(make_row("DDD"));
+
+    let via_iter: Vec<String> = sb.iter().map(row_text).collect();
+    let via_get: Vec<String> = (0..sb.len())
+        .map(|i| row_text(sb.get(i).unwrap()))
+        .collect();
+    assert_eq!(via_iter, via_get);
+    assert_eq!(via_iter, vec!["DDD", "BBB", "AAA"]);
+}
+
+// Grid-level reproduction: resize then scroll_up
+
+#[test]
+#[ignore = "reproduces ring buffer bug — fix in ScrollbackBuffer::push"]
+fn scroll_up_after_grow_rows_preserves_scrollback() {
+    // Simulate: terminal has full scrollback, then window grows (pop_newest),
+    // then new content arrives (scroll_up → push). Scrollback must not
+    // contain placeholder/empty rows.
+    let mut grid = Grid::with_scrollback(3, 5, 5);
+
+    // Fill scrollback to capacity.
+    for i in 0..5 {
+        write_row(&mut grid, 0, &format!("SB{i:02}")[..4]);
+        grid.scroll_up(1);
+    }
+    assert_eq!(grid.scrollback().len(), 5);
+
+    // Grow terminal height by 1 (3 → 4 lines). Cursor at bottom.
+    grid.cursor_mut().set_line(2);
+    grid.resize(4, 5, true);
+
+    // Write new content and scroll.
+    write_row(&mut grid, 0, "NEW0");
+    grid.scroll_up(1);
+
+    // The newly pushed row must appear as newest in scrollback.
+    let newest = grid.scrollback().get(0).unwrap();
+    let text: String = (0..4).map(|i| newest[Column(i)].ch).collect();
+    assert_eq!(
+        text, "NEW0",
+        "newest scrollback row should be the just-pushed content"
+    );
+
+    // No scrollback entry should be a placeholder (all-null) row.
+    for i in 0..grid.scrollback().len() {
+        let row = grid.scrollback().get(i).unwrap();
+        let any_content = (0..row.cols()).any(|c| row[Column(c)].ch != '\0');
+        assert!(
+            any_content,
+            "scrollback row {i} is a placeholder/empty — ring buffer corruption"
+        );
+    }
+}
+
+#[test]
+fn scroll_up_while_scrolled_back_no_duplication() {
+    // Simulate: user scrolls back, new content arrives, then scrolls to
+    // live view. Visible content must not be duplicated.
+    let mut grid = Grid::with_scrollback(3, 5, 10);
+
+    // Fill some scrollback.
+    for i in 0..5 {
+        write_row(&mut grid, 0, &format!("L{i:03}")[..4]);
+        grid.scroll_up(1);
+    }
+
+    // Scroll back.
+    grid.scroll_display(3);
+    assert_eq!(grid.display_offset(), 3);
+
+    // New content arrives while scrolled back.
+    for i in 5..8 {
+        write_row(&mut grid, 0, &format!("L{i:03}")[..4]);
+        grid.scroll_up(1);
+    }
+
+    // Scroll back to live view.
+    grid.scroll_display(-(grid.display_offset() as isize));
+    assert_eq!(grid.display_offset(), 0);
+
+    // Walk the full scrollback and check no two adjacent rows are identical.
+    let sb = grid.scrollback();
+    for i in 0..sb.len().saturating_sub(1) {
+        let a: String = (0..sb.get(i).unwrap().cols())
+            .map(|c| sb.get(i).unwrap()[Column(c)].ch)
+            .collect();
+        let b: String = (0..sb.get(i + 1).unwrap().cols())
+            .map(|c| sb.get(i + 1).unwrap()[Column(c)].ch)
+            .collect();
+        assert_ne!(
+            a,
+            b,
+            "scrollback rows {i} and {} are identical: {a:?}",
+            i + 1
+        );
+    }
+}
+
 // Helpers
 
 /// Create a row with ASCII characters (one char per cell).
