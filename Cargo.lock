@@ -1803,6 +1803,7 @@ dependencies = [
  "log",
  "notify",
  "oriterm_core",
+ "oriterm_mux",
  "oriterm_ui",
  "parking_lot",
  "pollster",
@@ -1836,6 +1837,13 @@ dependencies = [
  "regex",
  "unicode-width",
  "vte",
+]
+
+[[package]]
+name = "oriterm_mux"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

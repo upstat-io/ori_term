@@ -1,0 +1,15 @@
+[package]
+name = "oriterm_mux"
+version = "0.1.0-alpha.3"
+edition = "2024"
+description = "Multiplexing data structures: split trees, floating layers, layout computation, and spatial navigation for oriterm"
+license = "MIT"
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+
+[lints]
+workspace = true

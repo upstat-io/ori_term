@@ -1,8 +1,11 @@
-//! Tests for scheme resolution and conditional parsing.
+//! Tests for scheme resolution, conditional parsing, and palette integration.
 
-use oriterm_core::Theme;
+use oriterm_core::{Rgb, Theme};
 
-use super::{builtin_names, find_builtin, parse_conditional, resolve_scheme_name};
+use super::{
+    ColorScheme, builtin_names, find_builtin, palette_from_scheme, parse_conditional,
+    resolve_scheme_name,
+};
 
 #[test]
 fn find_builtin_case_insensitive() {
@@ -52,8 +55,8 @@ fn builtin_schemes_have_valid_rgb() {
     for name in builtin_names() {
         let scheme = find_builtin(name).unwrap();
         // At minimum, fg or bg should be non-black for most schemes.
-        let non_zero = scheme.fg != oriterm_core::Rgb { r: 0, g: 0, b: 0 }
-            || scheme.bg != oriterm_core::Rgb { r: 0, g: 0, b: 0 };
+        let non_zero =
+            scheme.fg != Rgb { r: 0, g: 0, b: 0 } || scheme.bg != Rgb { r: 0, g: 0, b: 0 };
         assert!(non_zero, "scheme {name} has all-zero fg and bg");
     }
 }
@@ -102,4 +105,148 @@ fn resolve_scheme_name_conditional_dark() {
 fn resolve_scheme_name_conditional_light() {
     let name = resolve_scheme_name("dark:Tokyo Night, light:Tokyo Night Light", Theme::Light);
     assert_eq!(name, "Tokyo Night Light");
+}
+
+// --- palette_from_scheme integration ---
+
+/// Verify `palette_from_scheme` bridges scheme colors into the palette correctly.
+#[test]
+fn palette_from_scheme_roundtrip() {
+    let scheme = find_builtin("Catppuccin Mocha").expect("builtin exists");
+    let palette = palette_from_scheme(&scheme);
+
+    assert_eq!(palette.foreground(), scheme.fg);
+    assert_eq!(palette.background(), scheme.bg);
+    assert_eq!(palette.cursor_color(), scheme.cursor);
+
+    // ANSI colors from the scheme are preserved.
+    for i in 0..16u8 {
+        assert_eq!(
+            palette.resolve(vte::ansi::Color::Indexed(i)),
+            scheme.ansi[i as usize],
+            "ANSI color {i} mismatch",
+        );
+    }
+
+    // Cube and grayscale are unaffected by the scheme.
+    assert_eq!(
+        palette.resolve(vte::ansi::Color::Indexed(231)),
+        Rgb {
+            r: 255,
+            g: 255,
+            b: 255
+        },
+    );
+}
+
+/// Scheme with selection colors → palette propagation.
+#[test]
+fn palette_from_scheme_with_selection_colors() {
+    let scheme = ColorScheme {
+        name: "Test".into(),
+        ansi: [Rgb { r: 0, g: 0, b: 0 }; 16],
+        fg: Rgb {
+            r: 0xcc,
+            g: 0xcc,
+            b: 0xcc,
+        },
+        bg: Rgb { r: 0, g: 0, b: 0 },
+        cursor: Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+        },
+        selection_fg: Some(Rgb {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33,
+        }),
+        selection_bg: Some(Rgb {
+            r: 0xaa,
+            g: 0xbb,
+            b: 0xcc,
+        }),
+    };
+    let palette = palette_from_scheme(&scheme);
+
+    assert_eq!(
+        palette.selection_fg(),
+        Some(Rgb {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33
+        })
+    );
+    assert_eq!(
+        palette.selection_bg(),
+        Some(Rgb {
+            r: 0xaa,
+            g: 0xbb,
+            b: 0xcc
+        })
+    );
+}
+
+/// Builtins have no selection colors — verify None propagates.
+#[test]
+fn palette_from_builtin_has_no_selection() {
+    let scheme = find_builtin("Nord").expect("builtin exists");
+    let palette = palette_from_scheme(&scheme);
+    assert_eq!(palette.selection_fg(), None);
+    assert_eq!(palette.selection_bg(), None);
+}
+
+// --- resolve_scheme builtins-first semantics ---
+
+/// `resolve_scheme` finds builtins without touching the filesystem.
+#[test]
+fn resolve_scheme_finds_builtin() {
+    let scheme = super::resolve_scheme("Nord").expect("should resolve");
+    assert_eq!(scheme.name, "Nord");
+}
+
+/// `resolve_scheme` returns None for nonexistent name (no file match either).
+#[test]
+fn resolve_scheme_returns_none_for_unknown() {
+    assert!(super::resolve_scheme("__nonexistent_scheme_xyz__").is_none());
+}
+
+// --- conditional parsing edge cases ---
+
+/// `resolve_scheme_name` with `Theme::Unknown` picks the dark variant.
+#[test]
+fn resolve_scheme_name_unknown_is_dark() {
+    let name = resolve_scheme_name("dark:Tokyo Night, light:Tokyo Night Light", Theme::Unknown);
+    assert_eq!(name, "Tokyo Night");
+}
+
+/// Duplicate dark keys: last one wins (current implementation overwrites).
+#[test]
+fn parse_conditional_duplicate_dark() {
+    let result = parse_conditional("dark:First, dark:Second, light:Light");
+    assert_eq!(result, Some(("Second", "Light")));
+}
+
+/// Empty scheme name returns None from `find_builtin`.
+#[test]
+fn find_builtin_empty_string() {
+    assert!(find_builtin("").is_none());
+}
+
+// --- all builtins produce valid palettes ---
+
+/// Every builtin scheme produces a palette without panicking and has
+/// distinguishable fg/bg (no all-black copy-paste errors).
+#[test]
+fn all_builtins_produce_valid_palettes() {
+    for name in builtin_names() {
+        let scheme = find_builtin(name).unwrap();
+        let palette = palette_from_scheme(&scheme);
+
+        // At least fg or bg should be non-black.
+        let fg = palette.foreground();
+        let bg = palette.background();
+        let non_zero = fg != (Rgb { r: 0, g: 0, b: 0 }) || bg != (Rgb { r: 0, g: 0, b: 0 });
+        assert!(non_zero, "scheme {name}: palette fg and bg are both black");
+    }
 }

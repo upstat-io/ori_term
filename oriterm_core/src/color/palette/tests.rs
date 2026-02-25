@@ -514,3 +514,146 @@ fn from_scheme_colors_selection_defaults_none() {
     assert_eq!(p.selection_fg(), None);
     assert_eq!(p.selection_bg(), None);
 }
+
+// --- OSC 4/104 multi-step sequence ---
+
+/// set → verify → reset → verify returns to original default.
+#[test]
+fn osc_set_reset_roundtrip() {
+    let mut p = Palette::default();
+    let original = p.resolve(Color::Indexed(5));
+
+    let custom = Rgb {
+        r: 0x42,
+        g: 0x42,
+        b: 0x42,
+    };
+    p.set_indexed(5, custom);
+    assert_eq!(p.resolve(Color::Indexed(5)), custom);
+
+    p.reset_indexed(5);
+    assert_eq!(p.resolve(Color::Indexed(5)), original);
+}
+
+/// set → reset → set again → verify second set took effect.
+#[test]
+fn osc_set_reset_set_sequence() {
+    let mut p = Palette::default();
+
+    let first = Rgb {
+        r: 0xaa,
+        g: 0xbb,
+        b: 0xcc,
+    };
+    let second = Rgb {
+        r: 0x11,
+        g: 0x22,
+        b: 0x33,
+    };
+
+    p.set_indexed(10, first);
+    assert_eq!(p.resolve(Color::Indexed(10)), first);
+
+    p.reset_indexed(10);
+    p.set_indexed(10, second);
+    assert_eq!(p.resolve(Color::Indexed(10)), second);
+}
+
+/// Selection colors don't bleed into indexed palette and vice versa.
+#[test]
+fn selection_does_not_affect_indexed() {
+    let mut p = Palette::default();
+    let fg_before = p.foreground();
+
+    p.set_selection_fg(Some(Rgb {
+        r: 0xff,
+        g: 0x00,
+        b: 0x00,
+    }));
+    p.set_selection_bg(Some(Rgb {
+        r: 0x00,
+        g: 0xff,
+        b: 0x00,
+    }));
+
+    // Foreground/background palette entries unchanged.
+    assert_eq!(p.foreground(), fg_before);
+    assert_eq!(p.resolve(Color::Named(NamedColor::Foreground)), fg_before);
+}
+
+// --- from_scheme_colors: bright foreground matches fg ---
+
+#[test]
+fn from_scheme_colors_bright_foreground_matches_fg() {
+    let ansi = [Rgb { r: 0, g: 0, b: 0 }; 16];
+    let fg = Rgb {
+        r: 0xab,
+        g: 0xcd,
+        b: 0xef,
+    };
+    let p = Palette::from_scheme_colors(
+        &ansi,
+        fg,
+        Rgb { r: 0, g: 0, b: 0 },
+        Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+        },
+    );
+    assert_eq!(p.resolve(Color::Named(NamedColor::BrightForeground)), fg);
+}
+
+// --- dim_rgb edge values ---
+
+#[test]
+fn dim_rgb_black_stays_black() {
+    let dimmed = super::dim_rgb(Rgb { r: 0, g: 0, b: 0 });
+    assert_eq!(dimmed, Rgb { r: 0, g: 0, b: 0 });
+}
+
+#[test]
+fn dim_rgb_white_produces_170() {
+    let dimmed = super::dim_rgb(Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    });
+    // 255 * 2 / 3 = 170
+    assert_eq!(
+        dimmed,
+        Rgb {
+            r: 170,
+            g: 170,
+            b: 170,
+        }
+    );
+}
+
+// --- set_default vs set_indexed semantics ---
+
+/// `set_default` updates the reset baseline so OSC 104 resets to it.
+#[test]
+fn set_default_changes_reset_baseline() {
+    let mut p = Palette::default();
+    let config_color = Rgb {
+        r: 0x42,
+        g: 0x84,
+        b: 0xc6,
+    };
+    p.set_default(1, config_color);
+    assert_eq!(p.resolve(Color::Indexed(1)), config_color);
+
+    // Override via OSC 4.
+    p.set_indexed(
+        1,
+        Rgb {
+            r: 0xff,
+            g: 0x00,
+            b: 0x00,
+        },
+    );
+    // Reset via OSC 104 should return to config color, not xterm default.
+    p.reset_indexed(1);
+    assert_eq!(p.resolve(Color::Indexed(1)), config_color);
+}

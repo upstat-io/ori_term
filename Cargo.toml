@@ -1,5 +1,5 @@
 [workspace]
-members = ["oriterm_core", "oriterm", "oriterm_ui"]
+members = ["oriterm_core", "oriterm", "oriterm_ui", "oriterm_mux"]
 resolver = "2"
 
 [workspace.lints.rust]

@@ -1675,3 +1675,109 @@ fn apply_font_config_with_no_user_fallbacks() {
     let features = collection.features_for_face(crate::font::FaceIdx::REGULAR);
     assert_eq!(features.len(), 2, "default config features are calt + liga");
 }
+
+// ---------------------------------------------------------------------------
+// parse_hex_color edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_hex_color_valid_with_hash() {
+    let rgb = parse_hex_color("#FF8800").expect("valid hex");
+    assert_eq!(
+        rgb,
+        Rgb {
+            r: 0xFF,
+            g: 0x88,
+            b: 0x00,
+        }
+    );
+}
+
+#[test]
+fn parse_hex_color_valid_without_hash() {
+    let rgb = parse_hex_color("FF8800").expect("valid hex without #");
+    assert_eq!(
+        rgb,
+        Rgb {
+            r: 0xFF,
+            g: 0x88,
+            b: 0x00,
+        }
+    );
+}
+
+#[test]
+fn parse_hex_color_lowercase() {
+    let rgb = parse_hex_color("#aabbcc").expect("lowercase hex");
+    assert_eq!(
+        rgb,
+        Rgb {
+            r: 0xAA,
+            g: 0xBB,
+            b: 0xCC,
+        }
+    );
+}
+
+#[test]
+fn parse_hex_color_mixed_case() {
+    let rgb = parse_hex_color("#aAbBcC").expect("mixed case hex");
+    assert_eq!(
+        rgb,
+        Rgb {
+            r: 0xAA,
+            g: 0xBB,
+            b: 0xCC,
+        }
+    );
+}
+
+#[test]
+fn parse_hex_color_all_zeros() {
+    let rgb = parse_hex_color("#000000").expect("all zeros");
+    assert_eq!(rgb, Rgb { r: 0, g: 0, b: 0 });
+}
+
+#[test]
+fn parse_hex_color_all_ones() {
+    let rgb = parse_hex_color("#FFFFFF").expect("all ones");
+    assert_eq!(
+        rgb,
+        Rgb {
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF,
+        }
+    );
+}
+
+#[test]
+fn parse_hex_color_rejects_short_rgb() {
+    // 3-digit shorthand is not supported — only 6-digit.
+    assert!(parse_hex_color("#FFF").is_none());
+}
+
+#[test]
+fn parse_hex_color_rejects_empty() {
+    assert!(parse_hex_color("").is_none());
+}
+
+#[test]
+fn parse_hex_color_rejects_hash_only() {
+    assert!(parse_hex_color("#").is_none());
+}
+
+#[test]
+fn parse_hex_color_rejects_non_hex() {
+    assert!(parse_hex_color("#ZZZZZZ").is_none());
+}
+
+#[test]
+fn parse_hex_color_rejects_too_long() {
+    assert!(parse_hex_color("#FF88001").is_none());
+}
+
+#[test]
+fn parse_hex_color_rejects_too_short() {
+    assert!(parse_hex_color("#FF880").is_none());
+}

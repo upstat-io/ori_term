@@ -111,3 +111,59 @@ background = "#000000"
     let path = Path::new("missing-cursor.toml");
     assert!(parse_theme_toml(toml, path).is_none());
 }
+
+/// Wrong ANSI array length (15 instead of 16) — serde rejects fixed-size array mismatch.
+#[test]
+fn wrong_ansi_array_length_rejected() {
+    let toml = r##"
+ansi = [
+    "#000000", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000", "#000000",
+    "#000000", "#000000", "#000000",
+]
+foreground = "#ffffff"
+background = "#000000"
+cursor = "#ffffff"
+"##;
+    let path = Path::new("short-ansi.toml");
+    assert!(parse_theme_toml(toml, path).is_none());
+}
+
+/// Extra ANSI colors (17) — serde silently takes the first 16 for `[String; 16]`,
+/// so parsing succeeds but only 16 are used.
+#[test]
+fn extra_ansi_array_length_takes_first_16() {
+    let toml = r##"
+ansi = [
+    "#000000", "#111111", "#222222", "#333333",
+    "#444444", "#555555", "#666666", "#777777",
+    "#888888", "#999999", "#AAAAAA", "#BBBBBB",
+    "#CCCCCC", "#DDDDDD", "#EEEEEE", "#FFFFFF",
+    "#FF0000",
+]
+foreground = "#ffffff"
+background = "#000000"
+cursor = "#ffffff"
+"##;
+    let path = Path::new("long-ansi.toml");
+    let scheme = parse_theme_toml(toml, path).expect("serde accepts 17 as [String;16]");
+    // 17th entry is silently dropped.
+    assert_eq!(
+        scheme.ansi[15],
+        oriterm_core::Rgb {
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF
+        }
+    );
+}
+
+/// Unknown fields in TOML are silently ignored (forward compatibility).
+#[test]
+fn unknown_fields_ignored() {
+    let toml = format!("{VALID_TOML}\nfuture_field = true\nanother = 42\n");
+    let path = Path::new("future.toml");
+    let scheme = parse_theme_toml(&toml, path).expect("should parse with unknown fields");
+    assert_eq!(scheme.name, "Test Theme");
+}

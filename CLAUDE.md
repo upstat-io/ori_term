@@ -18,7 +18,7 @@ GPU-accelerated terminal emulator in Rust (same category as Alacritty, WezTerm, 
 
 ## Coding Standards
 
-**Extracted from**: Alacritty, WezTerm, Ghostty, Ratatui, Crossterm, Bubbletea, Lipgloss, Termenv — the patterns every serious terminal project agrees on.
+**Extracted from**: Alacritty, WezTerm, Ghostty, Ptyxis, Ratatui, Crossterm, Bubbletea, Lipgloss, Termenv — the patterns every serious terminal project agrees on.
 
 **Error Handling**: No `unwrap()` in library code — return `Result` or provide a default. No `panic!` on user-recoverable errors. Use `std::io::Result<T>` for I/O operations. Custom `Error` enum with `From` impls for domain-specific errors. Error chains via `.context()` or `source()`.
 
@@ -96,6 +96,7 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 - **crossterm** — Single crate, Command trait pattern (`queue!`/`execute!` macros), `io::Result<T>` everywhere
 - **bubbletea** — Go Elm Architecture (Model/Update/View), frame-based rendering (60/120 FPS), goroutine channels
 - **lipgloss** — CSS-like fluent styling, AdaptiveColor/CompleteColor, lazy `sync.Once` renderer
+- **ptyxis** — C/GTK4, GNOME's default terminal (Fedora/RHEL/Ubuntu). libvte consumer with GPU-accelerated rendering, `ptyxis-agent` out-of-process PTY helper for Flatpak sandboxing, `.palette` file format for color schemes with light/dark auto-adaptation, profile system (per-profile container/palette/shell), tab monitor for process tracking (`sudo`/SSH indicators), container-first architecture (Podman/Toolbox/Distrobox discovery), encrypted scrollback, terminal inspector for OSC/mouse debugging
 - **termenv** — Color profile detection (NO_COLOR/CLICOLOR), `Environ` interface for testing, profile-aware downgrade
 
 ## Plans

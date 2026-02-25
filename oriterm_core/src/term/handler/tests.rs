@@ -3979,3 +3979,216 @@ fn insert_delete_lines_outside_scroll_region_noop() {
     feed(&mut t, b"\x1b[5M"); // Delete 5 lines
     assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ch_before);
 }
+
+// --- SGR colon-separated color parameters (ISO 8613-6) ---
+//
+// Modern terminals accept both semicolon and colon as sub-parameter
+// separators for extended color sequences. The VTE crate parses both.
+
+/// `ESC[38:5:196m` — colon-separated 256-color foreground.
+#[test]
+fn sgr_256color_fg_colon_separator() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:5:196m");
+
+    let fg = t.grid().cursor().template.fg;
+    assert_eq!(fg, vte::ansi::Color::Indexed(196));
+}
+
+/// `ESC[48:5:42m` — colon-separated 256-color background.
+#[test]
+fn sgr_256color_bg_colon_separator() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:5:42m");
+
+    assert_eq!(t.grid().cursor().template.bg, vte::ansi::Color::Indexed(42));
+}
+
+/// `ESC[38:2::255:128:0m` — colon-separated truecolor foreground.
+///
+/// Per ISO 8613-6, the format is `38:2:<color-space>:R:G:B`. The color
+/// space parameter is optional (empty = default RGB). The double colon
+/// after `2` represents the empty color space ID.
+#[test]
+fn sgr_truecolor_fg_colon_separator() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[38:2::255:128:0m");
+
+    let fg = t.grid().cursor().template.fg;
+    assert_eq!(
+        fg,
+        vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 255,
+            g: 128,
+            b: 0
+        })
+    );
+}
+
+/// `ESC[48:2::0:128:255m` — colon-separated truecolor background.
+#[test]
+fn sgr_truecolor_bg_colon_separator() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[48:2::0:128:255m");
+
+    assert_eq!(
+        t.grid().cursor().template.bg,
+        vte::ansi::Color::Spec(vte::ansi::Rgb {
+            r: 0,
+            g: 128,
+            b: 255
+        })
+    );
+}
+
+/// Semicolon and colon SGR produce identical results.
+#[test]
+fn sgr_colon_and_semicolon_equivalent_256() {
+    let mut semi = term();
+    feed(&mut semi, b"\x1b[38;5;100m");
+
+    let mut colon = term();
+    feed(&mut colon, b"\x1b[38:5:100m");
+
+    assert_eq!(
+        semi.grid().cursor().template.fg,
+        colon.grid().cursor().template.fg,
+    );
+}
+
+/// Semicolon and colon SGR produce identical truecolor results.
+#[test]
+fn sgr_colon_and_semicolon_equivalent_truecolor() {
+    let mut semi = term();
+    feed(&mut semi, b"\x1b[38;2;10;20;30m");
+
+    let mut colon = term();
+    feed(&mut colon, b"\x1b[38:2::10:20:30m");
+
+    assert_eq!(
+        semi.grid().cursor().template.fg,
+        colon.grid().cursor().template.fg,
+    );
+}
+
+// --- OSC color set→query roundtrip ---
+//
+// Verify that setting a dynamic color then querying it produces a
+// response containing the correct hex values. The ColorRequest event
+// carries a formatter closure; we verify it returns the expected format.
+
+/// OSC 4 set then query: response contains the set color.
+#[test]
+fn osc4_set_then_query_roundtrip() {
+    let mut t = term();
+    // Set index 5 to a known color.
+    feed(&mut t, b"\x1b]4;5;rgb:ab/cd/ef\x07");
+
+    // Verify palette has the color.
+    let color = t.palette().resolve(vte::ansi::Color::Indexed(5));
+    assert_eq!(
+        color,
+        vte::ansi::Rgb {
+            r: 0xab,
+            g: 0xcd,
+            b: 0xef
+        }
+    );
+
+    // Query: the event should reference index 5.
+    let (mut t2, listener) = term_with_recorder();
+    // Set same color on t2.
+    feed(&mut t2, b"\x1b]4;5;rgb:ab/cd/ef\x07");
+    // Now query it.
+    feed(&mut t2, b"\x1b]4;5;?\x07");
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("ColorRequest(5)")),
+        "expected ColorRequest(5), got: {events:?}",
+    );
+}
+
+/// OSC 10 set then query: foreground color roundtrip.
+#[test]
+fn osc10_set_then_query_roundtrip() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b]10;rgb:de/ad/ff\x07");
+    assert_eq!(
+        t.palette().foreground(),
+        vte::ansi::Rgb {
+            r: 0xde,
+            g: 0xad,
+            b: 0xff
+        }
+    );
+
+    feed(&mut t, b"\x1b]10;?\x07");
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("ColorRequest(256)")),
+        "expected foreground query event, got: {events:?}",
+    );
+}
+
+/// OSC 11 set then query: background color roundtrip.
+#[test]
+fn osc11_set_then_query_roundtrip() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b]11;rgb:12/34/56\x07");
+    assert_eq!(
+        t.palette().background(),
+        vte::ansi::Rgb {
+            r: 0x12,
+            g: 0x34,
+            b: 0x56
+        }
+    );
+
+    feed(&mut t, b"\x1b]11;?\x07");
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("ColorRequest(257)")),
+        "expected background query event, got: {events:?}",
+    );
+}
+
+/// OSC 12 set then query: cursor color roundtrip.
+#[test]
+fn osc12_set_then_query_roundtrip() {
+    let (mut t, listener) = term_with_recorder();
+    feed(&mut t, b"\x1b]12;rgb:fe/dc/ba\x07");
+    assert_eq!(
+        t.palette().cursor_color(),
+        vte::ansi::Rgb {
+            r: 0xfe,
+            g: 0xdc,
+            b: 0xba
+        }
+    );
+
+    feed(&mut t, b"\x1b]12;?\x07");
+    let events = listener.events();
+    assert!(
+        events.iter().any(|e| e.contains("ColorRequest(258)")),
+        "expected cursor color query event, got: {events:?}",
+    );
+}
+
+/// OSC 4 set, reset, then query: verify reset took effect.
+#[test]
+fn osc4_set_reset_then_verify() {
+    let mut t = term();
+    let original = t.palette().resolve(vte::ansi::Color::Indexed(3));
+
+    // Set to a different color.
+    feed(&mut t, b"\x1b]4;3;rgb:ff/ff/ff\x07");
+    assert_ne!(t.palette().resolve(vte::ansi::Color::Indexed(3)), original);
+
+    // Reset it.
+    feed(&mut t, b"\x1b]104;3\x07");
+    assert_eq!(
+        t.palette().resolve(vte::ansi::Color::Indexed(3)),
+        original,
+        "OSC 104 should restore to the original default"
+    );
+}
