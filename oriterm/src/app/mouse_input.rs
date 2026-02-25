@@ -45,10 +45,9 @@ impl App {
             Some(m) => m,
             None => return true,
         };
-        let theme = oriterm_ui::theme::UiTheme::dark();
         let result = self
             .overlays
-            .process_mouse_event(&ui_event, measurer, &theme, None);
+            .process_mouse_event(&ui_event, measurer, &self.ui_theme, None);
         self.handle_overlay_result(result);
         true
     }
@@ -84,10 +83,9 @@ impl App {
             Some(m) => m,
             None => return true,
         };
-        let theme = oriterm_ui::theme::UiTheme::dark();
         let result = self
             .overlays
-            .process_mouse_event(&ui_event, measurer, &theme, None);
+            .process_mouse_event(&ui_event, measurer, &self.ui_theme, None);
         self.handle_overlay_result(result);
         // Only consume if a modal overlay blocked or handled it.
         self.overlays.has_modal()

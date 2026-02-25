@@ -119,10 +119,9 @@ impl App {
                     Some(m) => m,
                     None => return,
                 };
-                let theme = oriterm_ui::theme::UiTheme::dark();
-                let result = self
-                    .overlays
-                    .process_key_event(ui_event, measurer, &theme, None);
+                let result =
+                    self.overlays
+                        .process_key_event(ui_event, measurer, &self.ui_theme, None);
                 self.handle_overlay_result(result);
             }
             return;

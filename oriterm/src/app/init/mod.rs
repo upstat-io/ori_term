@@ -83,8 +83,7 @@ impl App {
         // 7. Create window chrome widget (title bar + controls).
         let (w, h) = window.size_px();
         let logical_w = w as f32 / window.scale_factor().factor() as f32;
-        let chrome_widget =
-            WindowChromeWidget::with_theme("ori", logical_w, &oriterm_ui::theme::UiTheme::dark());
+        let chrome_widget = WindowChromeWidget::with_theme("ori", logical_w, &self.ui_theme);
         let caption_height = chrome_widget.caption_height();
 
         // 8. Enable Aero Snap on Windows (installs WndProc subclass).
@@ -109,9 +108,8 @@ impl App {
         }
 
         // 9. Create tab bar widget with initial tab entry.
-        let theme = oriterm_ui::theme::UiTheme::dark();
         let mut tab_bar_widget =
-            oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &theme);
+            oriterm_ui::widgets::tab_bar::TabBarWidget::with_theme(logical_w, &self.ui_theme);
         tab_bar_widget.set_tabs(vec![oriterm_ui::widgets::tab_bar::TabEntry::new("")]);
 
         // 10. Compute grid dimensions from viewport, offset by chrome height.

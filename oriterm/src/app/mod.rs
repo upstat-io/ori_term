@@ -44,6 +44,7 @@ use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
 use oriterm_ui::overlay::OverlayManager;
+use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::tab_bar::TabBarWidget;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
@@ -125,10 +126,10 @@ pub(crate) struct App {
     // Currently hovered URL (set on Ctrl+mouse move, cleared on Ctrl release).
     hovered_url: Option<DetectedUrl>,
 
-    // Chrome-style tab width lock: freezes tab widths while the cursor is in
-    // the tab bar zone, preventing close buttons from shifting during rapid
-    // close clicks. Acquired on tab bar hover enter, released on leave/resize.
-    tab_width_lock: Option<f32>,
+    // Active UI theme. Centralized here so all widget creation and event
+    // contexts use a single source of truth. When dynamic theming arrives,
+    // only this field and the theme-change handler need updating.
+    ui_theme: UiTheme,
 }
 
 impl App {
@@ -165,7 +166,7 @@ impl App {
             pending_paste: None,
             url_cache: UrlDetectCache::default(),
             hovered_url: None,
-            tab_width_lock: None,
+            ui_theme: UiTheme::dark(),
         }
     }
 
@@ -222,13 +223,15 @@ impl App {
     }
 
     /// Current tab width lock value, if active.
+    ///
+    /// Delegates to the tab bar widget — the widget is the single source
+    /// of truth for this value.
     pub(super) fn tab_width_lock(&self) -> Option<f32> {
-        self.tab_width_lock
+        self.tab_bar.as_ref().and_then(TabBarWidget::tab_width_lock)
     }
 
     /// Freeze tab widths at `width` to prevent layout jitter.
     pub(super) fn acquire_tab_width_lock(&mut self, width: f32) {
-        self.tab_width_lock = Some(width);
         if let Some(tab_bar) = &mut self.tab_bar {
             tab_bar.set_tab_width_lock(Some(width));
         }
@@ -242,17 +245,14 @@ impl App {
             .map(|t| t.title().to_owned())
             .unwrap_or_default();
         if let Some(tab_bar) = &mut self.tab_bar {
-            if let Some(entry) = tab_bar.tabs_mut().first_mut() {
-                entry.title = title;
-            }
+            tab_bar.update_tab_title(0, title);
         }
         self.dirty = true;
     }
 
     /// Release the tab width lock, allowing tabs to recompute widths.
     pub(super) fn release_tab_width_lock(&mut self) {
-        if self.tab_width_lock.is_some() {
-            self.tab_width_lock = None;
+        if self.tab_width_lock().is_some() {
             if let Some(tab_bar) = &mut self.tab_bar {
                 tab_bar.set_tab_width_lock(None);
             }
@@ -277,9 +277,7 @@ impl App {
                 }
                 // Start bell animation on the tab bar (inactive tabs pulse).
                 if let Some(tab_bar) = &mut self.tab_bar {
-                    if let Some(tabs) = tab_bar.tabs_mut().first_mut() {
-                        tabs.bell_start = Some(std::time::Instant::now());
-                    }
+                    tab_bar.ring_bell(0);
                 }
                 self.dirty = true;
             }

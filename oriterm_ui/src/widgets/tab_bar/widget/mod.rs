@@ -148,9 +148,28 @@ impl TabBarWidget {
         self.tabs.len()
     }
 
-    /// Mutable access to tab entries (for updating bell state).
-    pub fn tabs_mut(&mut self) -> &mut [TabEntry] {
-        &mut self.tabs
+    /// Current tab width lock value, if active.
+    pub fn tab_width_lock(&self) -> Option<f32> {
+        self.tab_width_lock
+    }
+
+    /// Update the title of the tab at `index`.
+    ///
+    /// No-op if `index` is out of bounds.
+    pub fn update_tab_title(&mut self, index: usize, title: String) {
+        if let Some(entry) = self.tabs.get_mut(index) {
+            entry.title = title;
+        }
+    }
+
+    /// Start a bell animation on the tab at `index`.
+    ///
+    /// Records the current instant as the bell start time. No-op if
+    /// `index` is out of bounds.
+    pub fn ring_bell(&mut self, index: usize) {
+        if let Some(entry) = self.tabs.get_mut(index) {
+            entry.bell_start = Some(Instant::now());
+        }
     }
 
     // --- Private helpers ---

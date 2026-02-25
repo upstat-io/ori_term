@@ -158,6 +158,7 @@ impl App {
                 &mut self.chrome_draw_list,
                 logical_w,
                 scale,
+                &self.ui_theme,
             );
             if chrome_animating {
                 self.dirty = true;
@@ -177,6 +178,7 @@ impl App {
                 caption_h,
                 scale,
                 gpu,
+                &self.ui_theme,
             ) {
                 self.dirty = true;
             }
@@ -190,6 +192,7 @@ impl App {
                 logical_size,
                 scale,
                 gpu,
+                &self.ui_theme,
             ) {
                 self.dirty = true;
             }
@@ -250,12 +253,17 @@ impl App {
     /// Returns `true` if chrome has running animations that need continued
     /// redraws. The `draw_list` is cleared and reused across frames to
     /// avoid per-frame allocation.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "chrome drawing: widget, renderer, draw list, viewport, scale, theme"
+    )]
     fn draw_chrome(
         chrome: Option<&WindowChromeWidget>,
         renderer: &mut crate::gpu::GpuRenderer,
         draw_list: &mut DrawList,
         logical_width: u32,
         scale: f32,
+        theme: &UiTheme,
     ) -> bool {
         let Some(chrome) = chrome else {
             return false;
@@ -269,7 +277,6 @@ impl App {
         draw_list.clear();
         let animations_running = Cell::new(false);
         let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-        let theme = UiTheme::dark();
         let caption_h = chrome.caption_height();
         let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_width as f32, caption_h);
 
@@ -280,7 +287,7 @@ impl App {
             focused_widget: None,
             now: Instant::now(),
             animations_running: &animations_running,
-            theme: &theme,
+            theme,
         };
         chrome.draw(&mut ctx);
         let animating = animations_running.get();
@@ -299,7 +306,7 @@ impl App {
     /// Returns `true` if the tab bar has running animations (e.g. bell pulse).
     #[expect(
         clippy::too_many_arguments,
-        reason = "tab bar drawing: widget, renderer, draw list, viewport, caption offset, scale, GPU"
+        reason = "tab bar drawing: widget, renderer, draw list, viewport, caption offset, scale, GPU, theme"
     )]
     fn draw_tab_bar(
         tab_bar: Option<&oriterm_ui::widgets::tab_bar::TabBarWidget>,
@@ -309,6 +316,7 @@ impl App {
         caption_h: f32,
         scale: f32,
         gpu: &GpuState,
+        theme: &UiTheme,
     ) -> bool {
         let Some(tab_bar) = tab_bar else {
             return false;
@@ -323,7 +331,6 @@ impl App {
         draw_list.clear();
         let animations_running = Cell::new(false);
         let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-        let theme = UiTheme::dark();
 
         let mut ctx = DrawCtx {
             measurer: &measurer,
@@ -332,7 +339,7 @@ impl App {
             focused_widget: None,
             now: Instant::now(),
             animations_running: &animations_running,
-            theme: &theme,
+            theme,
         };
         tab_bar.draw(&mut ctx);
         let animating = animations_running.get();
@@ -356,7 +363,7 @@ impl App {
     /// immediately if no overlays are active.
     #[expect(
         clippy::too_many_arguments,
-        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU state"
+        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU, theme"
     )]
     fn draw_overlays(
         overlays: &mut OverlayManager,
@@ -365,6 +372,7 @@ impl App {
         logical_size: (f32, f32),
         scale: f32,
         gpu: &GpuState,
+        theme: &UiTheme,
     ) -> bool {
         if overlays.is_empty() {
             return false;
@@ -373,9 +381,8 @@ impl App {
         // Build draw list with real measurer (immutable borrow on renderer
         // ends after draw_overlays — NLL lets the mutable append follow).
         let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-        let theme = UiTheme::dark();
 
-        overlays.layout_overlays(&measurer, &theme);
+        overlays.layout_overlays(&measurer, theme);
 
         draw_list.clear();
         let animations_running = Cell::new(false);
@@ -387,7 +394,7 @@ impl App {
             focused_widget: None,
             now: Instant::now(),
             animations_running: &animations_running,
-            theme: &theme,
+            theme,
         };
         overlays.draw_overlays(&mut ctx);
         let animating = animations_running.get();

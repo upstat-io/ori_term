@@ -113,13 +113,12 @@ impl App {
             Some(m) => m,
             None => return false,
         };
-        let theme = oriterm_ui::theme::UiTheme::dark();
         let ctx = oriterm_ui::widgets::EventCtx {
             measurer,
             bounds: oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_w, chrome.caption_height()),
             is_focused: false,
             focused_widget: None,
-            theme: &theme,
+            theme: &self.ui_theme,
         };
 
         let resp = chrome.handle_mouse(&event, &ctx);
@@ -156,13 +155,12 @@ impl App {
             .as_ref()
             .map_or(1.0, |w| w.scale_factor().factor() as f32);
         let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-        let theme = oriterm_ui::theme::UiTheme::dark();
         let ctx = oriterm_ui::widgets::EventCtx {
             measurer: &measurer,
             bounds: oriterm_ui::geometry::Rect::default(),
             is_focused: false,
             focused_widget: None,
-            theme: &theme,
+            theme: &self.ui_theme,
         };
         let resp = chrome.handle_hover(oriterm_ui::input::HoverEvent::Leave, &ctx);
         if resp.response == oriterm_ui::input::EventResponse::RequestRedraw {
@@ -182,13 +180,12 @@ impl App {
         let logical =
             oriterm_ui::geometry::Point::new(position.x as f32 / scale, position.y as f32 / scale);
         let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-        let theme = oriterm_ui::theme::UiTheme::dark();
         let ctx = oriterm_ui::widgets::EventCtx {
             measurer: &measurer,
             bounds: oriterm_ui::geometry::Rect::default(),
             is_focused: false,
             focused_widget: None,
-            theme: &theme,
+            theme: &self.ui_theme,
         };
         let resp = chrome.update_hover(logical, &ctx);
         if resp.response == oriterm_ui::input::EventResponse::RequestRedraw {
@@ -239,17 +236,14 @@ impl App {
         match (in_tab_bar, locked) {
             // Cursor entered tab bar without a lock — acquire at current width.
             (true, false) => {
-                let window_width = self.window.as_ref().map_or(0.0, |w| {
-                    let scale = w.scale_factor().factor() as f32;
-                    w.size_px().0 as f32 / scale
-                });
-                let tab_count = usize::from(self.tab.is_some());
-                let layout = oriterm_ui::widgets::tab_bar::TabBarLayout::compute(
-                    tab_count,
-                    window_width,
-                    None,
-                );
-                self.acquire_tab_width_lock(layout.tab_width);
+                // The widget already holds a computed layout with the current
+                // tab width. cursor_in_tab_bar() guarantees chrome (and thus
+                // tab_bar) exists, so this always succeeds in this arm.
+                let tab_width = self
+                    .tab_bar
+                    .as_ref()
+                    .map_or(0.0, |tb| tb.layout().tab_width);
+                self.acquire_tab_width_lock(tab_width);
             }
             // Cursor left tab bar — release lock.
             (false, true) => self.release_tab_width_lock(),
