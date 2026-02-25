@@ -19,7 +19,7 @@ use crate::layout::LayoutBox;
 use crate::theme::UiTheme;
 use crate::widget_id::WidgetId;
 
-use self::controls::WindowControlButton;
+use self::controls::{ControlButtonColors, WindowControlButton};
 use self::layout::{ChromeLayout, ControlKind};
 use super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetResponse};
 
@@ -66,26 +66,19 @@ impl WindowChromeWidget {
 
         let caption_bg = theme.bg_secondary;
 
-        let mut min_btn = WindowControlButton::new(
-            ControlKind::Minimize,
-            theme.fg_primary,
-            Color::TRANSPARENT,
-            theme.bg_hover,
-        );
+        let colors = ControlButtonColors {
+            fg: theme.fg_primary,
+            bg: Color::TRANSPARENT,
+            hover_bg: theme.bg_hover,
+            close_hover_bg: theme.close_hover_bg,
+            close_pressed_bg: theme.close_pressed_bg,
+        };
+
+        let mut min_btn = WindowControlButton::new(ControlKind::Minimize, colors);
         min_btn.set_caption_bg(caption_bg);
-        let mut max_btn = WindowControlButton::new(
-            ControlKind::MaximizeRestore,
-            theme.fg_primary,
-            Color::TRANSPARENT,
-            theme.bg_hover,
-        );
+        let mut max_btn = WindowControlButton::new(ControlKind::MaximizeRestore, colors);
         max_btn.set_caption_bg(caption_bg);
-        let mut close_btn = WindowControlButton::new(
-            ControlKind::Close,
-            theme.fg_primary,
-            Color::TRANSPARENT,
-            theme.bg_hover,
-        );
+        let mut close_btn = WindowControlButton::new(ControlKind::Close, colors);
         close_btn.set_caption_bg(caption_bg);
 
         Self {

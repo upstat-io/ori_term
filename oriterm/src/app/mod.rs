@@ -120,6 +120,11 @@ pub(crate) struct App {
 
     // Currently hovered URL (set on Ctrl+mouse move, cleared on Ctrl release).
     hovered_url: Option<DetectedUrl>,
+
+    // Chrome-style tab width lock: freezes tab widths while the cursor is in
+    // the tab bar zone, preventing close buttons from shifting during rapid
+    // close clicks. Acquired on tab bar hover enter, released on leave/resize.
+    tab_width_lock: Option<f32>,
 }
 
 impl App {
@@ -155,6 +160,7 @@ impl App {
             pending_paste: None,
             url_cache: UrlDetectCache::default(),
             hovered_url: None,
+            tab_width_lock: None,
         }
     }
 
@@ -208,6 +214,24 @@ impl App {
     /// Returns `None` if no tab is present.
     fn terminal_mode(&self) -> Option<TermMode> {
         self.tab.as_ref().map(|t| t.terminal().lock().mode())
+    }
+
+    /// Current tab width lock value, if active.
+    pub(super) fn tab_width_lock(&self) -> Option<f32> {
+        self.tab_width_lock
+    }
+
+    /// Freeze tab widths at `width` to prevent layout jitter.
+    pub(super) fn acquire_tab_width_lock(&mut self, width: f32) {
+        self.tab_width_lock = Some(width);
+    }
+
+    /// Release the tab width lock, allowing tabs to recompute widths.
+    pub(super) fn release_tab_width_lock(&mut self) {
+        if self.tab_width_lock.is_some() {
+            self.tab_width_lock = None;
+            self.dirty = true;
+        }
     }
 
     /// Dispatch a terminal event from the PTY reader thread.
@@ -349,11 +373,13 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::CursorLeft { .. } => {
                 self.clear_chrome_hover();
                 self.clear_url_hover();
+                self.release_tab_width_lock();
             }
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse.set_cursor_pos(position);
                 self.update_chrome_hover(position);
+                self.update_tab_bar_hover(position);
 
                 // Forward move events to overlays for per-widget hover tracking.
                 if self.try_overlay_mouse_move(position) {

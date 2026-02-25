@@ -33,6 +33,10 @@ pub struct UiTheme {
     pub border: Color,
     /// Shadow color (typically semi-transparent black).
     pub shadow: Color,
+    /// Close button hover background (platform standard red).
+    pub close_hover_bg: Color,
+    /// Close button pressed background (darker red).
+    pub close_pressed_bg: Color,
     /// Default corner radius in logical pixels.
     pub corner_radius: f32,
     /// Default spacing/gap in logical pixels.
@@ -59,6 +63,8 @@ impl UiTheme {
             accent: Color::from_rgb_u8(0x4A, 0x9E, 0xFF),
             border: Color::from_rgb_u8(0x55, 0x55, 0x55),
             shadow: Color::rgba(0.0, 0.0, 0.0, 0.5),
+            close_hover_bg: Color::hex(0xC4_2B_1C),
+            close_pressed_bg: Color::hex(0xA1_20_12),
             corner_radius: 4.0,
             spacing: 8.0,
             font_size: 13.0,
@@ -80,6 +86,8 @@ impl UiTheme {
             accent: Color::from_rgb_u8(0x00, 0x78, 0xD4),
             border: Color::from_rgb_u8(0xCC, 0xCC, 0xCC),
             shadow: Color::rgba(0.0, 0.0, 0.0, 0.15),
+            close_hover_bg: Color::hex(0xC4_2B_1C),
+            close_pressed_bg: Color::hex(0xA1_20_12),
             corner_radius: 4.0,
             spacing: 8.0,
             font_size: 13.0,

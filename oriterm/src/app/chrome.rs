@@ -209,6 +209,55 @@ impl App {
         logical_y < chrome.caption_height()
     }
 
+    /// Returns `true` if the cursor position is within the tab bar zone.
+    ///
+    /// The tab bar zone spans from the chrome caption height to
+    /// caption height + `TAB_BAR_HEIGHT` (logical pixels).
+    pub(super) fn cursor_in_tab_bar(&self, position: winit::dpi::PhysicalPosition<f64>) -> bool {
+        let (Some(chrome), Some(window)) = (&self.chrome, &self.window) else {
+            return false;
+        };
+        if !chrome.is_visible() {
+            return false;
+        }
+        let scale = window.scale_factor().factor() as f32;
+        let logical_y = position.y as f32 / scale;
+        let caption_h = chrome.caption_height();
+        logical_y >= caption_h
+            && logical_y < caption_h + oriterm_ui::widgets::tab_bar::constants::TAB_BAR_HEIGHT
+    }
+
+    /// Update tab width lock based on cursor position.
+    ///
+    /// Called from `CursorMoved`. When the cursor enters the tab bar zone
+    /// and no lock is held, computes the current tab width and acquires the
+    /// lock. When the cursor leaves the tab bar zone, releases the lock.
+    pub(super) fn update_tab_bar_hover(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
+        let in_tab_bar = self.cursor_in_tab_bar(position);
+        let locked = self.tab_width_lock().is_some();
+
+        match (in_tab_bar, locked) {
+            // Cursor entered tab bar without a lock — acquire at current width.
+            (true, false) => {
+                let window_width = self.window.as_ref().map_or(0.0, |w| {
+                    let scale = w.scale_factor().factor() as f32;
+                    w.size_px().0 as f32 / scale
+                });
+                let tab_count = usize::from(self.tab.is_some());
+                let layout = oriterm_ui::widgets::tab_bar::TabBarLayout::compute(
+                    tab_count,
+                    window_width,
+                    None,
+                );
+                self.acquire_tab_width_lock(layout.tab_width);
+            }
+            // Cursor left tab bar — release lock.
+            (false, true) => self.release_tab_width_lock(),
+            // Already locked in tab bar, or outside without lock — no change.
+            (true, true) | (false, false) => {}
+        }
+    }
+
     /// Update window resize increments from current cell metrics.
     ///
     /// Called after any change that affects cell dimensions (font size,
@@ -270,6 +319,9 @@ impl App {
     /// Handle window resize: reconfigure surface, update chrome layout,
     /// resize grid and PTY.
     pub(super) fn handle_resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        // Window size changed — cached tab width is invalid.
+        self.release_tab_width_lock();
+
         // On Windows, detect DPI changes from WM_DPICHANGED. The snap
         // subclass proc consumes the message before winit sees it, so
         // ScaleFactorChanged never fires — the resize handler is the

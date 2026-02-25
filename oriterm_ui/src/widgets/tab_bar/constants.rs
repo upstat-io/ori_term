@@ -36,19 +36,13 @@ pub const DROPDOWN_BUTTON_WIDTH: f32 = 30.0;
 
 // Platform-specific window control button dimensions.
 
-/// Width of each window control button on Windows.
-///
-/// Windows 10/11 standard: 58px per button, 174px total for three.
-#[cfg(target_os = "windows")]
-pub const CONTROL_BUTTON_WIDTH: f32 = 58.0;
-
 /// Total width reserved for window control buttons on Windows.
+///
+/// Derived from the window chrome's `CONTROL_BUTTON_WIDTH` — single source
+/// of truth for control button sizing.
 #[cfg(target_os = "windows")]
-pub const CONTROLS_ZONE_WIDTH: f32 = CONTROL_BUTTON_WIDTH * 3.0;
-
-/// Icon glyph size within window control buttons on Windows.
-#[cfg(target_os = "windows")]
-pub const ICON_SIZE: f32 = 10.0;
+pub const CONTROLS_ZONE_WIDTH: f32 =
+    crate::widgets::window_chrome::constants::CONTROL_BUTTON_WIDTH * 3.0;
 
 /// Diameter of each circular window control button on Linux/macOS.
 #[cfg(not(target_os = "windows"))]

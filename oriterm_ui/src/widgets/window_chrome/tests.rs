@@ -7,13 +7,25 @@ use super::WindowChromeWidget;
 use super::constants::{
     CAPTION_HEIGHT, CAPTION_HEIGHT_MAXIMIZED, CONTROL_BUTTON_WIDTH, RESIZE_BORDER_WIDTH,
 };
-use super::controls::WindowControlButton;
+use super::controls::{ControlButtonColors, WindowControlButton};
 use super::layout::{ChromeLayout, ControlKind};
 
 // ── Test helpers ──
 
 /// Standard window width for tests.
 const TEST_WIDTH: f32 = 800.0;
+
+/// Standard button colors for tests.
+fn test_button_colors() -> ControlButtonColors {
+    let theme = crate::theme::UiTheme::dark();
+    ControlButtonColors {
+        fg: crate::color::Color::WHITE,
+        bg: crate::color::Color::TRANSPARENT,
+        hover_bg: crate::color::Color::WHITE,
+        close_hover_bg: theme.close_hover_bg,
+        close_pressed_bg: theme.close_pressed_bg,
+    }
+}
 
 /// Create an `EventCtx` with standard test dimensions.
 fn make_ctx<'a>(measurer: &'a MockMeasurer, theme: &'a crate::theme::UiTheme) -> EventCtx<'a> {
@@ -167,34 +179,19 @@ fn layout_narrow_window_title_rect_zero() {
 
 #[test]
 fn control_button_kind() {
-    let btn = WindowControlButton::new(
-        ControlKind::Close,
-        crate::color::Color::WHITE,
-        crate::color::Color::TRANSPARENT,
-        crate::color::Color::WHITE,
-    );
+    let btn = WindowControlButton::new(ControlKind::Close, test_button_colors());
     assert_eq!(btn.kind(), ControlKind::Close);
 }
 
 #[test]
 fn control_button_not_focusable() {
-    let btn = WindowControlButton::new(
-        ControlKind::Minimize,
-        crate::color::Color::WHITE,
-        crate::color::Color::TRANSPARENT,
-        crate::color::Color::WHITE,
-    );
+    let btn = WindowControlButton::new(ControlKind::Minimize, test_button_colors());
     assert!(!btn.is_focusable());
 }
 
 #[test]
 fn control_button_hover_sets_pressed() {
-    let mut btn = WindowControlButton::new(
-        ControlKind::MaximizeRestore,
-        crate::color::Color::WHITE,
-        crate::color::Color::TRANSPARENT,
-        crate::color::Color::WHITE,
-    );
+    let mut btn = WindowControlButton::new(ControlKind::MaximizeRestore, test_button_colors());
     assert!(!btn.is_pressed());
 
     let measurer = MockMeasurer::STANDARD;

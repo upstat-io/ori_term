@@ -16,13 +16,28 @@ use crate::layout::LayoutBox;
 use crate::widget_id::WidgetId;
 
 use super::super::{DrawCtx, EventCtx, LayoutCtx, Widget, WidgetAction, WidgetResponse};
-use super::constants::{
-    CLOSE_HOVER_COLOR, CLOSE_PRESSED_COLOR, CONTROL_BUTTON_WIDTH, SYMBOL_SIZE, SYMBOL_STROKE_WIDTH,
-};
+use super::constants::{CONTROL_BUTTON_WIDTH, SYMBOL_SIZE, SYMBOL_STROKE_WIDTH};
 use super::layout::ControlKind;
 
 /// Duration of the hover color transition.
 const HOVER_DURATION: Duration = Duration::from_millis(100);
+
+/// Colors for a window control button.
+///
+/// Bundled into a struct to avoid excessive constructor parameters.
+#[derive(Debug, Clone, Copy)]
+pub struct ControlButtonColors {
+    /// Normal foreground (symbol stroke).
+    pub fg: Color,
+    /// Normal background (transparent when unhovered).
+    pub bg: Color,
+    /// Hover background for non-close buttons.
+    pub hover_bg: Color,
+    /// Close button hover background (platform-standard red).
+    pub close_hover_bg: Color,
+    /// Close button pressed background (darker red).
+    pub close_pressed_bg: Color,
+}
 
 /// A window control button: minimize, maximize/restore, or close.
 ///
@@ -47,11 +62,15 @@ pub struct WindowControlButton {
     /// Caption background color, set by the chrome widget before drawing.
     /// Used by the restore symbol to occlude the back window outline.
     caption_bg: Color,
+    /// Close button hover background (from theme).
+    close_hover_bg: Color,
+    /// Close button pressed background (from theme).
+    close_pressed_bg: Color,
 }
 
 impl WindowControlButton {
     /// Creates a new control button of the given kind.
-    pub fn new(kind: ControlKind, fg: Color, bg: Color, hover_bg: Color) -> Self {
+    pub fn new(kind: ControlKind, colors: ControlButtonColors) -> Self {
         Self {
             id: WidgetId::next(),
             kind,
@@ -59,11 +78,13 @@ impl WindowControlButton {
             hovered: false,
             pressed: false,
             hover_progress: AnimatedValue::new(0.0, HOVER_DURATION, Easing::EaseOut),
-            fg,
-            bg,
-            hover_bg,
-            pressed_bg: bg,
-            caption_bg: bg,
+            fg: colors.fg,
+            bg: colors.bg,
+            hover_bg: colors.hover_bg,
+            pressed_bg: colors.bg,
+            caption_bg: colors.bg,
+            close_hover_bg: colors.close_hover_bg,
+            close_pressed_bg: colors.close_pressed_bg,
         }
     }
 
@@ -109,7 +130,7 @@ impl WindowControlButton {
     /// The hover background for this button kind.
     fn hover_color(&self) -> Color {
         if self.kind == ControlKind::Close {
-            CLOSE_HOVER_COLOR
+            self.close_hover_bg
         } else {
             self.hover_bg
         }
@@ -118,7 +139,7 @@ impl WindowControlButton {
     /// The pressed background for this button kind.
     fn pressed_color(&self) -> Color {
         if self.kind == ControlKind::Close {
-            CLOSE_PRESSED_COLOR
+            self.close_pressed_bg
         } else {
             self.pressed_bg
         }

@@ -7,7 +7,7 @@ goal: Tab bar layout, rendering, and hit testing with DPI awareness
 sections:
   - id: "16.1"
     title: Tab Bar Layout + Constants
-    status: in-progress
+    status: complete
   - id: "16.2"
     title: Tab Bar Rendering
     status: not-started
@@ -67,10 +67,10 @@ Compute the pixel layout of tabs in the tab bar. All measurements are DPI-scaled
   - [x] Available width = `window_width - TAB_LEFT_MARGIN - NEW_TAB_BUTTON_WIDTH - DROPDOWN_BUTTON_WIDTH - CONTROLS_ZONE_WIDTH`
   - [x] `tab_width = (available / tab_count).clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH)`
   - [x] Return layout struct
-- [ ] `tab_width_lock: Option<f32>` on App:
-  - [ ] **Acquired** when: cursor enters tab bar (hovering), prevents tabs from expanding when quickly closing tabs
-  - [ ] **Released** when: cursor leaves tab bar, window resizes, tab count changes in ways that invalidate the lock (new tab, drag reorder)
-  - [ ] Purpose: If you have 5 tabs and close one, the remaining 4 tabs would normally expand. But if you're rapidly clicking close buttons, the expansion moves the next close button, causing you to miss. The lock freezes tab width during hover, so close buttons don't move.
+- [x] `tab_width_lock: Option<f32>` on App:
+  - [x] **Acquired** when: cursor enters tab bar (hovering), prevents tabs from expanding when quickly closing tabs
+  - [x] **Released** when: cursor leaves tab bar, window resizes, tab count changes in ways that invalidate the lock (new tab, drag reorder)
+  - [x] Purpose: If you have 5 tabs and close one, the remaining 4 tabs would normally expand. But if you're rapidly clicking close buttons, the expansion moves the next close button, causing you to miss. The lock freezes tab width during hover, so close buttons don't move.
 - [x] `TabBarColors` struct — all colors needed for tab bar rendering:
   - [x] `bar_bg: Color` — tab bar background
   - [x] `active_bg: Color` — active tab background (rendered with rounded corners)

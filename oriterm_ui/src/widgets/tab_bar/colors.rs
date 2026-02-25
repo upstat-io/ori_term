@@ -61,7 +61,7 @@ impl TabBarColors {
             control_hover_bg: theme.bg_hover,
             control_fg: theme.fg_primary,
             control_fg_dim: theme.fg_disabled,
-            control_close_hover_bg: crate::widgets::window_chrome::constants::CLOSE_HOVER_COLOR,
+            control_close_hover_bg: theme.close_hover_bg,
             control_close_hover_fg: Color::WHITE,
         }
     }
