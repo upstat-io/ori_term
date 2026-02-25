@@ -335,19 +335,6 @@ fn all_theme_colors_have_nonzero_alpha() {
         colors.button_hover_bg.a > 0.0,
         "button_hover_bg alpha is zero"
     );
-    assert!(
-        colors.control_hover_bg.a > 0.0,
-        "control_hover_bg alpha is zero"
-    );
-    assert!(colors.control_fg.a > 0.0, "control_fg alpha is zero");
-    assert!(
-        colors.control_close_hover_bg.a > 0.0,
-        "control_close_hover_bg alpha is zero"
-    );
-    assert!(
-        colors.control_close_hover_fg.a > 0.0,
-        "control_close_hover_fg alpha is zero"
-    );
 }
 
 // --- bell_pulse out of range ---

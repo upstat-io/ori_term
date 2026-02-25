@@ -54,39 +54,43 @@ const BELL_DURATION_SECS: f32 = 3.0;
 /// Frequency of the bell pulse sine wave in Hz.
 const BELL_FREQUENCY_HZ: f32 = 2.0;
 
-/// Tab strip geometry passed to drawing helpers.
+/// Tab strip geometry and per-tab draw state passed to drawing helpers.
 struct TabStrip {
     /// Y coordinate of the tab tops (after top margin).
     y: f32,
     /// Height of each tab (bar height minus top margin).
     h: f32,
+    /// Whether the current tab being drawn is the active tab.
+    active: bool,
+    /// Bell animation phase for the current tab (0.0 if none).
+    bell: f32,
 }
 
 // --- Drawing helpers ---
 
 impl TabBarWidget {
     /// Draws a single tab (background, title text, close button).
-    fn draw_tab(&self, ctx: &mut DrawCtx<'_>, index: usize, strip: &TabStrip, active: bool) {
+    ///
+    /// Per-tab state (`active`, `bell` phase) is carried in `strip` to keep
+    /// the argument count within clippy's limit.
+    fn draw_tab(&self, ctx: &mut DrawCtx<'_>, index: usize, strip: &TabStrip) {
         let tab = &self.tabs[index];
         let x = self.layout.tab_x(index) + self.anim_offset(index);
         let tab_rect = Rect::new(x, strip.y, self.layout.tab_width, strip.h);
 
         // Background color: active > bell pulse > hover > inactive.
-        let bg = if active {
+        let bg = if strip.active {
             self.colors.active_bg
+        } else if strip.bell > 0.0 {
+            self.colors.bell_pulse(strip.bell)
+        } else if self.hover_hit.is_tab(index) {
+            self.colors.tab_hover_bg
         } else {
-            let phase = bell_phase(tab, ctx.now);
-            if phase > 0.0 {
-                self.colors.bell_pulse(phase)
-            } else if self.hover_hit.is_tab(index) {
-                self.colors.tab_hover_bg
-            } else {
-                self.colors.inactive_bg
-            }
+            self.colors.inactive_bg
         };
 
         // Active tab gets rounded top corners.
-        let style = if active {
+        let style = if strip.active {
             RectStyle::filled(bg).with_per_corner_radius(
                 ACTIVE_TAB_RADIUS,
                 ACTIVE_TAB_RADIUS,
@@ -101,7 +105,7 @@ impl TabBarWidget {
         ctx.draw_list.push_rect(tab_rect, style);
 
         // Title text.
-        let text_color = if active {
+        let text_color = if strip.active {
             self.colors.text_fg
         } else {
             self.colors.inactive_text
@@ -112,7 +116,7 @@ impl TabBarWidget {
             &tab.title
         };
         let max_w = self.layout.max_text_width();
-        let text_style = TextStyle::new(ctx.theme.font_size_small, text_color)
+        let text_style = TextStyle::new(self.colors.font_size_small, text_color)
             .with_overflow(TextOverflow::Ellipsis);
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
         let text_x = x + TAB_PADDING;
@@ -121,7 +125,7 @@ impl TabBarWidget {
             .push_text(Point::new(text_x, text_y), shaped, text_color);
 
         // Close button: always visible on active, hover-only on inactive.
-        let show_close = active || self.hover_hit.is_tab(index);
+        let show_close = strip.active || self.hover_hit.is_tab(index);
         if show_close {
             self.draw_close_button(ctx, index, x, strip);
         }
@@ -291,7 +295,7 @@ impl TabBarWidget {
             &tab.title
         };
         let max_w = self.layout.max_text_width();
-        let text_style = TextStyle::new(ctx.theme.font_size_small, self.colors.text_fg)
+        let text_style = TextStyle::new(self.colors.font_size_small, self.colors.text_fg)
             .with_overflow(TextOverflow::Ellipsis);
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
         let text_x = visual_x + TAB_PADDING;
@@ -403,9 +407,11 @@ impl Widget for TabBarWidget {
         ctx.draw_list
             .push_rect(bar, RectStyle::filled(self.colors.bar_bg));
 
-        let strip = TabStrip {
+        let mut strip = TabStrip {
             y: y0 + TAB_TOP_MARGIN,
             h: TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
+            active: false,
+            bell: 0.0,
         };
 
         // 2. Inactive tabs (drawn first, behind active tab).
@@ -413,17 +419,20 @@ impl Widget for TabBarWidget {
             if i == self.active_index || self.is_dragged(i) {
                 continue;
             }
-            self.draw_tab(ctx, i, &strip, false);
+            strip.active = false;
+            strip.bell = bell_phase(&self.tabs[i], ctx.now);
+            self.draw_tab(ctx, i, &strip);
 
-            // Signal animations_running if bell is active.
-            if self.tabs[i].bell_start.is_some() && bell_phase(&self.tabs[i], ctx.now) > 0.0 {
+            if strip.bell > 0.0 {
                 ctx.animations_running.set(true);
             }
         }
 
         // 3. Active tab (drawn on top of inactive tabs).
         if self.active_index < self.tabs.len() && !self.is_dragged(self.active_index) {
-            self.draw_tab(ctx, self.active_index, &strip, true);
+            strip.active = true;
+            strip.bell = 0.0;
+            self.draw_tab(ctx, self.active_index, &strip);
         }
 
         // 4. Separators: 1px vertical lines between tabs.

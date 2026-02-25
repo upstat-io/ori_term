@@ -11,8 +11,6 @@ use crate::theme::UiTheme;
 /// All colors needed to render the tab bar.
 ///
 /// Constructed from a [`UiTheme`] via [`TabBarColors::from_theme`].
-/// Window control button colors are shared with the existing
-/// [`WindowChromeWidget`](crate::widgets::window_chrome::WindowChromeWidget).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabBarColors {
     /// Tab bar background (full-width strip behind all tabs).
@@ -33,16 +31,8 @@ pub struct TabBarColors {
     pub close_fg: Color,
     /// New-tab (+) and dropdown button hover background.
     pub button_hover_bg: Color,
-    /// Window control button hover background.
-    pub control_hover_bg: Color,
-    /// Window control icon color.
-    pub control_fg: Color,
-    /// Dimmed window control icon color.
-    pub control_fg_dim: Color,
-    /// Close button red hover background (platform standard).
-    pub control_close_hover_bg: Color,
-    /// Close button text on red hover (white).
-    pub control_close_hover_fg: Color,
+    /// Small font size for tab titles (points).
+    pub font_size_small: f32,
 }
 
 impl TabBarColors {
@@ -58,11 +48,7 @@ impl TabBarColors {
             separator: theme.border.with_alpha(0.5),
             close_fg: theme.fg_secondary,
             button_hover_bg: theme.bg_hover,
-            control_hover_bg: theme.bg_hover,
-            control_fg: theme.fg_primary,
-            control_fg_dim: theme.fg_disabled,
-            control_close_hover_bg: theme.close_hover_bg,
-            control_close_hover_fg: Color::WHITE,
+            font_size_small: theme.font_size_small,
         }
     }
 

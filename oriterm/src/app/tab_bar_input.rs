@@ -53,12 +53,8 @@ impl App {
             }
 
             TabBarHit::CloseTab(_idx) => {
-                // Close the tab. With single-tab, this closes the window.
-                self.acquire_tab_width_lock(
-                    self.tab_bar
-                        .as_ref()
-                        .map_or(0.0, |tb| tb.layout().tab_width),
-                );
+                // Single-tab: close the window. Multi-tab close (with width
+                // lock for stable close-button targeting) is Section 15.
                 self.shutdown(0);
             }
 
