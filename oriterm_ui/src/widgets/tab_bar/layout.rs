@@ -95,4 +95,15 @@ impl TabBarLayout {
         use super::constants::{CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, TAB_PADDING};
         (self.tab_width - 2.0 * TAB_PADDING - CLOSE_BUTTON_WIDTH - CLOSE_BUTTON_RIGHT_PAD).max(0.0)
     }
+
+    /// Returns the tab index at `x` pixels, or `None` if outside the tab strip.
+    ///
+    /// Uses half-open intervals: tab `i` owns `[tab_x(i), tab_x(i+1))`.
+    pub fn tab_index_at(&self, x: f32) -> Option<usize> {
+        if self.tab_count == 0 || x < TAB_LEFT_MARGIN || x >= self.tabs_end() {
+            return None;
+        }
+        let index = ((x - TAB_LEFT_MARGIN) / self.tab_width) as usize;
+        Some(index.min(self.tab_count - 1))
+    }
 }
