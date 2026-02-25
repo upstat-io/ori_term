@@ -215,7 +215,7 @@ impl App {
             })
     }
 
-    /// Create the initial terminal tab with color overrides from config.
+    /// Create the initial terminal tab with scheme-aware palette from config.
     fn create_initial_tab(
         &self,
         rows: usize,
@@ -234,9 +234,10 @@ impl App {
         };
         let tab = Tab::new(tab_id, &tab_cfg, self.event_proxy.clone())?;
 
-        // Apply user color overrides (foreground, background, cursor, ANSI, bright).
+        // Build palette from color scheme + user overrides.
         let mut term = tab.terminal().lock();
-        config_reload::apply_color_overrides(term.palette_mut(), &self.config.colors);
+        let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
+        *term.palette_mut() = palette;
         drop(term);
 
         Ok(tab)

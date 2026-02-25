@@ -222,7 +222,9 @@ impl App {
         if let Some(tab) = &self.tab {
             let mut term = tab.terminal().lock();
             term.set_theme(theme);
-            config_reload::apply_color_overrides(term.palette_mut(), &self.config.colors);
+            let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
+            *term.palette_mut() = palette;
+            term.grid_mut().dirty_mut().mark_all();
         }
         // Update UI chrome theme (tab bar, window controls).
         self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);

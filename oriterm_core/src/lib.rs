@@ -20,7 +20,7 @@ pub mod term;
 pub mod theme;
 
 pub use cell::{Cell, CellExtra, CellFlags, Hyperlink};
-pub use color::{Palette, Rgb};
+pub use color::{Palette, Rgb, SelectionColors};
 pub use event::{ClipboardType, Event, EventListener, VoidListener};
 pub use grid::{
     Cursor, CursorShape, DisplayEraseMode, Grid, LineEraseMode, Row, StableRowIndex, TabClearMode,

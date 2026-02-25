@@ -18,6 +18,7 @@ mod key_encoding;
 mod keybindings;
 mod platform;
 mod pty;
+mod scheme;
 mod tab;
 mod url_detect;
 mod widgets;

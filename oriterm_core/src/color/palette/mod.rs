@@ -145,12 +145,28 @@ pub struct Palette {
     colors: [Rgb; NUM_COLORS],
     /// Factory defaults for reset operations.
     defaults: [Rgb; NUM_COLORS],
+    /// User-configured selection foreground (overrides swap logic when `Some`).
+    selection_fg: Option<Rgb>,
+    /// User-configured selection background (overrides swap logic when `Some`).
+    selection_bg: Option<Rgb>,
 }
 
 impl Default for Palette {
     fn default() -> Self {
         Self::for_theme(Theme::default())
     }
+}
+
+/// Intermediate selection color pair.
+///
+/// Both `fg` and `bg` must be `Some` for the pair to take effect. When
+/// either is `None`, the renderer falls back to fg/bg swap logic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectionColors {
+    /// Explicit selection foreground.
+    pub fg: Option<Rgb>,
+    /// Explicit selection background.
+    pub bg: Option<Rgb>,
 }
 
 impl Palette {
@@ -165,6 +181,48 @@ impl Palette {
         Self {
             colors,
             defaults: colors,
+            selection_fg: None,
+            selection_bg: None,
+        }
+    }
+
+    /// Build a palette from explicit scheme colors.
+    ///
+    /// Uses `ansi[0..16]` instead of hardcoded xterm colors, and sets
+    /// foreground/background/cursor from the scheme. Cube, grayscale, and
+    /// dim variants are derived as usual.
+    #[must_use]
+    pub fn from_scheme_colors(ansi: &[Rgb; 16], fg: Rgb, bg: Rgb, cursor: Rgb) -> Self {
+        let mut colors = [Rgb { r: 0, g: 0, b: 0 }; NUM_COLORS];
+
+        // 0–15: scheme ANSI colors.
+        colors[..16].copy_from_slice(ansi);
+
+        // 16–231: 6×6×6 color cube (theme-independent).
+        fill_cube(&mut colors);
+
+        // 232–255: grayscale ramp (theme-independent).
+        fill_grayscale(&mut colors);
+
+        // Semantic slots from scheme.
+        colors[NamedColor::Foreground as usize] = fg;
+        colors[NamedColor::Background as usize] = bg;
+        colors[NamedColor::Cursor as usize] = cursor;
+
+        // Dim variants (2/3 brightness of scheme ANSI 0–7).
+        for i in 0..8 {
+            colors[NamedColor::DimBlack as usize + i] = dim_rgb(colors[i]);
+        }
+
+        // Bright/dim foreground.
+        colors[NamedColor::BrightForeground as usize] = fg;
+        colors[NamedColor::DimForeground as usize] = dim_rgb(fg);
+
+        Self {
+            colors,
+            defaults: colors,
+            selection_fg: None,
+            selection_bg: None,
         }
     }
 
@@ -243,6 +301,34 @@ impl Palette {
     pub fn set_cursor_color(&mut self, color: Rgb) {
         self.set_default(NamedColor::Cursor as usize, color);
     }
+
+    /// User-configured selection foreground color.
+    pub fn selection_fg(&self) -> Option<Rgb> {
+        self.selection_fg
+    }
+
+    /// User-configured selection background color.
+    pub fn selection_bg(&self) -> Option<Rgb> {
+        self.selection_bg
+    }
+
+    /// Set the selection foreground color override.
+    pub fn set_selection_fg(&mut self, color: Option<Rgb>) {
+        self.selection_fg = color;
+    }
+
+    /// Set the selection background color override.
+    pub fn set_selection_bg(&mut self, color: Option<Rgb>) {
+        self.selection_bg = color;
+    }
+
+    /// Selection colors as a pair for the rendering pipeline.
+    pub fn selection_colors(&self) -> SelectionColors {
+        SelectionColors {
+            fg: self.selection_fg,
+            bg: self.selection_bg,
+        }
+    }
 }
 
 /// Build the xterm-256 palette with semantic colors adapted to the theme.
@@ -253,24 +339,10 @@ fn build_palette(theme: Theme) -> [Rgb; NUM_COLORS] {
     colors[..16].copy_from_slice(&ANSI_COLORS);
 
     // 16–231: 6×6×6 color cube.
-    for r in 0..6u8 {
-        for g in 0..6u8 {
-            for b in 0..6u8 {
-                let idx = 16 + (r as usize * 36) + (g as usize * 6) + b as usize;
-                colors[idx] = Rgb {
-                    r: if r == 0 { 0 } else { 55 + r * 40 },
-                    g: if g == 0 { 0 } else { 55 + g * 40 },
-                    b: if b == 0 { 0 } else { 55 + b * 40 },
-                };
-            }
-        }
-    }
+    fill_cube(&mut colors);
 
     // 232–255: grayscale ramp.
-    for i in 0..24u8 {
-        let v = 8 + i * 10;
-        colors[232 + i as usize] = Rgb { r: v, g: v, b: v };
-    }
+    fill_grayscale(&mut colors);
 
     // Named semantic slots — theme-dependent.
     let (fg, bg, cursor) = if theme.is_dark() {
@@ -292,6 +364,30 @@ fn build_palette(theme: Theme) -> [Rgb; NUM_COLORS] {
     colors[NamedColor::DimForeground as usize] = dim_rgb(fg);
 
     colors
+}
+
+/// Fill the 6×6×6 color cube (palette indices 16–231).
+fn fill_cube(colors: &mut [Rgb; NUM_COLORS]) {
+    for r in 0..6u8 {
+        for g in 0..6u8 {
+            for b in 0..6u8 {
+                let idx = 16 + (r as usize * 36) + (g as usize * 6) + b as usize;
+                colors[idx] = Rgb {
+                    r: if r == 0 { 0 } else { 55 + r * 40 },
+                    g: if g == 0 { 0 } else { 55 + g * 40 },
+                    b: if b == 0 { 0 } else { 55 + b * 40 },
+                };
+            }
+        }
+    }
+}
+
+/// Fill the 24-step grayscale ramp (palette indices 232–255).
+fn fill_grayscale(colors: &mut [Rgb; NUM_COLORS]) {
+    for i in 0..24u8 {
+        let v = 8 + i * 10;
+        colors[232 + i as usize] = Rgb { r: v, g: v, b: v };
+    }
 }
 
 /// Reduce a color to 2/3 brightness for dim variants.

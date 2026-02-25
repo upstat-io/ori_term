@@ -128,6 +128,11 @@ fn resolve_cell_colors(
         && sel.is_some_and(|s| s.contains(row, col) || (is_wide && s.contains(row, col + 1)));
 
     if selected {
+        // When explicit selection colors are configured, use them directly.
+        if let (Some(sfg), Some(sbg)) = (palette.selection_fg, palette.selection_bg) {
+            return (sfg, sbg);
+        }
+        // Fallback: swap fg/bg with INVERSE and visibility guards.
         if cell.flags.contains(CellFlags::INVERSE) {
             return (palette.background, palette.foreground);
         }

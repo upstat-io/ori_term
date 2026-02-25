@@ -41,6 +41,8 @@ fn test_palette() -> FramePalette {
         foreground: FG,
         cursor_color: CURSOR,
         opacity: 1.0,
+        selection_fg: None,
+        selection_bg: None,
     }
 }
 

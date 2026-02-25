@@ -112,6 +112,8 @@ fn extract_palette<T: EventListener>(term: &Term<T>) -> FramePalette {
         foreground: palette.foreground(),
         cursor_color: palette.cursor_color(),
         opacity: 1.0,
+        selection_fg: palette.selection_fg(),
+        selection_bg: palette.selection_bg(),
     }
 }
 

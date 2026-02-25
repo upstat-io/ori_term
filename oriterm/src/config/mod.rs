@@ -260,16 +260,8 @@ pub struct ColorConfig {
     /// Override cursor color "#RRGGBB".
     pub cursor: Option<String>,
     /// Override selection foreground color "#RRGGBB".
-    #[allow(
-        dead_code,
-        reason = "consumed when selection rendering lands (Section 18)"
-    )]
     pub selection_foreground: Option<String>,
     /// Override selection background color "#RRGGBB".
-    #[allow(
-        dead_code,
-        reason = "consumed when selection rendering lands (Section 18)"
-    )]
     pub selection_background: Option<String>,
     /// Override ANSI colors 0-7 by index. Keys "0"-"7", values "#RRGGBB".
     #[serde(default)]

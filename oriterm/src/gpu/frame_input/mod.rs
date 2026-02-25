@@ -163,7 +163,7 @@ impl ViewportSize {
 /// Per-cell fg/bg are already resolved in `RenderableCell`. This captures
 /// only the three global colors the renderer needs: clear color, cursor
 /// fill, and text-under-cursor inversion color — plus the window opacity
-/// for transparent rendering.
+/// for transparent rendering and optional selection color overrides.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FramePalette {
     /// Window clear color (terminal background).
@@ -174,6 +174,10 @@ pub struct FramePalette {
     pub cursor_color: Rgb,
     /// Window opacity (0.0 = fully transparent, 1.0 = fully opaque).
     pub opacity: f32,
+    /// Explicit selection foreground (from scheme or config override).
+    pub selection_fg: Option<Rgb>,
+    /// Explicit selection background (from scheme or config override).
+    pub selection_bg: Option<Rgb>,
 }
 
 /// Complete input for one render frame.
@@ -296,6 +300,8 @@ impl FrameInput {
                     b: 255,
                 },
                 opacity: 1.0,
+                selection_fg: None,
+                selection_bg: None,
             },
             selection: None,
             search: None,

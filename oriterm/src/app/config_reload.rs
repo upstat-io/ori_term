@@ -152,8 +152,8 @@ impl App {
 
     /// Detect and apply color config changes.
     ///
-    /// Resolves the effective theme (honoring config override), rebuilds
-    /// the palette, applies config color overrides, and marks all lines
+    /// Resolves the effective theme (honoring config override), resolves the
+    /// color scheme, builds the palette, applies overrides, and marks all lines
     /// dirty so colors are re-resolved.
     fn apply_color_changes(&self, new: &Config) {
         if new.colors == self.config.colors {
@@ -168,10 +168,9 @@ impl App {
             .colors
             .resolve_theme(crate::platform::theme::system_theme);
 
-        // Update the terminal's stored theme and rebuild the palette.
+        // Update the terminal's stored theme and rebuild from scheme.
         term.set_theme(theme);
-        let mut palette = oriterm_core::Palette::for_theme(theme);
-        apply_color_overrides(&mut palette, &new.colors);
+        let palette = build_palette_from_config(&new.colors, theme);
 
         // Replace the palette and mark all lines dirty.
         *term.palette_mut() = palette;
@@ -390,4 +389,46 @@ pub(crate) fn apply_color_overrides(
             }
         }
     }
+
+    // Selection color overrides.
+    if let Some(rgb) = colors
+        .selection_foreground
+        .as_deref()
+        .and_then(config::parse_hex_color)
+    {
+        palette.set_selection_fg(Some(rgb));
+    }
+    if let Some(rgb) = colors
+        .selection_background
+        .as_deref()
+        .and_then(config::parse_hex_color)
+    {
+        palette.set_selection_bg(Some(rgb));
+    }
+}
+
+/// Build a palette from the configured color scheme and theme.
+///
+/// Resolves the scheme name (supporting conditional `"dark:X, light:Y"` syntax),
+/// looks up the scheme (built-in then TOML file), builds the palette from scheme
+/// colors, and applies user color overrides on top. Falls back to the default
+/// theme-based palette if the scheme cannot be found.
+pub(crate) fn build_palette_from_config(
+    colors: &config::ColorConfig,
+    theme: oriterm_core::Theme,
+) -> oriterm_core::Palette {
+    use crate::scheme;
+
+    let scheme_name = scheme::resolve_scheme_name(&colors.scheme, theme);
+    let mut palette = if let Some(s) = scheme::resolve_scheme(scheme_name) {
+        log::info!("scheme: resolved '{scheme_name}' -> '{}'", s.name);
+        scheme::palette_from_scheme(&s)
+    } else {
+        if !colors.scheme.is_empty() {
+            log::warn!("scheme: '{scheme_name}' not found, using defaults");
+        }
+        oriterm_core::Palette::for_theme(theme)
+    };
+    apply_color_overrides(&mut palette, colors);
+    palette
 }

@@ -6,4 +6,4 @@
 pub mod palette;
 
 pub(crate) use palette::dim_rgb;
-pub use palette::{Palette, Rgb};
+pub use palette::{Palette, Rgb, SelectionColors};

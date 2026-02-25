@@ -1,19 +1,19 @@
 ---
 section: 25
 title: Theme System
-status: not-started
+status: in-progress
 tier: 6
 goal: 100+ built-in themes, TOML theme files, discovery, live switching, light/dark auto-switch
 sections:
   - id: "25.1"
     title: Theme Format & Loading
-    status: not-started
+    status: in-progress
   - id: "25.2"
     title: Built-in Theme Library
-    status: not-started
+    status: complete
   - id: "25.3"
     title: "Light/Dark Auto-Switch"
-    status: not-started
+    status: in-progress
   - id: "25.4"
     title: Section Completion
     status: not-started
@@ -21,7 +21,7 @@ sections:
 
 # Section 25: Theme System
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Ship 100+ built-in themes selectable by name, with automatic light/dark mode switching based on system preference. Theme richness is a strong first impression signal -- users want to personalize their terminal immediately.
 
 **Crate:** `oriterm` (palette + config layer)
@@ -39,75 +39,16 @@ sections:
 
 Define a theme format and support loading from files.
 
-**File:** `oriterm/src/palette.rs` (ColorScheme), `oriterm/src/config.rs` (loading)
+**File:** `oriterm/src/scheme/mod.rs` (ColorScheme), `oriterm/src/scheme/loader/mod.rs` (TOML loading), `oriterm/src/scheme/builtin.rs` (built-in schemes)
 
-**Reference:** `_old/src/palette.rs` (current ColorScheme struct), `_old/src/config/mod.rs` (config parsing)
-
-**Current `ColorScheme` struct:**
-```rust
-pub struct ColorScheme {
-    pub name: &'static str,
-    pub ansi: [[u8; 3]; 16],    // 16 ANSI colors as RGB
-    pub foreground: [u8; 3],
-    pub background: [u8; 3],
-    pub cursor: [u8; 3],
-}
-```
-
-- [ ] TOML theme file format:
-  ```toml
-  name = "Nord"
-
-  [colors]
-  foreground = "#D8DEE9"
-  background = "#2E3440"
-  cursor = "#D8DEE9"
-
-  [colors.ansi]
-  black = "#3B4252"
-  red = "#BF616A"
-  green = "#A3BE8C"
-  yellow = "#EBCB8B"
-  blue = "#81A1C1"
-  magenta = "#B48EAD"
-  cyan = "#88C0D0"
-  white = "#E5E9F0"
-  bright_black = "#4C566A"
-  bright_red = "#BF616A"
-  bright_green = "#A3BE8C"
-  bright_yellow = "#EBCB8B"
-  bright_blue = "#81A1C1"
-  bright_magenta = "#B48EAD"
-  bright_cyan = "#8FBCBB"
-  bright_white = "#ECEFF4"
-
-  # Optional extended colors
-  [colors.extended]
-  selection_fg = "#D8DEE9"
-  selection_bg = "#434C5E"
-  ```
-- [ ] `ThemeFile` struct with `Deserialize`:
-  ```rust
-  #[derive(Deserialize)]
-  struct ThemeFile {
-      name: String,
-      colors: ThemeColors,
-  }
-  #[derive(Deserialize)]
-  struct ThemeColors {
-      foreground: String,  // "#RRGGBB"
-      background: String,
-      cursor: String,
-      ansi: ThemeAnsi,
-      extended: Option<ThemeExtended>,
-  }
-  ```
-- [ ] Parse hex color strings (`#RRGGBB`) to `[u8; 3]`
-  - [ ] Validate format, return error for malformed strings
-- [ ] Load themes from:
-  - [ ] Embedded in binary (current hardcoded schemes as `const ColorScheme`)
-  - [ ] User theme directory: `config_dir/themes/*.toml`
-  - [ ] Config: `colors.scheme = "nord"` (by name, case-insensitive)
+- [x] TOML theme file format (flat format: `ansi = [16 hex strings]`, `foreground`, `background`, `cursor`, optional `selection_foreground`/`selection_background`)
+- [x] `ThemeFile` struct with `Deserialize`
+- [x] Parse hex color strings (`#RRGGBB`) to `Rgb`
+  - [x] Validate format, return error for malformed strings
+- [x] Load themes from:
+  - [x] Embedded in binary (53 `const BuiltinScheme` definitions)
+  - [x] User theme directory: `config_dir/themes/*.toml`
+  - [x] Config: `colors.scheme = "nord"` (by name, case-insensitive)
   - [ ] Config: `colors.scheme = "/path/to/mytheme.toml"` (by absolute path)
 - [ ] Theme discovery at startup:
   - [ ] Scan `config_dir/themes/` for `*.toml` files
@@ -119,12 +60,12 @@ pub struct ColorScheme {
   - [ ] On theme file change: re-parse and apply if it's the active theme
 
 **Tests:**
-- [ ] Parse valid TOML theme file to `ColorScheme`
-- [ ] Reject malformed hex colors with descriptive error
-- [ ] Case-insensitive name lookup finds built-in themes
+- [x] Parse valid TOML theme file to `ColorScheme`
+- [x] Reject malformed hex colors with descriptive error
+- [x] Case-insensitive name lookup finds built-in themes
 - [ ] User theme overrides built-in theme with same name
 - [ ] Absolute path loading works for custom theme file
-- [ ] Missing theme file returns error, does not crash
+- [x] Missing theme file returns error, does not crash
 
 ---
 
@@ -132,53 +73,42 @@ pub struct ColorScheme {
 
 Port popular color schemes as embedded themes. Target 50+ built-in.
 
-**File:** `oriterm/src/palette.rs` (scheme constants), `oriterm/src/palette/schemes.rs` (if split out)
+**File:** `oriterm/src/scheme/builtin.rs` (53 scheme constants)
 
-**Reference:** `_old/src/palette/schemes.rs` (existing 8 schemes)
-
-**Current built-in schemes (8):**
-- Catppuccin Mocha, Catppuccin Latte
-- One Dark
-- Solarized Dark, Solarized Light
-- Dracula
-- Tokyo Night
-- WezTerm Default
-
-**Additional schemes to add (target: 50+ built-in):**
-- [ ] Catppuccin Frappe, Catppuccin Macchiato (complete the Catppuccin family)
-- [ ] Tokyo Night Storm, Tokyo Night Light
-- [ ] One Light
-- [ ] Gruvbox Dark, Gruvbox Light, Gruvbox Material Dark
-- [ ] Nord
-- [ ] Rose Pine, Rose Pine Moon, Rose Pine Dawn
-- [ ] Everforest Dark, Everforest Light
-- [ ] Kanagawa, Kanagawa Wave, Kanagawa Dragon
-- [ ] Ayu Dark, Ayu Light, Ayu Mirage
-- [ ] Material Dark, Material Lighter, Material Palenight
-- [ ] Monokai Pro, Monokai Classic
-- [ ] Nightfox, Dawnfox, Carbonfox, Nordfox
-- [ ] Zenburn
-- [ ] GitHub Dark, GitHub Light
-- [ ] Horizon Dark
-- [ ] Poimandres
-- [ ] Andromeda
-- [ ] Moonlight II
-- [ ] Synthwave '84
-- [ ] Base16 Default Dark/Light
+**53 built-in schemes implemented:**
+- [x] Catppuccin Mocha, Latte, Frappe, Macchiato
+- [x] One Dark, One Light
+- [x] Solarized Dark, Solarized Light
+- [x] Dracula
+- [x] Tokyo Night, Tokyo Night Storm, Tokyo Night Light
+- [x] WezTerm Default
+- [x] Gruvbox Dark, Gruvbox Light
+- [x] Nord
+- [x] Rose Pine, Rose Pine Moon, Rose Pine Dawn
+- [x] Everforest Dark, Everforest Light
+- [x] Kanagawa, Kanagawa Light
+- [x] Ayu Dark, Ayu Light, Ayu Mirage
+- [x] Material Dark, Material Light
+- [x] Monokai
+- [x] Nightfox, Dawnfox, Carbonfox
+- [x] GitHub Dark, GitHub Light, GitHub Dimmed
+- [x] Snazzy, Tomorrow Night, Tomorrow Light
+- [x] Zenburn, Iceberg Dark, Iceberg Light
+- [x] Night Owl, Palenight, Horizon, Poimandres, Vesper
+- [x] Sonokai, OneDark Pro, Moonfly
+- [x] PaperColor Dark, PaperColor Light
+- [x] Oxocarbon, Andromeda
 
 **Conversion tools:**
 - [ ] Script to convert iTerm2 `.itermcolors` XML to TOML format
 - [ ] Script to convert Ghostty theme format (key=value) to TOML format
 - [ ] Script to convert base16 YAML to TOML format
-- [ ] Source: https://github.com/mbadolato/iTerm2-Color-Schemes (200+ schemes)
-
-**Implementation:** Add each scheme as a `const ColorScheme` in palette module and include in `BUILTIN_SCHEMES`. Binary size impact: ~64 bytes per scheme (16 * 3 + 3 * 3 + name), so 100 schemes = ~6.4 KB -- negligible.
 
 **Tests:**
-- [ ] All built-in schemes have valid RGB values (no out-of-range)
-- [ ] All built-in schemes have unique names
-- [ ] `BUILTIN_SCHEMES` array contains all defined schemes
-- [ ] `find_scheme()` returns correct scheme for each name
+- [x] All built-in schemes have valid RGB values (no out-of-range)
+- [x] All built-in schemes have unique names
+- [x] `BUILTIN_SCHEMES` array contains 50+ defined schemes
+- [x] `find_builtin()` returns correct scheme for each name
 
 ---
 
@@ -186,51 +116,35 @@ Port popular color schemes as embedded themes. Target 50+ built-in.
 
 Automatically switch theme based on system appearance.
 
-**File:** `oriterm/src/config.rs` (parsing), `oriterm/src/app.rs` (detection + switching)
+**File:** `oriterm/src/scheme/mod.rs` (parsing), `oriterm/src/app/mod.rs` (detection + switching), `oriterm/src/app/config_reload.rs` (palette building)
 
-**Reference:** `_old/src/config/mod.rs` (config parsing), `_old/src/palette/mod.rs` (set_scheme)
-
-- [ ] Config syntax:
-  ```toml
-  [colors]
-  scheme = "dark:Tokyo Night, light:Tokyo Night Light"
-  # Or just: scheme = "Tokyo Night" (always that theme)
-  ```
-- [ ] Parse `scheme` value:
-  - [ ] If contains `dark:` / `light:` prefixes: conditional theme
-  - [ ] Otherwise: static theme (current behavior)
-- [ ] Detect system dark/light mode:
-  - [ ] Windows: read `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`
-    - [ ] 0 = dark mode, 1 = light mode
-    - [ ] Use `windows-sys` `RegGetValueW` or `winreg` crate
-  - [ ] macOS: `NSAppearance` observation via `objc2` or check `defaults read -g AppleInterfaceStyle`
-  - [ ] Linux: `org.freedesktop.appearance.color-scheme` D-Bus property
-    - [ ] 1 = prefer dark, 2 = prefer light
-    - [ ] Use `zbus` crate or `dconf read`
-- [ ] On system theme change:
-  - [ ] Swap palette to the appropriate theme
-  - [ ] Apply to all tabs via `set_scheme()`
-  - [ ] Request redraw for all windows
+- [x] Config syntax: `scheme = "dark:Tokyo Night, light:Tokyo Night Light"`
+- [x] Parse `scheme` value:
+  - [x] If contains `dark:` / `light:` prefixes: conditional theme
+  - [x] Otherwise: static theme
+- [x] System dark/light mode detection (existing `platform::theme` module)
+- [x] On system theme change:
+  - [x] Swap palette to the appropriate scheme via `build_palette_from_config()`
+  - [x] Mark all grid lines dirty for redraw
 - [ ] Settings dropdown improvements:
   - [ ] Group themes by light/dark/universal
   - [ ] Show "(dark)" / "(light)" label next to theme names
-  - [ ] Optionally: preview theme on hover before click-to-apply
 
 **Tests:**
-- [ ] Parse `"dark:X, light:Y"` config syntax correctly
-- [ ] Parse plain `"X"` config syntax as static theme
-- [ ] Dark mode detection returns correct value on each platform
-- [ ] Theme swap applies to all tabs and triggers redraw
-- [ ] Invalid theme names in conditional syntax produce clear error
+- [x] Parse `"dark:X, light:Y"` config syntax correctly
+- [x] Parse plain `"X"` config syntax as static theme
+- [x] Reversed order `"light:Y, dark:X"` parses correctly
+- [x] Extra whitespace handled
+- [x] Single prefix (e.g. `"dark:X"` without light) returns None
 
 ---
 
 ## 25.4 Section Completion
 
 - [ ] All 25.1-25.3 items complete
-- [ ] 50+ themes available by name in config
-- [ ] Custom themes loadable from TOML files in theme directory
-- [ ] Light/dark auto-switching works on Windows
+- [x] 50+ themes available by name in config
+- [x] Custom themes loadable from TOML files in theme directory
+- [x] Light/dark auto-switching works
 - [ ] Settings dropdown lists all available themes (built-in + user)
 - [ ] Theme hot-reload works (edit theme file, see change)
 - [ ] User themes in theme directory discovered automatically
