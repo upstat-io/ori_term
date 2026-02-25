@@ -26,10 +26,11 @@ pub use grid::{
     Cursor, CursorShape, DisplayEraseMode, Grid, LineEraseMode, Row, StableRowIndex, TabClearMode,
 };
 pub use index::{Boundary, Column, Direction, Line, Point, Side};
+pub use search::text::extract_row_text;
 pub use search::{MatchType, SearchMatch, SearchState};
 pub use selection::{
     ClickDetector, DEFAULT_WORD_DELIMITERS, Selection, SelectionBounds, SelectionMode,
-    SelectionPoint,
+    SelectionPoint, logical_line_end, logical_line_start,
 };
 pub use sync::{FairMutex, FairMutexGuard};
 pub use term::{

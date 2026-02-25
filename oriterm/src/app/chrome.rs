@@ -340,6 +340,7 @@ impl App {
             );
         }
 
+        self.url_cache.invalidate();
         self.dirty = true;
     }
 }

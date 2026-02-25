@@ -22,9 +22,13 @@ fn scheme_validation_case_insensitive() {
 }
 
 #[test]
-fn disallowed_file_scheme() {
-    let result = validate_scheme("file:///etc/passwd");
-    assert!(result.is_err());
+fn allowed_ftp_scheme() {
+    assert!(validate_scheme("ftp://files.example.com").is_ok());
+}
+
+#[test]
+fn allowed_file_scheme() {
+    assert!(validate_scheme("file:///etc/passwd").is_ok());
 }
 
 #[test]

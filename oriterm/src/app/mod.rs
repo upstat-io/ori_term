@@ -9,6 +9,7 @@ mod chrome;
 mod clipboard_ops;
 pub(crate) mod config_reload;
 mod cursor_blink;
+mod cursor_hover;
 mod init;
 mod keyboard_input;
 mod mark_mode;
@@ -38,6 +39,7 @@ use crate::event::TermEvent;
 use crate::gpu::{FrameInput, GpuRenderer, GpuState};
 use crate::keybindings::{self, KeyBinding};
 use crate::tab::Tab;
+use crate::url_detect::{DetectedUrl, UrlDetectCache};
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
 
@@ -112,6 +114,12 @@ pub(crate) struct App {
 
     // Text pending paste confirmation (stored while dialog is shown).
     pending_paste: Option<String>,
+
+    // URL detection cache (lazily populated per logical line).
+    url_cache: UrlDetectCache,
+
+    // Currently hovered URL (set on Ctrl+mouse move, cleared on Ctrl release).
+    hovered_url: Option<DetectedUrl>,
 }
 
 impl App {
@@ -145,6 +153,8 @@ impl App {
             ime: ImeState::new(),
             overlays: OverlayManager::new(oriterm_ui::geometry::Rect::default()),
             pending_paste: None,
+            url_cache: UrlDetectCache::default(),
+            hovered_url: None,
         }
     }
 
@@ -207,6 +217,7 @@ impl App {
                 if let Some(tab) = &mut self.tab {
                     tab.check_selection_invalidation();
                 }
+                self.url_cache.invalidate();
                 self.dirty = true;
             }
             Event::Bell => {
@@ -304,7 +315,12 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::RedrawRequested => self.handle_redraw(),
 
             WindowEvent::ModifiersChanged(mods) => {
+                let prev_ctrl = self.modifiers.control_key();
                 self.modifiers = mods.state();
+                // Clear URL hover when Ctrl is released.
+                if prev_ctrl && !mods.state().control_key() {
+                    self.clear_url_hover();
+                }
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
@@ -331,6 +347,7 @@ impl ApplicationHandler<TermEvent> for App {
 
             WindowEvent::CursorLeft { .. } => {
                 self.clear_chrome_hover();
+                self.clear_url_hover();
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -354,6 +371,8 @@ impl ApplicationHandler<TermEvent> for App {
                     if self.mouse.left_down() {
                         self.handle_mouse_drag(position);
                     }
+                    // URL hover detection (Ctrl+move).
+                    self.update_url_hover(position);
                 }
             }
 

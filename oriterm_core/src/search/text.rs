@@ -16,7 +16,7 @@ use crate::index::Column;
 /// Returns `(text, col_map)` where `col_map[char_index]` gives the grid
 /// column that produced that character. Zero-width chars share their
 /// base character's column.
-pub(crate) fn extract_row_text(row: &Row) -> (String, Vec<usize>) {
+pub fn extract_row_text(row: &Row) -> (String, Vec<usize>) {
     let mut text = String::new();
     let mut col_map = Vec::new();
 

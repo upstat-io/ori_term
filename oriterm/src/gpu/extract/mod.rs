@@ -57,6 +57,7 @@ pub(crate) fn extract_frame<T: EventListener>(
         selection: None,
         search: None,
         hovered_cell: None,
+        hovered_url_segments: Vec::new(),
         mark_cursor: None,
     }
 }
@@ -96,6 +97,7 @@ pub(crate) fn extract_frame_into<T: EventListener>(
     out.selection = None;
     out.search = None;
     out.hovered_cell = None;
+    out.hovered_url_segments.clear();
     out.mark_cursor = None;
 }
 

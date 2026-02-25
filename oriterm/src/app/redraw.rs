@@ -33,6 +33,9 @@ impl App {
     )]
     pub(super) fn handle_redraw(&mut self) {
         log::trace!("RedrawRequested");
+        // Compute URL hover segments before entering the render block where
+        // self.renderer is borrowed mutably.
+        let url_segments = self.hovered_url_viewport_segments();
         let render_result = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw: no gpu");
@@ -109,6 +112,9 @@ impl App {
                 frame.hovered_cell = mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &ctx)
                     .map(|(col, line)| (line, col));
             }
+
+            // Implicit URL hover: viewport-relative segments computed above.
+            frame.hovered_url_segments = url_segments;
 
             // Cache blinking mode; reset on false→true transition.
             let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);

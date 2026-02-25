@@ -346,6 +346,9 @@ fn fill_frame(
         }
     }
 
+    // Implicit URL hover: one continuous underline rect per segment.
+    draw_url_hover_underline(input, frame, ox, oy);
+
     // Cursor instances (gated by terminal visibility AND application blink state).
     if cursor.visible && cursor_blink_visible {
         build_cursor(
@@ -482,6 +485,9 @@ fn fill_frame_shaped(
             .emit(row_glyphs, start_idx, col, x, y, fg, bg);
         }
     }
+
+    // Implicit URL hover: one continuous underline rect per segment.
+    draw_url_hover_underline(input, frame, ox, oy);
 
     // Cursor (gated by terminal visibility AND application blink state).
     if cursor.visible && cursor_blink_visible {
@@ -655,6 +661,31 @@ fn build_cursor(
             frame.cursors.push_cursor(rect, color, 1.0);
         }
         CursorShape::Hidden => {}
+    }
+}
+
+/// Draw implicit URL hover underlines as continuous rects per segment.
+///
+/// Renders into the cursor layer (on top of glyphs) so the underline is
+/// not obscured by character pixels that extend into the underline zone
+/// (e.g. `/` descenders in `https://`).
+fn draw_url_hover_underline(input: &FrameInput, frame: &mut PreparedFrame, ox: f32, oy: f32) {
+    if input.hovered_url_segments.is_empty() {
+        return;
+    }
+    let cw = input.cell_size.width;
+    let ch = input.cell_size.height;
+    let underline_y_offset = input.cell_size.baseline + input.cell_size.underline_offset;
+    let t = input.cell_size.stroke_size;
+    let fg = input.palette.foreground;
+
+    for &(line, start_col, end_col) in &input.hovered_url_segments {
+        let x = ox + start_col as f32 * cw;
+        let y = oy + line as f32 * ch + underline_y_offset;
+        let w = (end_col - start_col + 1) as f32 * cw;
+        frame
+            .cursors
+            .push_cursor(ScreenRect { x, y, w, h: t }, fg, 1.0);
     }
 }
 

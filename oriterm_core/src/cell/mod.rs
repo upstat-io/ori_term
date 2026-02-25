@@ -231,6 +231,11 @@ impl Cell {
         }
     }
 
+    /// Returns the hyperlink attached to this cell, if any.
+    pub fn hyperlink(&self) -> Option<&Hyperlink> {
+        self.extra.as_ref().and_then(|e| e.hyperlink.as_ref())
+    }
+
     /// Append a combining mark (zero-width character) to this cell.
     ///
     /// Lazily allocates `CellExtra` on first combining mark. Uses

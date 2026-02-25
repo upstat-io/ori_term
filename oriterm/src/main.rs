@@ -19,6 +19,7 @@ mod keybindings;
 mod platform;
 mod pty;
 mod tab;
+mod url_detect;
 mod widgets;
 mod window;
 

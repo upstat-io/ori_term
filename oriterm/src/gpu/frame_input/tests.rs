@@ -113,6 +113,7 @@ fn frame_input_grid_dimensions() {
         selection: None,
         search: None,
         hovered_cell: None,
+        hovered_url_segments: Vec::new(),
         mark_cursor: None,
     };
 
@@ -133,6 +134,7 @@ fn frame_input_needs_full_repaint() {
         selection: None,
         search: None,
         hovered_cell: None,
+        hovered_url_segments: Vec::new(),
         mark_cursor: None,
     };
 
@@ -152,6 +154,7 @@ fn frame_input_incremental_repaint() {
         selection: None,
         search: None,
         hovered_cell: None,
+        hovered_url_segments: Vec::new(),
         mark_cursor: None,
     };
 

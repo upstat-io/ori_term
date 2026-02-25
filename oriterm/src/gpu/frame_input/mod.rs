@@ -199,6 +199,12 @@ pub struct FrameInput {
     /// `(viewport_line, column)`. Set from mouse state after extraction;
     /// `None` when the cursor is outside the grid.
     pub hovered_cell: Option<(usize, usize)>,
+    /// Viewport-relative segments of an implicitly detected URL being hovered.
+    ///
+    /// Each entry is `(viewport_line, start_col, end_col)` inclusive. Set when
+    /// Ctrl is held and the cursor is over a detected URL. Empty when no
+    /// implicit URL is hovered.
+    pub hovered_url_segments: Vec<(usize, usize, usize)>,
     /// Mark-mode cursor override.
     ///
     /// When set, the Prepare phase renders this cursor instead of
@@ -293,6 +299,7 @@ impl FrameInput {
             selection: None,
             search: None,
             hovered_cell: None,
+            hovered_url_segments: Vec::new(),
             mark_cursor: None,
         }
     }

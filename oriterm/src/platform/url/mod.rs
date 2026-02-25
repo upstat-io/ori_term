@@ -8,16 +8,13 @@
 //!
 //! URL schemes are validated before opening to prevent command injection.
 
-// URL opening infrastructure is wired into the event loop in Section 14.
-#![expect(dead_code, reason = "platform URL opening used in Section 14")]
-
 use std::io;
 
 /// Allowed URL schemes for `open_url`.
 ///
 /// Only these schemes are permitted to prevent command injection via
 /// crafted URIs (e.g. `file:///...`, `javascript:`, custom protocol handlers).
-const ALLOWED_SCHEMES: &[&str] = &["http://", "https://", "mailto:"];
+const ALLOWED_SCHEMES: &[&str] = &["http://", "https://", "ftp://", "file://", "mailto:"];
 
 /// Open a URL in the user's default browser.
 ///

@@ -141,6 +141,10 @@ impl App {
 
         match button {
             MouseButton::Left => {
+                // Ctrl+click opens hovered URL (overrides both reporting and selection).
+                if state == ElementState::Pressed && self.try_open_hovered_url() {
+                    return;
+                }
                 if let Some(mode) = report_mode {
                     let kind = match state {
                         ElementState::Pressed => mouse_report::MouseEventKind::Press,
