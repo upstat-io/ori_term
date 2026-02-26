@@ -138,9 +138,14 @@ impl InProcessMux {
         };
 
         let tab_id = entry.tab;
-        let tab = match self.session.get_tab_mut(tab_id) {
-            Some(t) => t,
-            None => return ClosePaneResult::NotFound,
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            // Invariant: a registered pane's tab must exist. If we reach
+            // here the registry and session are out of sync — a bug.
+            debug_assert!(
+                false,
+                "pane {pane_id:?} was registered under tab {tab_id:?} but tab is missing"
+            );
+            return ClosePaneResult::NotFound;
         };
 
         // Try to remove the pane from the split tree.
@@ -169,18 +174,8 @@ impl InProcessMux {
                 .push(MuxNotification::PaneClosed(pane_id));
 
             if let Some(wid) = window_id {
-                if let Some(win) = self.session.get_window_mut(wid) {
-                    win.remove_tab(tab_id);
-                    if win.tabs().is_empty() {
-                        self.session.remove_window(wid);
-                        if self.session.window_count() == 0 {
-                            return ClosePaneResult::LastWindow;
-                        }
-                        self.notifications.push(MuxNotification::WindowClosed(wid));
-                    } else {
-                        self.notifications
-                            .push(MuxNotification::WindowTabsChanged(wid));
-                    }
+                if self.handle_window_after_tab_removal(wid, tab_id) {
+                    return ClosePaneResult::LastWindow;
                 }
             }
 
@@ -243,12 +238,10 @@ impl InProcessMux {
         // Remove the tab from the session.
         self.session.remove_tab(tab_id);
 
-        // Update the owning window.
+        // Update the owning window (cascades to window removal if empty).
         if let Some(wid) = window_id {
-            if let Some(win) = self.session.get_window_mut(wid) {
-                win.remove_tab(tab_id);
-                self.notifications
-                    .push(MuxNotification::WindowTabsChanged(wid));
+            if self.handle_window_after_tab_removal(wid, tab_id) {
+                self.notifications.push(MuxNotification::LastWindowClosed);
             }
         }
 
@@ -287,6 +280,34 @@ impl InProcessMux {
         Ok((new_pane_id, pane))
     }
 
+    /// Handle the window after a tab has been removed from it.
+    ///
+    /// Removes the tab from the window. If the window is now empty, removes
+    /// it and emits `WindowClosed` (non-last) or nothing (last — caller
+    /// decides whether to emit `LastWindowClosed` or return a status).
+    /// If tabs remain, emits `WindowTabsChanged`.
+    ///
+    /// Returns `true` if the last window was removed (session has zero
+    /// windows). The caller must handle `LastWindowClosed` signalling.
+    fn handle_window_after_tab_removal(&mut self, window_id: WindowId, tab_id: TabId) -> bool {
+        let Some(win) = self.session.get_window_mut(window_id) else {
+            return false;
+        };
+        win.remove_tab(tab_id);
+        if win.tabs().is_empty() {
+            self.session.remove_window(window_id);
+            if self.session.window_count() == 0 {
+                return true;
+            }
+            self.notifications
+                .push(MuxNotification::WindowClosed(window_id));
+        } else {
+            self.notifications
+                .push(MuxNotification::WindowTabsChanged(window_id));
+        }
+        false
+    }
+
     // -- Window operations --
 
     /// Create a new empty mux window.
@@ -319,6 +340,14 @@ impl InProcessMux {
         }
 
         self.session.remove_window(window_id);
+
+        if self.session.window_count() == 0 {
+            self.notifications.push(MuxNotification::LastWindowClosed);
+        } else {
+            self.notifications
+                .push(MuxNotification::WindowClosed(window_id));
+        }
+
         all_panes
     }
 
@@ -390,9 +419,14 @@ impl InProcessMux {
         }
     }
 
-    /// Drain accumulated notifications for the GUI to process.
-    pub(crate) fn drain_notifications(&mut self) -> Vec<MuxNotification> {
-        std::mem::take(&mut self.notifications)
+    /// Drain accumulated notifications into the caller's buffer.
+    ///
+    /// Swaps the internal and caller buffers so both retain their heap
+    /// allocations across frames (double-buffer pattern). The caller's
+    /// buffer is cleared before receiving the new notifications.
+    pub(crate) fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
+        out.clear();
+        std::mem::swap(&mut self.notifications, out);
     }
 
     // -- Accessors --

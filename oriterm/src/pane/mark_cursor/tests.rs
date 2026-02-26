@@ -72,3 +72,59 @@ fn to_viewport_zero_max_lines_always_none() {
     // Degenerate viewport with 0 lines — nothing is visible.
     assert_eq!(mc.to_viewport(100, 0), None);
 }
+
+// -- Gap analysis tests --
+
+#[test]
+fn to_viewport_large_stable_row_near_u64_max() {
+    let base = u64::MAX - 100;
+    let mc = MarkCursor {
+        row: StableRowIndex(base + 10),
+        col: 5,
+    };
+    // Viewport at near-max stable row — should work via checked_sub.
+    assert_eq!(mc.to_viewport(base, 24), Some((10, 5)));
+}
+
+#[test]
+fn to_viewport_overflow_stable_row_at_u64_max() {
+    let mc = MarkCursor {
+        row: StableRowIndex(u64::MAX),
+        col: 0,
+    };
+    // Base is 0, offset would overflow usize on 32-bit — but checked_sub
+    // succeeds and the cast to usize may wrap. On 64-bit it's just a huge
+    // number > max_lines, so returns None.
+    let result = mc.to_viewport(0, 24);
+    assert_eq!(result, None);
+}
+
+#[test]
+fn to_viewport_cursor_below_base_returns_none() {
+    // Base is higher than cursor — checked_sub returns None.
+    let mc = MarkCursor {
+        row: StableRowIndex(0),
+        col: 0,
+    };
+    assert_eq!(mc.to_viewport(1, 24), None);
+}
+
+#[test]
+fn to_viewport_large_column_value() {
+    let mc = MarkCursor {
+        row: StableRowIndex(100),
+        col: usize::MAX,
+    };
+    // Column is passed through as-is — no bounds checking in to_viewport.
+    assert_eq!(mc.to_viewport(100, 24), Some((0, usize::MAX)));
+}
+
+#[test]
+fn to_viewport_same_base_and_row_large_viewport() {
+    let mc = MarkCursor {
+        row: StableRowIndex(500),
+        col: 42,
+    };
+    // Cursor is at base, viewport is very large.
+    assert_eq!(mc.to_viewport(500, usize::MAX), Some((0, 42)));
+}
