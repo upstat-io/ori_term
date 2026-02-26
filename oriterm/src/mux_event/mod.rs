@@ -239,6 +239,8 @@ pub(crate) enum MuxNotification {
     WindowTabsChanged(WindowId),
     /// An alert fired in a pane (bell, urgent notification).
     Alert(PaneId),
+    /// A window was closed (but other windows remain).
+    WindowClosed(WindowId),
     /// The last window was closed — application should exit.
     LastWindowClosed,
     /// OSC 52 clipboard store request forwarded from a pane.
@@ -268,6 +270,7 @@ impl fmt::Debug for MuxNotification {
             Self::PaneClosed(id) => write!(f, "PaneClosed({id})"),
             Self::TabLayoutChanged(id) => write!(f, "TabLayoutChanged({id})"),
             Self::WindowTabsChanged(id) => write!(f, "WindowTabsChanged({id})"),
+            Self::WindowClosed(id) => write!(f, "WindowClosed({id})"),
             Self::Alert(id) => write!(f, "Alert({id})"),
             Self::LastWindowClosed => write!(f, "LastWindowClosed"),
             Self::ClipboardStore {

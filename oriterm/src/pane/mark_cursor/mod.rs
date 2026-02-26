@@ -36,3 +36,6 @@ impl MarkCursor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

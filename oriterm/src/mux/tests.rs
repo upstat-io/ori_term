@@ -749,3 +749,398 @@ fn mux_types_are_send() {
     assert_send::<ClosePaneResult>();
     assert_send::<MuxNotification>();
 }
+
+// -- High priority: concurrent create and exit in same poll batch --
+
+#[test]
+fn concurrent_create_and_exit_in_same_poll_batch() {
+    // Pane is registered, then PaneExited arrives in the same poll_events call.
+    // Simulates a shell that exits instantly (bad $SHELL, permission denied).
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    mux.pane_registry.register(PaneEntry {
+        pane: p1,
+        tab: tid,
+        domain: did,
+    });
+    mux.pane_registry.register(PaneEntry {
+        pane: p2,
+        tab: tid,
+        domain: did,
+    });
+    mux.drain_notifications();
+
+    let tx = mux.event_tx().clone();
+
+    // Pane 2 sends output, then immediately exits — both in same batch.
+    tx.send(MuxEvent::PaneOutput(p2)).unwrap();
+    tx.send(MuxEvent::PaneExited {
+        pane_id: p2,
+        exit_code: 127,
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    // p2 should be gone; p1 should remain.
+    assert!(mux.get_pane_entry(p2).is_none());
+    assert!(mux.get_pane_entry(p1).is_some());
+    assert_eq!(mux.session().get_tab(tid).unwrap().all_panes().len(), 1);
+}
+
+// -- High priority: stale pane map during event dispatch --
+
+#[test]
+fn stale_pane_map_during_event_dispatch() {
+    // poll_events receives events for a pane that was already unregistered
+    // by an earlier event in the same batch, but the Pane struct still
+    // exists in the HashMap. Should not panic.
+    let (mut mux, _wid, _tid, p1, p2) = two_pane_setup();
+    let tx = mux.event_tx().clone();
+
+    // p1 exits (unregisters), then a stale PaneOutput arrives for p1.
+    tx.send(MuxEvent::PaneExited {
+        pane_id: p1,
+        exit_code: 0,
+    })
+    .unwrap();
+    tx.send(MuxEvent::PaneOutput(p1)).unwrap();
+    tx.send(MuxEvent::PaneBell(p1)).unwrap();
+    tx.send(MuxEvent::PaneTitleChanged {
+        pane_id: p1,
+        title: "stale".to_string(),
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    // p1 is NOT in the pane map (App would have dropped it) — should not panic.
+    mux.poll_events(&mut panes);
+
+    // p1 should be gone from registry.
+    assert!(mux.get_pane_entry(p1).is_none());
+    // p2 should still be alive.
+    assert!(mux.get_pane_entry(p2).is_some());
+}
+
+// -- High priority: multi-window isolation --
+
+#[test]
+fn multi_window_isolation_on_close() {
+    // Two windows with independent tabs/panes. Close one window,
+    // verify the other's registries are untouched.
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+
+    let w1 = WindowId::from_raw(100);
+    let w2 = WindowId::from_raw(200);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(200);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(200);
+
+    // Window 1 with one tab, one pane.
+    mux.session.add_window(MuxWindow::new(w1));
+    mux.session.get_window_mut(w1).unwrap().add_tab(t1);
+    mux.session.add_tab(MuxTab::new(t1, p1));
+    mux.pane_registry.register(PaneEntry {
+        pane: p1,
+        tab: t1,
+        domain: did,
+    });
+
+    // Window 2 with one tab, one pane.
+    mux.session.add_window(MuxWindow::new(w2));
+    mux.session.get_window_mut(w2).unwrap().add_tab(t2);
+    mux.session.add_tab(MuxTab::new(t2, p2));
+    mux.pane_registry.register(PaneEntry {
+        pane: p2,
+        tab: t2,
+        domain: did,
+    });
+
+    mux.drain_notifications();
+
+    // Close window 1.
+    let closed = mux.close_window(w1);
+    assert_eq!(closed, vec![p1]);
+
+    // Window 2 should be completely untouched.
+    assert!(mux.session().get_window(w2).is_some());
+    assert_eq!(mux.session().get_window(w2).unwrap().tabs(), &[t2]);
+    assert!(mux.session().get_tab(t2).is_some());
+    assert!(mux.get_pane_entry(p2).is_some());
+    assert_eq!(mux.pane_registry().len(), 1);
+    assert_eq!(mux.session().window_count(), 1);
+    assert_eq!(mux.session().tab_count(), 1);
+}
+
+// -- Medium priority: unbalanced tree collapse after split close --
+
+#[test]
+fn unbalanced_tree_collapse_after_split_close() {
+    // 3 panes: [p1 | [p2 / p3]]. Close p2 → tree collapses,
+    // p3 stays, active pane should not jump.
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+
+    // Set p3 as active.
+    tab.set_active_pane(p3);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2, p3] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    mux.drain_notifications();
+
+    // Close p2 — p3 was active, should remain active.
+    let result = mux.close_pane(p2);
+    assert_eq!(result, ClosePaneResult::PaneRemoved);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.all_panes().len(), 2);
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p3));
+    // Active pane should still be p3 (it wasn't closed).
+    assert_eq!(tab.active_pane(), p3);
+}
+
+// -- Medium priority: close_tab adjusts window active tab --
+
+#[test]
+fn close_tab_adjusts_window_active_tab() {
+    // Window has 3 tabs, active is tab 2. close_tab(tab2) should
+    // adjust window's active_tab_idx via remove_tab.
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let did = mux.default_domain();
+
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(101);
+    let t3 = TabId::from_raw(102);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+
+    let mut win = MuxWindow::new(wid);
+    win.add_tab(t1);
+    win.add_tab(t2);
+    win.add_tab(t3);
+    win.set_active_tab_idx(1); // tab 2 is active
+    mux.session.add_window(win);
+
+    mux.session.add_tab(MuxTab::new(t1, p1));
+    mux.session.add_tab(MuxTab::new(t2, p2));
+    mux.session.add_tab(MuxTab::new(t3, p3));
+
+    for &(pid, tid) in &[(p1, t1), (p2, t2), (p3, t3)] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    mux.drain_notifications();
+
+    // Close tab 2 (the active tab).
+    mux.close_tab(t2);
+
+    let win = mux.session().get_window(wid).unwrap();
+    assert_eq!(win.tabs(), &[t1, t3]);
+    // Active tab index should now point to t3 (index 1, same position).
+    assert_eq!(win.active_tab(), Some(t3));
+}
+
+// -- Medium priority: PaneOutput after pane closed is noop --
+
+#[test]
+fn pane_output_after_pane_closed_is_noop() {
+    // After PaneExited, a stale PaneOutput arrives. Should produce
+    // PaneDirty notification (the GUI will ignore it for unknown panes)
+    // but must not panic.
+    let (mut mux, _wid, _tid, pid) = one_pane_setup();
+    let tx = mux.event_tx().clone();
+
+    // Pane exits first.
+    tx.send(MuxEvent::PaneExited {
+        pane_id: pid,
+        exit_code: 0,
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+    mux.drain_notifications();
+
+    // Now a stale output event arrives.
+    tx.send(MuxEvent::PaneOutput(pid)).unwrap();
+    mux.poll_events(&mut panes);
+
+    // Should have a PaneDirty notification but no panic.
+    let notifs = mux.drain_notifications();
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::PaneDirty(id) if *id == pid))
+    );
+}
+
+// -- Medium priority: full lifecycle create → close --
+
+#[test]
+fn full_lifecycle_create_window_tab_close_window() {
+    // Full happy-path lifecycle: create window, add tabs, close window.
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+
+    // Create window.
+    let wid = mux.create_window();
+    assert_eq!(mux.session().window_count(), 1);
+
+    // Manually add two tabs (spawn_pane needs real PTY).
+    let t1 = TabId::from_raw(10);
+    let t2 = TabId::from_raw(20);
+    let p1 = PaneId::from_raw(10);
+    let p2 = PaneId::from_raw(20);
+
+    mux.session.get_window_mut(wid).unwrap().add_tab(t1);
+    mux.session.get_window_mut(wid).unwrap().add_tab(t2);
+    mux.session.add_tab(MuxTab::new(t1, p1));
+    mux.session.add_tab(MuxTab::new(t2, p2));
+
+    mux.pane_registry.register(PaneEntry {
+        pane: p1,
+        tab: t1,
+        domain: did,
+    });
+    mux.pane_registry.register(PaneEntry {
+        pane: p2,
+        tab: t2,
+        domain: did,
+    });
+
+    assert_eq!(mux.session().tab_count(), 2);
+    assert_eq!(mux.pane_registry().len(), 2);
+
+    // Close the window.
+    let closed = mux.close_window(wid);
+    assert_eq!(closed.len(), 2);
+    assert!(closed.contains(&p1));
+    assert!(closed.contains(&p2));
+
+    // Everything should be gone.
+    assert_eq!(mux.session().window_count(), 0);
+    assert_eq!(mux.session().tab_count(), 0);
+    assert!(mux.pane_registry().is_empty());
+}
+
+// -- Domain allocator persistence --
+
+#[test]
+fn domain_alloc_persisted_in_struct() {
+    // The domain allocator is stored in the struct, so creating a second
+    // domain should get a different ID than the local domain.
+    let mut mux = InProcessMux::new();
+    let local_id = mux.default_domain();
+    let second_id = mux.domain_alloc.alloc();
+    assert_ne!(local_id, second_id);
+
+    // Third allocation should also be unique.
+    let third_id = mux.domain_alloc.alloc();
+    assert_ne!(second_id, third_id);
+    assert_ne!(local_id, third_id);
+}
+
+// -- WindowClosed notification on non-last window --
+
+#[test]
+fn close_pane_last_tab_non_last_window_emits_window_closed() {
+    // Two windows, each with one tab and one pane. Close the sole pane
+    // in window 1 — should emit WindowClosed(w1), not LastWindow.
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+
+    let w1 = WindowId::from_raw(100);
+    let w2 = WindowId::from_raw(200);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(200);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(200);
+
+    mux.session.add_window(MuxWindow::new(w1));
+    mux.session.get_window_mut(w1).unwrap().add_tab(t1);
+    mux.session.add_tab(MuxTab::new(t1, p1));
+    mux.pane_registry.register(PaneEntry {
+        pane: p1,
+        tab: t1,
+        domain: did,
+    });
+
+    mux.session.add_window(MuxWindow::new(w2));
+    mux.session.get_window_mut(w2).unwrap().add_tab(t2);
+    mux.session.add_tab(MuxTab::new(t2, p2));
+    mux.pane_registry.register(PaneEntry {
+        pane: p2,
+        tab: t2,
+        domain: did,
+    });
+    mux.drain_notifications();
+
+    // Close the sole pane in window 1.
+    let result = mux.close_pane(p1);
+    assert_eq!(result, ClosePaneResult::TabClosed { tab_id: t1 });
+
+    // Window 1 should be removed.
+    assert!(mux.session().get_window(w1).is_none());
+    // Window 2 should be untouched.
+    assert!(mux.session().get_window(w2).is_some());
+
+    let notifs = mux.drain_notifications();
+
+    // WindowClosed notification for w1.
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::WindowClosed(id) if *id == w1)),
+        "expected WindowClosed(w1) notification"
+    );
+
+    // Must NOT emit LastWindowClosed — window 2 still exists.
+    assert!(
+        !notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::LastWindowClosed)),
+        "unexpected LastWindowClosed notification"
+    );
+}

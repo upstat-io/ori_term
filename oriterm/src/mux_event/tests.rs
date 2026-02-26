@@ -285,3 +285,57 @@ fn mux_event_debug_all_variants() {
     assert!(dbg.contains("ClipboardLoad"));
     assert!(dbg.contains("Selection"));
 }
+
+// --- MuxNotification Debug format ---
+
+#[test]
+fn mux_notification_debug_all_variants() {
+    use super::MuxNotification;
+    use oriterm_mux::{TabId, WindowId};
+
+    let pid = PaneId::from_raw(1);
+    let tid = TabId::from_raw(2);
+    let wid = WindowId::from_raw(3);
+
+    let cases: Vec<(MuxNotification, &str)> = vec![
+        (MuxNotification::PaneDirty(pid), "PaneDirty(Pane(1))"),
+        (MuxNotification::PaneClosed(pid), "PaneClosed(Pane(1))"),
+        (
+            MuxNotification::TabLayoutChanged(tid),
+            "TabLayoutChanged(Tab(2))",
+        ),
+        (
+            MuxNotification::WindowTabsChanged(wid),
+            "WindowTabsChanged(Window(3))",
+        ),
+        (
+            MuxNotification::WindowClosed(wid),
+            "WindowClosed(Window(3))",
+        ),
+        (MuxNotification::Alert(pid), "Alert(Pane(1))"),
+        (MuxNotification::LastWindowClosed, "LastWindowClosed"),
+    ];
+
+    for (notif, expected) in &cases {
+        assert_eq!(format!("{notif:?}"), *expected);
+    }
+
+    // ClipboardStore/Load contain closures — verify they don't panic.
+    let store = MuxNotification::ClipboardStore {
+        pane_id: pid,
+        clipboard_type: oriterm_core::ClipboardType::Clipboard,
+        text: "copied".to_string(),
+    };
+    let dbg = format!("{store:?}");
+    assert!(dbg.contains("ClipboardStore"));
+    assert!(dbg.contains("Clipboard"));
+
+    let load = MuxNotification::ClipboardLoad {
+        pane_id: pid,
+        clipboard_type: oriterm_core::ClipboardType::Selection,
+        formatter: Arc::new(|s: &str| s.to_string()),
+    };
+    let dbg = format!("{load:?}");
+    assert!(dbg.contains("ClipboardLoad"));
+    assert!(dbg.contains("Selection"));
+}

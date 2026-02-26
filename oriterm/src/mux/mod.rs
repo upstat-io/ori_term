@@ -59,6 +59,11 @@ pub(crate) struct InProcessMux {
     local_domain: LocalDomain,
 
     // ID allocators.
+    #[allow(
+        dead_code,
+        reason = "used when WSL/SSH domains are added in Section 35"
+    )]
+    domain_alloc: IdAllocator<DomainId>,
     pane_alloc: IdAllocator<PaneId>,
     tab_alloc: IdAllocator<TabId>,
     window_alloc: IdAllocator<WindowId>,
@@ -82,6 +87,7 @@ impl InProcessMux {
             pane_registry: PaneRegistry::new(),
             session: SessionRegistry::new(),
             local_domain: local,
+            domain_alloc,
             pane_alloc: IdAllocator::new(),
             tab_alloc: IdAllocator::new(),
             window_alloc: IdAllocator::new(),
@@ -170,6 +176,7 @@ impl InProcessMux {
                         if self.session.window_count() == 0 {
                             return ClosePaneResult::LastWindow;
                         }
+                        self.notifications.push(MuxNotification::WindowClosed(wid));
                     } else {
                         self.notifications
                             .push(MuxNotification::WindowTabsChanged(wid));
