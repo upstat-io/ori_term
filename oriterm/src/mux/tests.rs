@@ -1674,3 +1674,148 @@ fn drain_notifications_preserves_clipboard_data() {
         panic!("expected ClipboardLoad notification");
     }
 }
+
+// ── Tests for pump_mux_events notification handling (App-layer) ──
+//
+// These verify that the mux produces the right notifications so that
+// App::pump_mux_events handles them safely. The App handler uses if-let
+// guards on self.panes for unknown pane IDs, and std::mem::take for the
+// double-buffer pattern.
+
+// -- High priority: PaneDirty for absent pane --
+
+#[test]
+fn pane_dirty_produced_for_absent_pane() {
+    // PaneOutput for a pane not in the HashMap should still produce a
+    // PaneDirty notification (App handler skips check_selection_invalidation
+    // via if-let but still sets dirty and invalidates URL cache).
+    let mut mux = InProcessMux::new();
+    let tx = mux.event_tx().clone();
+
+    let unknown = PaneId::from_raw(999);
+    tx.send(MuxEvent::PaneOutput(unknown)).unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    let notifs = drain(&mut mux);
+    assert_eq!(notifs.len(), 1);
+    assert!(matches!(
+        &notifs[0],
+        MuxNotification::PaneDirty(id) if *id == unknown
+    ));
+}
+
+// -- High priority: ClipboardLoad for unknown pane --
+
+#[test]
+fn clipboard_load_unknown_pane_produces_notification() {
+    // ClipboardLoad for a pane that doesn't exist in the pane HashMap.
+    // The mux produces the notification regardless; App handler guards
+    // with `if let Some(pane) = self.panes.get(&pane_id)`.
+    let mut mux = InProcessMux::new();
+    let tx = mux.event_tx().clone();
+
+    let unknown = PaneId::from_raw(999);
+    tx.send(MuxEvent::ClipboardLoad {
+        pane_id: unknown,
+        clipboard_type: oriterm_core::ClipboardType::Clipboard,
+        formatter: std::sync::Arc::new(|s: &str| format!("\x1b]52;c;{s}\x07")),
+    })
+    .unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    let notifs = drain(&mut mux);
+    assert_eq!(notifs.len(), 1);
+    if let MuxNotification::ClipboardLoad {
+        pane_id, formatter, ..
+    } = &notifs[0]
+    {
+        assert_eq!(*pane_id, unknown);
+        // Formatter should still work (it's a closure, not dependent on pane).
+        assert_eq!(formatter("hello"), "\x1b]52;c;hello\x07");
+    } else {
+        panic!("expected ClipboardLoad notification");
+    }
+}
+
+// -- High priority: empty notification buffer short-circuits --
+
+#[test]
+fn empty_notification_buffer_short_circuits() {
+    // When no events arrive, drain produces an empty buffer.
+    // App::pump_mux_events returns early when notification_buf.is_empty().
+    let mut mux = InProcessMux::new();
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    let mut buf = Vec::new();
+    mux.drain_notifications(&mut buf);
+    assert!(
+        buf.is_empty(),
+        "expected empty buffer when no events arrive"
+    );
+}
+
+// -- Medium priority: double-buffer no stale accumulation --
+
+#[test]
+fn drain_double_buffer_no_cross_cycle_accumulation() {
+    // Simulates the double-buffer pattern in pump_mux_events:
+    // 1. Cycle 1: events → notifications → drain → process
+    // 2. Cycle 2: no events → drain → must be empty (no stale data)
+    // This verifies std::mem::swap clears correctly across cycles.
+    let mut mux = InProcessMux::new();
+    let tx = mux.event_tx().clone();
+
+    // Cycle 1: send events, poll, drain.
+    tx.send(MuxEvent::PaneBell(PaneId::from_raw(1))).unwrap();
+    tx.send(MuxEvent::PaneOutput(PaneId::from_raw(2))).unwrap();
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    let mut buf = Vec::new();
+    mux.drain_notifications(&mut buf);
+    assert_eq!(buf.len(), 2, "cycle 1 should have 2 notifications");
+
+    // Cycle 2: no new events.
+    mux.poll_events(&mut panes);
+
+    // Drain into the SAME buffer (simulates reuse). drain_notifications
+    // clears `out` before swapping, so stale data must not leak.
+    mux.drain_notifications(&mut buf);
+    assert!(
+        buf.is_empty(),
+        "cycle 2 should be empty — stale notifications must not accumulate"
+    );
+}
+
+// -- Low priority: PaneClosed notification for removed pane --
+
+#[test]
+fn pane_closed_notification_carries_correct_id() {
+    // Verify that close_pane produces PaneClosed(id) with the exact pane ID
+    // that was closed. App::pump_mux_events uses this to self.panes.remove(&id).
+    let (mut mux, _wid, _tid, _p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    mux.close_pane(p2);
+
+    let notifs = drain(&mut mux);
+    let closed: Vec<PaneId> = notifs
+        .iter()
+        .filter_map(|n| match n {
+            MuxNotification::PaneClosed(id) => Some(*id),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        closed,
+        vec![p2],
+        "PaneClosed should carry the exact pane ID"
+    );
+}
