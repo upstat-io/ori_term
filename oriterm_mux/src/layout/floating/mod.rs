@@ -9,6 +9,23 @@
 use crate::id::PaneId;
 use crate::layout::rect::Rect;
 
+/// Default floating pane width as a fraction of available tab width.
+const DEFAULT_WIDTH_FRACTION: f32 = 0.6;
+
+/// Default floating pane height as a fraction of available tab height.
+const DEFAULT_HEIGHT_FRACTION: f32 = 0.6;
+
+/// Minimum floating pane size in terminal cells (columns, rows).
+///
+/// Enforced during layout computation when cell dimensions are available.
+pub const MIN_FLOATING_PANE_CELLS: (u16, u16) = (20, 5);
+
+/// Snap-to-edge threshold in logical pixels.
+///
+/// When a floating pane is dragged within this distance of the tab boundary,
+/// its position snaps to the edge.
+const SNAP_THRESHOLD_PX: f32 = 10.0;
+
 /// A single floating pane with absolute position and size.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatingPane {
@@ -18,6 +35,28 @@ pub struct FloatingPane {
     pub rect: Rect,
     /// Stacking order. Higher values are closer to the viewer.
     pub z_order: u32,
+}
+
+impl FloatingPane {
+    /// Create a floating pane centered in the available area with default size.
+    ///
+    /// Default size is 60% of available width and 60% of available height.
+    pub fn centered(pane_id: PaneId, available: &Rect, z_order: u32) -> Self {
+        let width = available.width * DEFAULT_WIDTH_FRACTION;
+        let height = available.height * DEFAULT_HEIGHT_FRACTION;
+        let x = available.x + (available.width - width) / 2.0;
+        let y = available.y + (available.height - height) / 2.0;
+        Self {
+            pane_id,
+            rect: Rect {
+                x,
+                y,
+                width,
+                height,
+            },
+            z_order,
+        }
+    }
 }
 
 /// An immutable layer of floating panes, ordered by z-order.
@@ -186,6 +225,46 @@ impl FloatingLayer {
         layer.panes.sort_by_key(|p| p.z_order);
         layer
     }
+}
+
+/// Snap a floating pane position to the tab boundary edges.
+///
+/// If the pane is within `SNAP_THRESHOLD_PX` (10px) of any edge of `bounds`,
+/// the position is adjusted to align with that edge. Both left/top edges
+/// (position snap) and right/bottom edges (far-side snap accounting for pane
+/// size) are checked independently.
+///
+/// Call this before `FloatingLayer::move_pane()` to get snap-to-edge behavior.
+pub fn snap_to_edge(
+    x: f32,
+    y: f32,
+    pane_width: f32,
+    pane_height: f32,
+    bounds: &Rect,
+) -> (f32, f32) {
+    let mut sx = x;
+    let mut sy = y;
+
+    // Snap left edge.
+    if (sx - bounds.x).abs() <= SNAP_THRESHOLD_PX {
+        sx = bounds.x;
+    }
+    // Snap right edge.
+    let right_gap = (bounds.x + bounds.width) - (sx + pane_width);
+    if right_gap.abs() <= SNAP_THRESHOLD_PX {
+        sx = bounds.x + bounds.width - pane_width;
+    }
+    // Snap top edge.
+    if (sy - bounds.y).abs() <= SNAP_THRESHOLD_PX {
+        sy = bounds.y;
+    }
+    // Snap bottom edge.
+    let bottom_gap = (bounds.y + bounds.height) - (sy + pane_height);
+    if bottom_gap.abs() <= SNAP_THRESHOLD_PX {
+        sy = bounds.y + bounds.height - pane_height;
+    }
+
+    (sx, sy)
 }
 
 #[cfg(test)]

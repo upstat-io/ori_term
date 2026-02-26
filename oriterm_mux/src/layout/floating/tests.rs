@@ -1,4 +1,4 @@
-use super::{FloatingLayer, FloatingPane};
+use super::{FloatingLayer, FloatingPane, snap_to_edge};
 use crate::id::PaneId;
 use crate::layout::rect::Rect;
 
@@ -234,4 +234,151 @@ fn floating_z_order_stable_after_move_and_resize() {
     // After move, pane 1 is at (300,300), pane 2 at (50,50) — no overlap.
     assert_eq!(layer.hit_test(350.0, 350.0), Some(p(1)));
     assert_eq!(layer.hit_test(75.0, 75.0), Some(p(2)));
+}
+
+// ── Default centered size
+
+/// Tolerance for floating point comparisons involving 0.6 multiplication
+/// (0.6 is not exactly representable in IEEE 754 binary32).
+const FLOAT_TOL: f32 = 0.01;
+
+#[test]
+fn centered_pane_is_60_percent_of_available() {
+    let available = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    let fp = FloatingPane::centered(p(1), &available, 0);
+
+    assert!((fp.rect.width - 600.0).abs() < FLOAT_TOL);
+    assert!((fp.rect.height - 480.0).abs() < FLOAT_TOL);
+}
+
+#[test]
+fn centered_pane_is_centered_in_available() {
+    let available = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    let fp = FloatingPane::centered(p(1), &available, 0);
+
+    // 60% of 1000 = 600, margin = (1000-600)/2 = 200.
+    assert!((fp.rect.x - 200.0).abs() < FLOAT_TOL);
+    // 60% of 800 = 480, margin = (800-480)/2 = 160.
+    assert!((fp.rect.y - 160.0).abs() < FLOAT_TOL);
+}
+
+#[test]
+fn centered_pane_respects_available_offset() {
+    let available = Rect {
+        x: 50.0,
+        y: 100.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    let fp = FloatingPane::centered(p(1), &available, 5);
+
+    // Center within offset area.
+    assert!((fp.rect.x - 250.0).abs() < FLOAT_TOL);
+    assert!((fp.rect.y - 260.0).abs() < FLOAT_TOL);
+    assert_eq!(fp.z_order, 5);
+}
+
+// ── Snap-to-edge
+
+#[test]
+fn snap_to_left_edge() {
+    let bounds = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    // Pane at x=8 (within 10px of left edge) should snap to x=0.
+    let (sx, sy) = snap_to_edge(8.0, 100.0, 200.0, 150.0, &bounds);
+    assert!((sx - 0.0).abs() < f32::EPSILON);
+    assert!((sy - 100.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn snap_to_right_edge() {
+    let bounds = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    // Pane right edge at x=200 + w=200 = 993, gap to 1000 = 7px → snap.
+    let (sx, _) = snap_to_edge(793.0, 100.0, 200.0, 150.0, &bounds);
+    assert!((sx - 800.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn snap_to_top_edge() {
+    let bounds = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    let (_, sy) = snap_to_edge(100.0, 5.0, 200.0, 150.0, &bounds);
+    assert!((sy - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn snap_to_bottom_edge() {
+    let bounds = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    // Pane bottom at y=100 + h=150 = 645, gap to 800 = 155 → no snap.
+    // Pane bottom at y=643 + h=150 = 793, gap to 800 = 7 → snap.
+    let (_, sy) = snap_to_edge(100.0, 643.0, 200.0, 150.0, &bounds);
+    assert!((sy - 650.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn snap_to_corner() {
+    let bounds = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    // Near top-left corner: both x and y within threshold.
+    let (sx, sy) = snap_to_edge(3.0, 7.0, 200.0, 150.0, &bounds);
+    assert!((sx - 0.0).abs() < f32::EPSILON);
+    assert!((sy - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn no_snap_when_far_from_edges() {
+    let bounds = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 1000.0,
+        height: 800.0,
+    };
+    let (sx, sy) = snap_to_edge(200.0, 300.0, 200.0, 150.0, &bounds);
+    assert!((sx - 200.0).abs() < f32::EPSILON);
+    assert!((sy - 300.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn snap_respects_bounds_offset() {
+    let bounds = Rect {
+        x: 50.0,
+        y: 100.0,
+        width: 900.0,
+        height: 600.0,
+    };
+    // Near left edge of offset bounds: x=55, within 10px of bounds.x=50 → snap to 50.
+    let (sx, _) = snap_to_edge(55.0, 300.0, 200.0, 150.0, &bounds);
+    assert!((sx - 50.0).abs() < f32::EPSILON);
 }

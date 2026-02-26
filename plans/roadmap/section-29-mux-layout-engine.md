@@ -1,7 +1,7 @@
 ---
 section: 29
 title: Mux Crate + Layout Engine
-status: in-progress
+status: complete
 tier: 4M
 goal: Create the oriterm_mux crate with newtype IDs, immutable SplitTree, FloatingLayer, spatial navigation, and layout computation
 sections:
@@ -13,7 +13,7 @@ sections:
     status: complete
   - id: "29.3"
     title: FloatingLayer
-    status: in-progress
+    status: complete
   - id: "29.4"
     title: Layout Computation
     status: complete
@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "29.6"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 29: Mux Crate + Layout Engine
@@ -171,9 +171,9 @@ Floating panes overlay the tiled layout. Inspired by Zellij's floating pane syst
     - [x] `contains(pane_id: PaneId) -> bool`
     - [x] `panes() -> &[FloatingPane]`
     - [x] `is_empty() -> bool`
-- [ ] Default floating pane size: 60% of tab width, 60% of tab height, centered
-- [ ] Minimum floating pane size: 20 columns × 5 rows (computed from cell size at resolve time)
-- [ ] Snap-to-edge when dragged within 10px of tab boundary
+- [x] Default floating pane size: 60% of tab width, 60% of tab height, centered
+- [x] Minimum floating pane size: 20 columns × 5 rows (computed from cell size at resolve time)
+- [x] Snap-to-edge when dragged within 10px of tab boundary
 
 **Tests:**
 - [x] Add floating pane: appears in layer, `contains` returns true
@@ -287,7 +287,7 @@ Navigate between panes using directional movement (up/down/left/right) and seque
 
 ## 29.6 Section Completion
 
-- [ ] All 29.1–29.5 items complete *(29.3 has 3 deferred items: default size, min size, snap-to-edge)*
+- [x] All 29.1–29.5 items complete
 - [x] `oriterm_mux` crate compiles with `cargo build -p oriterm_mux`
 - [x] `cargo clippy -p oriterm_mux` — no warnings
 - [x] `cargo test -p oriterm_mux` — all tests pass (86 tests)

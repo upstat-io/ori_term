@@ -512,3 +512,58 @@ fn zero_size_available_rect_does_not_panic() {
         assert!(!d.rect.height.is_nan());
     }
 }
+
+// ── Minimum floating pane size enforcement
+
+#[test]
+fn floating_pane_below_minimum_is_clamped() {
+    let desc = standard_desc();
+    let tree = SplitTree::Leaf(p(1));
+
+    // Create a tiny floating pane: 5 cols × 2 rows (below 20×5 minimum).
+    let tiny = FloatingPane {
+        pane_id: p(2),
+        rect: Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 50.0,  // 5 cols at 10px/col.
+            height: 40.0, // 2 rows at 20px/row.
+        },
+        z_order: 0,
+    };
+    let floating = FloatingLayer::new().add(tiny);
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    let float_layout = layouts.iter().find(|l| l.pane_id == p(2)).unwrap();
+
+    // Should be clamped to 20 cols × 5 rows.
+    assert_eq!(float_layout.cols, 20);
+    assert_eq!(float_layout.rows, 5);
+    assert!((float_layout.pixel_rect.width - 200.0).abs() < f32::EPSILON);
+    assert!((float_layout.pixel_rect.height - 100.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn floating_pane_above_minimum_is_unchanged() {
+    let desc = standard_desc();
+    let tree = SplitTree::Leaf(p(1));
+
+    // Create a floating pane above minimum: 30 cols × 10 rows.
+    let big = FloatingPane {
+        pane_id: p(2),
+        rect: Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 300.0,
+            height: 200.0,
+        },
+        z_order: 0,
+    };
+    let floating = FloatingLayer::new().add(big);
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    let float_layout = layouts.iter().find(|l| l.pane_id == p(2)).unwrap();
+
+    assert_eq!(float_layout.cols, 30);
+    assert_eq!(float_layout.rows, 10);
+}

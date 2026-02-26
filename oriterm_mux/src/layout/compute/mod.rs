@@ -171,14 +171,27 @@ fn compute_tree(
 ///
 /// Floating pane rects are snapped to the cell grid, matching the tiled pane
 /// contract where `pixel_rect` dimensions are exact multiples of cell size.
+/// Dimensions are clamped to the minimum floating pane size (20 columns × 5
+/// rows) defined in `floating::MIN_FLOATING_PANE_CELLS`.
 fn append_floating(
     floating: &FloatingLayer,
     focused: PaneId,
     desc: &LayoutDescriptor,
     out: &mut Vec<PaneLayout>,
 ) {
+    use crate::layout::floating::MIN_FLOATING_PANE_CELLS;
+
+    let min_w = f32::from(MIN_FLOATING_PANE_CELLS.0) * desc.cell_width;
+    let min_h = f32::from(MIN_FLOATING_PANE_CELLS.1) * desc.cell_height;
+
     for fp in floating.panes() {
-        let snapped = snap_to_grid(fp.rect, desc.cell_width, desc.cell_height);
+        // Enforce minimum dimensions before grid snapping.
+        let clamped = Rect {
+            width: fp.rect.width.max(min_w),
+            height: fp.rect.height.max(min_h),
+            ..fp.rect
+        };
+        let snapped = snap_to_grid(clamped, desc.cell_width, desc.cell_height);
         let cols = (snapped.width / desc.cell_width).floor() as u16;
         let rows = (snapped.height / desc.cell_height).floor() as u16;
         out.push(PaneLayout {
