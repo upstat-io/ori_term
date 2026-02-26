@@ -64,3 +64,35 @@ fn debounce_timeout_returns() {
         "should wait at least the debounce period"
     );
 }
+
+// --- is_theme_file ---
+
+#[test]
+fn is_theme_file_matches_toml_in_themes_dir() {
+    use std::path::Path;
+
+    let themes = Path::new("/config/themes");
+    assert!(super::is_theme_file(
+        Path::new("/config/themes/nord.toml"),
+        themes,
+    ));
+}
+
+#[test]
+fn is_theme_file_rejects_non_toml() {
+    use std::path::Path;
+
+    let themes = Path::new("/config/themes");
+    assert!(!super::is_theme_file(
+        Path::new("/config/themes/readme.txt"),
+        themes,
+    ));
+}
+
+#[test]
+fn is_theme_file_rejects_wrong_dir() {
+    use std::path::Path;
+
+    let themes = Path::new("/config/themes");
+    assert!(!super::is_theme_file(Path::new("/other/nord.toml"), themes,));
+}

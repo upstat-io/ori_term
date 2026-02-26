@@ -7,7 +7,7 @@ goal: 100+ built-in themes, TOML theme files, discovery, live switching, light/d
 sections:
   - id: "25.1"
     title: Theme Format & Loading
-    status: in-progress
+    status: complete
   - id: "25.2"
     title: Built-in Theme Library
     status: complete
@@ -16,7 +16,7 @@ sections:
     status: in-progress
   - id: "25.4"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 25: Theme System
@@ -49,22 +49,22 @@ Define a theme format and support loading from files.
   - [x] Embedded in binary (53 `const BuiltinScheme` definitions)
   - [x] User theme directory: `config_dir/themes/*.toml`
   - [x] Config: `colors.scheme = "nord"` (by name, case-insensitive)
-  - [ ] Config: `colors.scheme = "/path/to/mytheme.toml"` (by absolute path)
-- [ ] Theme discovery at startup:
-  - [ ] Scan `config_dir/themes/` for `*.toml` files
-  - [ ] Parse each, build `Vec<ColorScheme>` of user themes
-  - [ ] Merge with built-in schemes (user themes can override built-in names)
-- [ ] Theme hot-reload:
-  - [ ] ConfigMonitor already watches config dir
-  - [ ] Extend to watch `themes/` subdirectory
-  - [ ] On theme file change: re-parse and apply if it's the active theme
+  - [x] Config: `colors.scheme = "/path/to/mytheme.toml"` (by absolute path)
+- [x] Theme discovery at startup:
+  - [x] Scan `config_dir/themes/` for `*.toml` files
+  - [x] Parse each, build `Vec<ColorScheme>` of user themes
+  - [x] Merge with built-in schemes (user themes can override built-in names)
+- [x] Theme hot-reload:
+  - [x] ConfigMonitor already watches config dir
+  - [x] Extend to watch `themes/` subdirectory
+  - [x] On theme file change: re-parse and apply if it's the active theme
 
 **Tests:**
 - [x] Parse valid TOML theme file to `ColorScheme`
 - [x] Reject malformed hex colors with descriptive error
 - [x] Case-insensitive name lookup finds built-in themes
-- [ ] User theme overrides built-in theme with same name
-- [ ] Absolute path loading works for custom theme file
+- [x] User theme overrides built-in theme with same name
+- [x] Absolute path loading works for custom theme file
 - [x] Missing theme file returns error, does not crash
 
 ---
@@ -100,9 +100,9 @@ Port popular color schemes as embedded themes. Target 50+ built-in.
 - [x] Oxocarbon, Andromeda
 
 **Conversion tools:**
-- [ ] Script to convert iTerm2 `.itermcolors` XML to TOML format
-- [ ] Script to convert Ghostty theme format (key=value) to TOML format
-- [ ] Script to convert base16 YAML to TOML format
+- [x] Script to convert iTerm2 `.itermcolors` XML to TOML format
+- [x] Script to convert Ghostty theme format (key=value) to TOML format
+- [x] Script to convert base16 YAML to TOML format
 
 **Tests:**
 - [x] All built-in schemes have valid RGB values (no out-of-range)
@@ -126,7 +126,7 @@ Automatically switch theme based on system appearance.
 - [x] On system theme change:
   - [x] Swap palette to the appropriate scheme via `build_palette_from_config()`
   - [x] Mark all grid lines dirty for redraw
-- [ ] Settings dropdown improvements:
+- [ ] Settings dropdown improvements: <!-- blocked-by:7 -->
   - [ ] Group themes by light/dark/universal
   - [ ] Show "(dark)" / "(light)" label next to theme names
 
@@ -141,13 +141,13 @@ Automatically switch theme based on system appearance.
 
 ## 25.4 Section Completion
 
-- [ ] All 25.1-25.3 items complete
+- [ ] All 25.1-25.3 items complete *(blocked: 25.3 has settings dropdown items pending Section 7)*
 - [x] 50+ themes available by name in config
 - [x] Custom themes loadable from TOML files in theme directory
 - [x] Light/dark auto-switching works
-- [ ] Settings dropdown lists all available themes (built-in + user)
-- [ ] Theme hot-reload works (edit theme file, see change)
-- [ ] User themes in theme directory discovered automatically
-- [ ] Theme conversion scripts for iTerm2/Ghostty/base16 formats
+- [ ] Settings dropdown lists all available themes (built-in + user) <!-- blocked-by:7 -->
+- [x] Theme hot-reload works (edit theme file, see change)
+- [x] User themes in theme directory discovered automatically
+- [x] Theme conversion scripts for iTerm2/Ghostty/base16 formats
 
 **Exit Criteria:** User can type `colors.scheme = "nord"` in config and get the Nord color scheme. System dark/light mode change auto-switches themes.

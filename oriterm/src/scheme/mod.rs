@@ -70,10 +70,45 @@ fn builtin_names() -> Vec<&'static str> {
 
 /// Resolve a scheme name to a [`ColorScheme`].
 ///
-/// Checks built-in schemes first, then attempts to load from the themes
-/// directory. Returns `None` if the scheme cannot be found.
+/// If `name` is an absolute file path, loads directly from that path.
+/// Otherwise checks built-in schemes first, then attempts to load from
+/// the themes directory. Returns `None` if the scheme cannot be found.
 pub(crate) fn resolve_scheme(name: &str) -> Option<ColorScheme> {
+    let path = std::path::Path::new(name);
+    if path.is_absolute() {
+        if let Some(scheme) = loader::load_from_path(path) {
+            return Some(scheme);
+        }
+    }
+
     find_builtin(name).or_else(|| loader::load_from_themes_dir(name))
+}
+
+/// Discover all available schemes (built-in + user themes).
+///
+/// Returns built-in schemes merged with user themes from `config_dir/themes/`.
+/// User themes override built-in schemes with the same name (case-insensitive).
+pub(crate) fn discover_all() -> Vec<ColorScheme> {
+    let mut schemes: Vec<ColorScheme> = BUILTIN_SCHEMES.iter().map(|s| s.to_scheme()).collect();
+
+    let user_themes = match crate::config::config_path().parent() {
+        Some(dir) => loader::discover_themes(&dir.join("themes")),
+        None => Vec::new(),
+    };
+
+    for user in user_themes {
+        let lower = user.name.to_ascii_lowercase();
+        if let Some(existing) = schemes
+            .iter_mut()
+            .find(|s| s.name.to_ascii_lowercase() == lower)
+        {
+            *existing = user;
+        } else {
+            schemes.push(user);
+        }
+    }
+
+    schemes
 }
 
 /// Parse a conditional scheme string: `"dark:X, light:Y"`.

@@ -144,6 +144,16 @@ impl App {
     pub(crate) fn new(event_proxy: EventLoopProxy<TermEvent>, config: Config) -> Self {
         let bindings = keybindings::merge_bindings(&config.keybind);
         let monitor = ConfigMonitor::new(event_proxy.clone());
+        let all_schemes = crate::scheme::discover_all();
+        let user_count = all_schemes
+            .len()
+            .saturating_sub(crate::scheme::BUILTIN_SCHEMES.len());
+        log::info!(
+            "themes: {} available ({} built-in, {} user)",
+            all_schemes.len(),
+            crate::scheme::BUILTIN_SCHEMES.len(),
+            user_count,
+        );
         let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
         let ui_theme = resolve_ui_theme(&config);
         Self {

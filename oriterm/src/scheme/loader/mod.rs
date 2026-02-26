@@ -63,6 +63,36 @@ fn load_from_dir(dir: &std::path::Path, name: &str) -> Option<ColorScheme> {
     None
 }
 
+/// Discover all valid theme files in a directory.
+///
+/// Scans `dir` for `*.toml` files, parses each, and returns all that
+/// parse successfully. Invalid files are logged and skipped.
+pub(super) fn discover_themes(dir: &std::path::Path) -> Vec<ColorScheme> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut themes = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        if let Some(scheme) = load_theme_file(&path) {
+            themes.push(scheme);
+        }
+    }
+    themes
+}
+
+/// Load a theme file from an absolute path.
+///
+/// Returns `None` if the file doesn't exist or fails to parse.
+pub(super) fn load_from_path(path: &std::path::Path) -> Option<ColorScheme> {
+    load_theme_file(path)
+}
+
 /// Parse a single TOML theme file into a [`ColorScheme`].
 fn load_theme_file(path: &std::path::Path) -> Option<ColorScheme> {
     let contents = std::fs::read_to_string(path).ok()?;
