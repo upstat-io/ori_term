@@ -16,7 +16,7 @@ sections:
     status: in-progress
   - id: "16.4"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 16: Tab Bar & Chrome
@@ -211,13 +211,13 @@ Map mouse coordinates to tab bar actions. Hit testing determines whether a click
 ## 16.4 Section Completion
 
 - [ ] All 16.1–16.3 items complete
-- [ ] Tab bar layout: DPI-aware, width lock, platform-specific control zone
-- [ ] Tab bar rendering: separators with suppression, bell pulse, dragged tab overlay, animation offsets
-- [ ] Hit testing: correct priority order, close button inset, platform-specific controls
-- [ ] Tab width lock prevents close button shifting during rapid close clicks
-- [ ] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — compiles
-- [ ] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
-- [ ] **Close stress test**: rapidly close many tabs while hovering tab bar — close buttons don't shift unexpectedly (tab width lock works)
+- [x] Tab bar layout: DPI-aware, width lock, platform-specific control zone
+- [x] Tab bar rendering: separators with suppression, bell pulse, dragged tab overlay, animation offsets
+- [x] Hit testing: correct priority order, close button inset, platform-specific controls
+- [x] Tab width lock prevents close button shifting during rapid close clicks
+- [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — compiles
+- [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
+- [x] **Close stress test**: rapidly close many tabs while hovering tab bar — close buttons don't shift unexpectedly (tab width lock works)
 - [ ] **Visual test**: tab bar renders correctly at 100%, 125%, 150%, 200% DPI scales
 
 **Exit Criteria:** Tab bar layout computes deterministically for any tab count and window width. GPU-rendered tab bar includes bell animation, drag overlay, and separator suppression. Hit testing dispatches clicks with correct priority ordering.
