@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "33.6"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 33: Split Navigation + Floating Panes
@@ -284,18 +284,18 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 ## 33.6 Section Completion
 
 - [ ] All 33.1–33.5 items complete
-- [ ] Spatial navigation: `Alt+Shift+Arrow` directional, `Alt+Shift+{/}` cycling, mouse click
-- [ ] Divider drag resize: mouse + keyboard, clamping, PTY resize
-- [ ] Zoom/unzoom: `Ctrl+Shift+Z`, auto-unzoom on split/navigate
-- [ ] Floating panes: create, drag, resize, z-order, scissored rendering, drop shadow
-- [ ] Float↔tile toggle: preserves pane identity and shell session
-- [ ] Undo/redo: full history for split tree mutations
-- [ ] `cargo build --target x86_64-pc-windows-gnu` — compiles
-- [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
-- [ ] `cargo test` — all tests pass
-- [ ] **Navigation test**: 4-pane grid, navigate all directions, verify correct focus
-- [ ] **Resize test**: drag divider, verify ratio change and PTY resize
-- [ ] **Floating test**: create floating pane, drag, resize, toggle to tiled
-- [ ] **Undo test**: split 3 times, undo all 3, verify original layout restored
+- [x] Spatial navigation: `Alt+Shift+Arrow` directional, `Alt+Shift+{/}` cycling, mouse click
+- [x] Divider drag resize: mouse + keyboard, clamping, PTY resize
+- [x] Zoom/unzoom: `Ctrl+Shift+Z`, auto-unzoom on split/navigate
+- [x] Floating panes: create, drag, resize, z-order, scissored rendering, drop shadow
+- [x] Float↔tile toggle: preserves pane identity and shell session
+- [x] Undo/redo: full history for split tree mutations
+- [x] `cargo build --target x86_64-pc-windows-gnu` — compiles
+- [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+- [x] `cargo test` — all tests pass
+- [x] **Navigation test**: 4-pane grid, navigate all directions, verify correct focus
+- [x] **Resize test**: drag divider, verify ratio change and PTY resize
+- [x] **Floating test**: create floating pane, drag, resize, toggle to tiled
+- [x] **Undo test**: split 3 times, undo all 3, verify original layout restored
 
 **Exit Criteria:** Full split pane interaction with no external dependencies (tmux, screen). Spatial navigation works for any layout. Floating panes overlay the tiled layout with proper rendering. Undo/redo enables safe experimentation with layouts. Every interaction from the superseded Section 26 is implemented, plus floating panes and undo/redo.

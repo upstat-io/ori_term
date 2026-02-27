@@ -6,8 +6,8 @@
 //! behaviour in isolation.
 
 use oriterm_mux::layout::Rect;
-use oriterm_mux::layout::SplitDirection;
 use oriterm_mux::layout::floating::FloatingPane;
+use oriterm_mux::layout::{SplitDirection, SplitTree};
 use oriterm_mux::registry::PaneEntry;
 use oriterm_mux::session::{MuxTab, MuxWindow};
 use oriterm_mux::{PaneId, TabId, WindowId};
@@ -1813,7 +1813,7 @@ fn set_divider_ratio_simple_split() {
 
     // Verify the tree was updated.
     let tab = mux.session().get_tab(tid).unwrap();
-    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
         assert!(
             (*ratio - 0.7).abs() < f32::EPSILON,
             "ratio should be 0.7, got {ratio}"
@@ -1830,7 +1830,7 @@ fn set_divider_ratio_clamps_extreme_values() {
     mux.set_divider_ratio(tid, p1, p2, 0.0);
 
     let tab = mux.session().get_tab(tid).unwrap();
-    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
         assert!(
             (*ratio - 0.1).abs() < f32::EPSILON,
             "ratio should be clamped to 0.1, got {ratio}"
@@ -1851,7 +1851,7 @@ fn set_divider_ratio_nonexistent_panes_is_noop() {
 
     // Tree should be unchanged (still 0.5).
     let tab = mux.session().get_tab(tid).unwrap();
-    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
         assert!(
             (*ratio - 0.5).abs() < f32::EPSILON,
             "ratio should stay 0.5, got {ratio}"
@@ -1891,7 +1891,7 @@ fn resize_pane_grows_first_child() {
     );
 
     let tab = mux.session().get_tab(tid).unwrap();
-    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
         assert!(
             (*ratio - 0.6).abs() < f32::EPSILON,
             "ratio should be 0.6, got {ratio}"
@@ -1910,7 +1910,7 @@ fn resize_pane_shrinks_via_second_child() {
     mux.resize_pane(tid, p2, SplitDirection::Vertical, false, -0.1);
 
     let tab = mux.session().get_tab(tid).unwrap();
-    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
         assert!(
             (*ratio - 0.4).abs() < f32::EPSILON,
             "ratio should be 0.4, got {ratio}"
@@ -1950,7 +1950,7 @@ fn resize_pane_wrong_axis_is_noop() {
 
     // Ratio unchanged.
     let tab = mux.session().get_tab(tid).unwrap();
-    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
         assert!((*ratio - 0.5).abs() < f32::EPSILON);
     }
 }
@@ -1983,7 +1983,7 @@ fn equalize_panes_resets_ratio() {
     mux.equalize_panes(tid);
 
     let tab = mux.session().get_tab(tid).unwrap();
-    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
         assert!(
             (*ratio - 0.5).abs() < f32::EPSILON,
             "ratio should be reset to 0.5, got {ratio}"
@@ -2044,7 +2044,7 @@ fn equalize_panes_asymmetric_nesting() {
 
     let tab = mux.session().get_tab(tid).unwrap();
     // Outer split should be 0.5.
-    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
         assert!(
             (*ratio - 0.5).abs() < f32::EPSILON,
             "outer ratio should be 0.5, got {ratio}"
@@ -2983,4 +2983,209 @@ fn concurrent_pane_exit_then_undo_skips_dead_entry() {
     assert!(mux.undo_split(tid, &live));
     let tab = mux.session().get_tab(tid).unwrap();
     assert_eq!(tab.tree().panes(), vec![p1]);
+}
+
+// -- Section 33.6 integration tests --
+
+/// 4-pane 2×2 grid: navigate all 4 directions, verify correct focus.
+#[test]
+fn integration_navigation_4_pane_grid_all_directions() {
+    use oriterm_mux::layout::{LayoutDescriptor, compute_layout};
+    use oriterm_mux::nav::{self, Direction};
+
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+    let p4 = PaneId::from_raw(103);
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    // Build 2×2 grid: vertical split [left|right], then horizontal split each.
+    // Result: p1=top-left, p3=bottom-left, p2=top-right, p4=bottom-right.
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p4, 0.5);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2, p3, p4] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    let desc = LayoutDescriptor {
+        available: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1000.0,
+            height: 800.0,
+        },
+        cell_width: 10.0,
+        cell_height: 20.0,
+        divider_px: 2.0,
+        min_pane_cells: (4, 2),
+    };
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    let layouts = compute_layout(tab.tree(), tab.floating(), p1, &desc);
+
+    // From top-left (p1): right→p2, down→p3.
+    assert_eq!(nav::navigate(&layouts, p1, Direction::Right), Some(p2));
+    assert_eq!(nav::navigate(&layouts, p1, Direction::Down), Some(p3));
+
+    // From bottom-right (p4): left→p3, up→p2.
+    assert_eq!(nav::navigate(&layouts, p4, Direction::Left), Some(p3));
+    assert_eq!(nav::navigate(&layouts, p4, Direction::Up), Some(p2));
+
+    // From top-right (p2): left→p1, down→p4.
+    assert_eq!(nav::navigate(&layouts, p2, Direction::Left), Some(p1));
+    assert_eq!(nav::navigate(&layouts, p2, Direction::Down), Some(p4));
+
+    // From bottom-left (p3): right→p4, up→p1.
+    assert_eq!(nav::navigate(&layouts, p3, Direction::Right), Some(p4));
+    assert_eq!(nav::navigate(&layouts, p3, Direction::Up), Some(p1));
+
+    // set_active_pane updates focus correctly.
+    assert!(mux.set_active_pane(tid, p4));
+    assert_eq!(mux.session().get_tab(tid).unwrap().active_pane(), p4);
+}
+
+/// Drag divider: set ratio, verify tree updates and notification emitted.
+#[test]
+fn integration_resize_divider_ratio_and_notification() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    mux.set_divider_ratio(tid, p1, p2, 0.7);
+
+    // Verify ratio changed in tree.
+    let tab = mux.session().get_tab(tid).unwrap();
+    match tab.tree() {
+        SplitTree::Split { ratio, .. } => {
+            assert!(
+                (*ratio - 0.7).abs() < f32::EPSILON,
+                "expected ratio 0.7, got {ratio}"
+            );
+        }
+        SplitTree::Leaf(_) => panic!("expected Split, got Leaf"),
+    }
+
+    // TabLayoutChanged notification emitted.
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid))
+    );
+}
+
+/// Floating pane: create, move, resize, toggle to tiled.
+#[test]
+fn integration_floating_create_move_resize_toggle_to_tiled() {
+    let (mut mux, _wid, tid, p1, p2) = one_pane_with_floating();
+    drain(&mut mux);
+
+    // Move the floating pane.
+    mux.move_floating_pane(tid, p2, 100.0, 50.0);
+    let tab = mux.session.get_tab(tid).unwrap();
+    let rect = tab.floating().pane_rect(p2).unwrap();
+    assert!((rect.x - 100.0).abs() < f32::EPSILON);
+    assert!((rect.y - 50.0).abs() < f32::EPSILON);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::FloatingPaneChanged(id) if *id == tid))
+    );
+
+    // Resize the floating pane.
+    mux.resize_floating_pane(tid, p2, 400.0, 300.0);
+    let tab = mux.session.get_tab(tid).unwrap();
+    let rect = tab.floating().pane_rect(p2).unwrap();
+    assert!((rect.width - 400.0).abs() < f32::EPSILON);
+    assert!((rect.height - 300.0).abs() < f32::EPSILON);
+    drain(&mut mux);
+
+    // Toggle p2 back to tiled.
+    assert!(mux.move_pane_to_tiled(tid, p2));
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert!(!tab.is_floating(p2), "p2 should no longer be floating");
+    assert!(tab.tree().contains(p2), "p2 should be in the split tree");
+    assert!(tab.tree().contains(p1), "p1 should still be in the tree");
+    assert_eq!(tab.all_panes().len(), 2);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid))
+    );
+}
+
+/// Split 3 times, undo all 3, verify original single-pane layout restored.
+#[test]
+fn integration_undo_triple_split_restores_original() {
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+    let p4 = PaneId::from_raw(103);
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+    mux.session.add_tab(MuxTab::new(tid, p1));
+
+    for &pid in &[p1, p2, p3, p4] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    // Split 3 times via set_tree (each pushes to undo stack).
+    let tab = mux.session.get_tab_mut(tid).unwrap();
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p1, SplitDirection::Horizontal, p4, 0.5);
+    tab.set_tree(tree);
+    assert_eq!(tab.tree().pane_count(), 4);
+
+    let live: std::collections::HashSet<_> = [p1, p2, p3, p4].into_iter().collect();
+
+    // Undo split 3 → 3 panes.
+    assert!(mux.undo_split(tid, &live));
+    assert_eq!(mux.session().get_tab(tid).unwrap().tree().pane_count(), 3);
+
+    // Undo split 2 → 2 panes.
+    assert!(mux.undo_split(tid, &live));
+    assert_eq!(mux.session().get_tab(tid).unwrap().tree().pane_count(), 2);
+
+    // Undo split 1 → original single pane.
+    assert!(mux.undo_split(tid, &live));
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().panes(), vec![p1]);
+
+    // No more undo entries.
+    assert!(!mux.undo_split(tid, &live));
 }
