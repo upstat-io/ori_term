@@ -194,10 +194,6 @@ pub struct MuxWindow {
     active_tab_idx: usize,
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed by InProcessMux, wired to App in Section 31.2"
-)]
 impl MuxWindow {
     /// Create a new window with no tabs.
     pub fn new(id: WindowId) -> Self {
@@ -216,6 +212,13 @@ impl MuxWindow {
     /// Ordered tab list.
     pub fn tabs(&self) -> &[TabId] {
         &self.tabs
+    }
+
+    /// Mutable access to the ordered tab list.
+    ///
+    /// Used for reordering tabs within a window.
+    pub fn tabs_mut(&mut self) -> &mut Vec<TabId> {
+        &mut self.tabs
     }
 
     /// Index of the currently active tab.

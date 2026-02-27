@@ -54,7 +54,7 @@ impl App {
         let Some(mux) = &mut self.mux else { return };
         mux.toggle_zoom(tab_id);
         self.pane_cache.invalidate_all();
-        self.sync_tab_bar_titles();
+        self.sync_tab_bar_from_mux();
         self.dirty = true;
     }
 
@@ -490,7 +490,7 @@ impl App {
         if was_zoomed {
             mux.unzoom_silent(tab_id);
             self.cached_dividers = None;
-            self.sync_tab_bar_titles();
+            self.sync_tab_bar_from_mux();
         }
         was_zoomed
     }

@@ -211,7 +211,7 @@ impl InProcessMux {
     }
 
     /// Look up a pane's metadata entry.
-    #[allow(dead_code, reason = "called when tab CRUD is fully wired to App")]
+    #[allow(dead_code, reason = "used for CWD inheritance in Section 32.4")]
     pub(crate) fn get_pane_entry(&self, pane_id: PaneId) -> Option<&PaneEntry> {
         self.pane_registry.get(pane_id)
     }
@@ -249,7 +249,6 @@ impl InProcessMux {
     /// Close a tab and all its panes.
     ///
     /// Returns the list of `PaneId`s that the caller should drop from its map.
-    #[allow(dead_code, reason = "called when tab close is wired to App")]
     pub(crate) fn close_tab(&mut self, tab_id: TabId) -> Vec<PaneId> {
         let pane_ids = match self.session.get_tab(tab_id) {
             Some(tab) => tab.all_panes(),
@@ -505,7 +504,7 @@ impl InProcessMux {
     /// Close a window and all its tabs/panes.
     ///
     /// Returns the list of `PaneId`s that the caller should drop.
-    #[allow(dead_code, reason = "called when window close is wired to App")]
+    #[allow(dead_code, reason = "wired to window lifecycle in Section 32.3")]
     pub(crate) fn close_window(&mut self, window_id: WindowId) -> Vec<PaneId> {
         let tab_ids = match self.session.get_window(window_id) {
             Some(win) => win.tabs().to_vec(),

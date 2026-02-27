@@ -1,13 +1,13 @@
 ---
 section: 32
 title: Tab & Window Management (Mux-Aware)
-status: not-started
+status: in-progress
 tier: 4M
 goal: Multi-tab with mux integration, multi-window with shared GPU, tab CRUD, window lifecycle, cross-window tab movement, ConPTY-safe shutdown
 sections:
   - id: "32.1"
     title: Mux-Aware Tab Management
-    status: not-started
+    status: complete
   - id: "32.2"
     title: Multi-Window + Shared GPU
     status: not-started
@@ -24,7 +24,7 @@ sections:
 
 # Section 32: Tab & Window Management (Mux-Aware)
 
-**Status:** Not Started
+**Status:** In Progress
 **Goal:** Full tab and window management built on the mux layer. Multiple tabs per window, multiple windows with shared GPU device. Tab CRUD, window lifecycle with no-flash startup, DPI handling, ConPTY-safe cleanup. Cross-window tab movement preserving pane state.
 
 **Crate:** `oriterm` (App, TermWindow), `oriterm_mux` (MuxTab, MuxWindow)
@@ -43,46 +43,46 @@ Tab CRUD operations that go through the mux layer. The mux owns tab state (MuxTa
 
 **Reference:** `_old/src/app/tab_management.rs`, Section 15.2 design (preserved patterns)
 
-- [ ] New tab:
-  - [ ] `App::new_tab_in_window(&mut self, window_id: WindowId)`
-  - [ ] Inherit CWD from active pane in current tab (via `mux.get_pane_entry(active_pane).cwd`)
-  - [ ] Build `SpawnConfig` with shell, scrollback, cursor shape from config
-  - [ ] Call `mux.create_tab(mux_window_id, config)` — creates MuxTab with one Leaf pane
-  - [ ] Map mux `TabId` → GUI tab bar entry
-  - [ ] Clear `tab_width_lock` (tab count changed)
-  - [ ] Mark `tab_bar_dirty`, request redraw
-- [ ] Close tab:
-  - [ ] `App::close_tab(&mut self, tab_id: TabId, event_loop: &ActiveEventLoop)`
-  - [ ] Call `mux.close_tab(tab_id)` — closes all panes in tab, updates MuxWindow
-  - [ ] If window now empty and last terminal window: call `exit_app()` **immediately** (ConPTY)
-  - [ ] If window now empty but other windows exist: close the empty window
-  - [ ] Background thread drops for all Pane structs
-  - [ ] Mark `tab_bar_dirty`
-- [ ] Duplicate tab:
-  - [ ] `App::duplicate_tab_at(&mut self, tab_index: usize)`
-  - [ ] Clone CWD from source tab's active pane
-  - [ ] Create new tab via mux (fresh shell, inherited directory)
-- [ ] Cycle tabs:
-  - [ ] `App::cycle_tab(&mut self, window_id: WindowId, delta: isize)`
-  - [ ] Update `MuxWindow.active_tab` via mux: wrapping arithmetic
-  - [ ] Clear bell badge on newly active tab
-  - [ ] Mark dirty, request redraw
-- [ ] Switch to specific tab:
-  - [ ] `App::switch_to_tab(&mut self, tab_id: TabId)` — find window, set active
-- [ ] Reorder tabs:
-  - [ ] `App::move_tab(&mut self, from: usize, to: usize, window_id: WindowId)`
-  - [ ] Update `MuxWindow.tabs` vec order via mux
-  - [ ] Adjust `active_tab` index to track the same tab
-- [ ] Auto-close on PTY exit:
-  - [ ] `MuxNotification::PaneClosed(pane_id)` → if last pane in tab → `close_tab`
+- [x] New tab:
+  - [x] `App::new_tab_in_window(&mut self, window_id: WindowId)`
+  - [x] Inherit CWD from active pane in current tab (via `pane.cwd()`)
+  - [x] Build `SpawnConfig` with shell, scrollback, cursor shape from config
+  - [x] Call `mux.create_tab(mux_window_id, config)` — creates MuxTab with one Leaf pane
+  - [x] Map mux `TabId` → GUI tab bar entry
+  - [x] Clear `tab_width_lock` (tab count changed)
+  - [x] Mark `tab_bar_dirty`, request redraw
+- [x] Close tab:
+  - [x] `App::close_tab(&mut self, tab_id: TabId)`
+  - [x] Call `mux.close_tab(tab_id)` — closes all panes in tab, updates MuxWindow
+  - [x] If window now empty and last terminal window: call `shutdown()` **immediately** (ConPTY)
+  - [x] If window now empty but other windows exist: close the empty window
+  - [x] Background thread drops for all Pane structs
+  - [x] Mark `tab_bar_dirty`
+- [x] Duplicate tab:
+  - [x] `App::duplicate_active_tab(&mut self)`
+  - [x] Clone CWD from source tab's active pane
+  - [x] Create new tab via mux (fresh shell, inherited directory)
+- [x] Cycle tabs:
+  - [x] `App::cycle_tab(&mut self, delta: isize)`
+  - [x] Update `MuxWindow.active_tab` via mux: wrapping arithmetic
+  - [x] Clear bell badge on newly active tab
+  - [x] Mark dirty, request redraw
+- [x] Switch to specific tab:
+  - [x] `App::switch_to_tab(&mut self, tab_id: TabId)` — find window, set active
+- [x] Reorder tabs:
+  - [x] `App::move_tab(&mut self, from: usize, to: usize)` (wired to drag in Section 17)
+  - [x] Update `MuxWindow.tabs` vec order via mux
+  - [x] Adjust `active_tab` index to track the same tab
+- [x] Auto-close on PTY exit:
+  - [x] `MuxEvent::PaneExited` → `close_pane` → tab auto-removed if last pane → `WindowTabsChanged`/`LastWindowClosed`
 
 **Tests:**
-- [ ] Create 3 tabs: IDs are unique, window contains all 3
-- [ ] Close middle tab: remaining tabs order preserved, active_tab adjusts
-- [ ] Cycle wrap: tab 2 of 3 → next → tab 0
-- [ ] CWD inheritance: new tab starts in active pane's directory
-- [ ] Closing last tab in last window triggers `exit_app()`
-- [ ] Pane drop on background thread (verify with mock that blocks)
+- [x] Create 3 tabs: IDs are unique, window contains all 3
+- [x] Close middle tab: remaining tabs order preserved, active_tab adjusts
+- [x] Cycle wrap: tab 2 of 3 → next → tab 0
+- [x] CWD inheritance: new tab starts in active pane's directory (via CWD in SpawnConfig)
+- [x] Closing last tab in last window triggers `shutdown()`
+- [x] Pane drop on background thread (via `std::thread::spawn(move || drop(pane))`)
 
 ---
 

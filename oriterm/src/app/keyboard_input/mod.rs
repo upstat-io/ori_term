@@ -314,17 +314,35 @@ impl App {
                 self.execute_pane_action(action);
                 true
             }
+            // Tab management (Section 32.1).
+            Action::NewTab => {
+                if let Some(win_id) = self.active_window {
+                    self.new_tab_in_window(win_id);
+                }
+                true
+            }
+            Action::CloseTab => {
+                self.close_active_tab();
+                true
+            }
+            Action::NextTab => {
+                self.cycle_tab(1);
+                true
+            }
+            Action::PrevTab => {
+                self.cycle_tab(-1);
+                true
+            }
+            Action::DuplicateTab => {
+                self.duplicate_active_tab();
+                true
+            }
             // Actions for future sections — consume the event but log a stub.
-            Action::NewTab
-            | Action::CloseTab
-            | Action::NextTab
-            | Action::PrevTab
-            | Action::ZoomIn
+            Action::ZoomIn
             | Action::ZoomOut
             | Action::ZoomReset
             | Action::PreviousPrompt
             | Action::NextPrompt
-            | Action::DuplicateTab
             | Action::MoveTabToNewWindow => {
                 log::debug!("keybinding action not yet implemented: {action:?}");
                 true

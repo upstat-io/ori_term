@@ -74,13 +74,11 @@ impl TerminalGridWidget {
     }
 
     /// Current grid columns.
-    #[cfg(test)]
     pub(crate) fn cols(&self) -> usize {
         self.cols
     }
 
     /// Current grid rows.
-    #[cfg(test)]
     pub(crate) fn rows(&self) -> usize {
         self.rows
     }

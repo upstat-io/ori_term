@@ -116,6 +116,14 @@ impl InProcessMux {
         &self.session
     }
 
+    /// Mutable access to the session registry.
+    ///
+    /// Used for tab reordering and other mutations that don't warrant
+    /// a dedicated mux method.
+    pub(crate) fn session_mut(&mut self) -> &mut SessionRegistry {
+        &mut self.session
+    }
+
     /// Immutable access to the pane registry.
     #[allow(dead_code, reason = "used when pane registry queries are wired to App")]
     pub(crate) fn pane_registry(&self) -> &oriterm_mux::registry::PaneRegistry {

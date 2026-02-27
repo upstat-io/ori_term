@@ -52,20 +52,32 @@ impl App {
         match hit {
             TabBarHit::None => false,
 
-            TabBarHit::Tab(_idx) => {
-                // Single-tab: no switching needed yet (multi-tab is Section 15).
+            TabBarHit::Tab(idx) => {
+                self.switch_to_tab_index(idx);
                 // DragState::Pending will be added in Section 17.
                 true
             }
 
-            TabBarHit::CloseTab(_idx) => {
-                // Single-tab: close the window. Multi-tab close (with width
-                // lock for stable close-button targeting) is Section 15.
-                self.shutdown(0);
+            TabBarHit::CloseTab(idx) => {
+                // Acquire width lock for stable close-button targeting
+                // during rapid close clicks.
+                if let Some(tab_bar) = &self.tab_bar {
+                    let w = tab_bar.layout().tab_width;
+                    self.acquire_tab_width_lock(w);
+                }
+                self.close_tab_at_index(idx);
+                true
             }
 
-            // New tab (Section 15) and dropdown menu (Section 21): no-op for now.
-            TabBarHit::NewTab | TabBarHit::Dropdown => true,
+            TabBarHit::NewTab => {
+                if let Some(win_id) = self.active_window {
+                    self.new_tab_in_window(win_id);
+                }
+                true
+            }
+
+            // Dropdown menu (Section 21): no-op for now.
+            TabBarHit::Dropdown => true,
 
             TabBarHit::Minimize => {
                 let action = oriterm_ui::widgets::WidgetAction::WindowMinimize;

@@ -24,6 +24,7 @@ mod pane_ops;
 mod redraw;
 mod search_ui;
 mod tab_bar_input;
+mod tab_management;
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -343,46 +344,6 @@ impl App {
         if let Some(tab_bar) = &mut self.tab_bar {
             tab_bar.set_tab_width_lock(Some(width));
         }
-    }
-
-    /// Sync tab bar widget titles from the current tab state.
-    ///
-    /// Appends ` [Z]` when the active tab is zoomed.
-    fn sync_tab_bar_titles(&mut self) {
-        let title = self
-            .active_pane()
-            .map(|p| p.title().to_owned())
-            .unwrap_or_default();
-        let is_zoomed = self.is_active_tab_zoomed();
-        let display = if is_zoomed {
-            format!("{title} [Z]")
-        } else {
-            title
-        };
-        if let Some(tab_bar) = &mut self.tab_bar {
-            tab_bar.update_tab_title(0, display);
-        }
-        self.dirty = true;
-    }
-
-    /// Whether the active tab's focused pane is zoomed.
-    fn is_active_tab_zoomed(&self) -> bool {
-        let Some(mux) = self.mux.as_ref() else {
-            return false;
-        };
-        let Some(win_id) = self.active_window else {
-            return false;
-        };
-        let Some(win) = mux.session().get_window(win_id) else {
-            return false;
-        };
-        let Some(tab_id) = win.active_tab() else {
-            return false;
-        };
-        let Some(tab) = mux.session().get_tab(tab_id) else {
-            return false;
-        };
-        tab.zoomed_pane().is_some()
     }
 
     /// Release the tab width lock, allowing tabs to recompute widths.

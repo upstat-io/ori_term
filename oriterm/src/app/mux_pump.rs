@@ -74,7 +74,7 @@ impl App {
                     self.dirty = true;
                 }
                 MuxNotification::WindowTabsChanged(_) => {
-                    self.sync_tab_bar_titles();
+                    self.sync_tab_bar_from_mux();
                     self.dirty = true;
                 }
                 MuxNotification::Alert(id) => {
