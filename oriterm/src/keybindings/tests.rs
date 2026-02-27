@@ -609,3 +609,71 @@ fn close_pane_default_binding() {
         Some(&Action::ClosePane),
     );
 }
+
+#[test]
+fn resize_pane_arrow_defaults() {
+    let bindings = default_bindings();
+    let mods = Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Named(NamedKey::ArrowUp), mods),
+        Some(&Action::ResizePaneUp),
+    );
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Named(NamedKey::ArrowDown), mods),
+        Some(&Action::ResizePaneDown),
+    );
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Named(NamedKey::ArrowLeft), mods),
+        Some(&Action::ResizePaneLeft),
+    );
+    assert_eq!(
+        find_binding(&bindings, &BindingKey::Named(NamedKey::ArrowRight), mods),
+        Some(&Action::ResizePaneRight),
+    );
+}
+
+#[test]
+fn equalize_panes_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("=".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::EqualizePanes),
+    );
+}
+
+#[test]
+fn resize_actions_roundtrip_through_parse() {
+    let resize_actions = [
+        Action::ResizePaneUp,
+        Action::ResizePaneDown,
+        Action::ResizePaneLeft,
+        Action::ResizePaneRight,
+        Action::EqualizePanes,
+    ];
+    for action in &resize_actions {
+        let s = action.as_str();
+        let parsed = parse_action(s);
+        assert_eq!(parsed.as_ref(), Some(action), "roundtrip failed for {s:?}",);
+    }
+}
+
+#[test]
+fn resize_bindings_no_collision_with_focus_bindings() {
+    // Resize uses Ctrl+Alt+Shift+Arrow, focus uses Ctrl+Alt+Arrow.
+    // They must not collide.
+    let bindings = default_bindings();
+    let focus_mods = Modifiers::CONTROL | Modifiers::ALT;
+    let resize_mods = Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT;
+
+    let up_key = BindingKey::Named(NamedKey::ArrowUp);
+    assert_eq!(
+        find_binding(&bindings, &up_key, focus_mods),
+        Some(&Action::FocusPaneUp),
+    );
+    assert_eq!(
+        find_binding(&bindings, &up_key, resize_mods),
+        Some(&Action::ResizePaneUp),
+    );
+}

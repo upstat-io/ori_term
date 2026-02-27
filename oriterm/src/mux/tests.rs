@@ -1793,6 +1793,284 @@ fn drain_double_buffer_no_cross_cycle_accumulation() {
     );
 }
 
+// -- set_divider_ratio --
+
+#[test]
+fn set_divider_ratio_simple_split() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+
+    mux.set_divider_ratio(tid, p1, p2, 0.7);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid)),
+        "should emit TabLayoutChanged",
+    );
+
+    // Verify the tree was updated.
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.7).abs() < f32::EPSILON,
+            "ratio should be 0.7, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn set_divider_ratio_clamps_extreme_values() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+
+    mux.set_divider_ratio(tid, p1, p2, 0.0);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.1).abs() < f32::EPSILON,
+            "ratio should be clamped to 0.1, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn set_divider_ratio_nonexistent_panes_is_noop() {
+    let (mut mux, _wid, tid, _p1, _p2) = two_pane_setup();
+    drain(&mut mux);
+
+    let bogus_a = PaneId::from_raw(999);
+    let bogus_b = PaneId::from_raw(998);
+    mux.set_divider_ratio(tid, bogus_a, bogus_b, 0.7);
+
+    // Tree should be unchanged (still 0.5).
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.5).abs() < f32::EPSILON,
+            "ratio should stay 0.5, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn set_divider_ratio_nonexistent_tab_is_noop() {
+    let (mut mux, _wid, _tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    let bad_tab = TabId::from_raw(999);
+    mux.set_divider_ratio(bad_tab, p1, p2, 0.7);
+
+    let notifs = drain(&mut mux);
+    assert!(notifs.is_empty(), "no notifications for nonexistent tab");
+}
+
+// -- resize_pane --
+
+#[test]
+fn resize_pane_grows_first_child() {
+    let (mut mux, _wid, tid, p1, _p2) = two_pane_setup();
+    drain(&mut mux);
+
+    mux.resize_pane(tid, p1, SplitDirection::Vertical, true, 0.1);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid)),
+        "should emit TabLayoutChanged",
+    );
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.6).abs() < f32::EPSILON,
+            "ratio should be 0.6, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn resize_pane_shrinks_via_second_child() {
+    let (mut mux, _wid, tid, _p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // p2 is in second child; pane_in_first=false, delta=-0.1 → ratio drops.
+    mux.resize_pane(tid, p2, SplitDirection::Vertical, false, -0.1);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.4).abs() < f32::EPSILON,
+            "ratio should be 0.4, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn resize_pane_single_pane_is_noop() {
+    let (mut mux, _wid, tid, pid) = one_pane_setup();
+    drain(&mut mux);
+
+    mux.resize_pane(tid, pid, SplitDirection::Vertical, true, 0.1);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "no notifications when resize is a noop (single pane)"
+    );
+}
+
+#[test]
+fn resize_pane_wrong_axis_is_noop() {
+    let (mut mux, _wid, tid, p1, _p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // Split is Vertical, try resizing on Horizontal axis.
+    mux.resize_pane(tid, p1, SplitDirection::Horizontal, true, 0.1);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "no notifications when axis doesn't match"
+    );
+
+    // Ratio unchanged.
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!((*ratio - 0.5).abs() < f32::EPSILON);
+    }
+}
+
+#[test]
+fn resize_pane_no_notification_when_tree_unchanged() {
+    let (mut mux, _wid, tid, _p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // p2 is in second child; pane_in_first=true doesn't match → noop.
+    mux.resize_pane(tid, p2, SplitDirection::Vertical, true, 0.1);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "resize_pane should suppress notification when tree is unchanged"
+    );
+}
+
+// -- equalize_panes --
+
+#[test]
+fn equalize_panes_resets_ratio() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+
+    // Skew the ratio first.
+    mux.set_divider_ratio(tid, p1, p2, 0.8);
+    drain(&mut mux);
+
+    mux.equalize_panes(tid);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.5).abs() < f32::EPSILON,
+            "ratio should be reset to 0.5, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid)),
+        "should emit TabLayoutChanged",
+    );
+}
+
+#[test]
+fn equalize_panes_single_pane_emits_notification() {
+    // Equalize doesn't short-circuit on single pane — it still sets the tree
+    // and emits a notification (harmless redundancy, simpler code).
+    let (mut mux, _wid, tid, _pid) = one_pane_setup();
+    drain(&mut mux);
+
+    mux.equalize_panes(tid);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid)),
+        "equalize always emits TabLayoutChanged",
+    );
+}
+
+#[test]
+fn equalize_panes_asymmetric_nesting() {
+    // Build: p1 | (p2 / p3) with skewed ratios.
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    let p3 = PaneId::from_raw(102);
+    let did = mux.default_domain();
+
+    // Split p2 horizontally.
+    let tab = mux.session.get_tab_mut(tid).unwrap();
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.3);
+    tab.set_tree(tree);
+    mux.pane_registry.register(PaneEntry {
+        pane: p3,
+        tab: tid,
+        domain: did,
+    });
+
+    // Skew the outer split.
+    mux.set_divider_ratio(tid, p1, p2, 0.8);
+    drain(&mut mux);
+
+    mux.equalize_panes(tid);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    // Outer split should be 0.5.
+    if let oriterm_mux::layout::SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.5).abs() < f32::EPSILON,
+            "outer ratio should be 0.5, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+    // Inner split should also be 0.5.
+    let inner_split = tab.tree().parent_split(p2);
+    assert_eq!(
+        inner_split,
+        Some((SplitDirection::Horizontal, 0.5)),
+        "inner ratio should be equalized to 0.5"
+    );
+}
+
+#[test]
+fn equalize_panes_nonexistent_tab_is_noop() {
+    let (mut mux, _wid, _tid, _p1, _p2) = two_pane_setup();
+    drain(&mut mux);
+
+    let bad_tab = TabId::from_raw(999);
+    mux.equalize_panes(bad_tab);
+
+    let notifs = drain(&mut mux);
+    assert!(notifs.is_empty(), "no notifications for nonexistent tab");
+}
+
 // -- Low priority: PaneClosed notification for removed pane --
 
 #[test]

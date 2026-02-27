@@ -544,6 +544,114 @@ fn floating_pane_below_minimum_is_clamped() {
 }
 
 #[test]
+fn resize_after_set_divider_ratio_shifts_divider() {
+    let desc = standard_desc();
+    let floating = FloatingLayer::new();
+
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let before_dividers = compute_dividers(&tree, &desc);
+    let div_x_before = before_dividers[0].rect.x;
+
+    // Resize to 70/30.
+    let tree = tree.set_divider_ratio(p(1), p(2), 0.7);
+    let after_dividers = compute_dividers(&tree, &desc);
+    let div_x_after = after_dividers[0].rect.x;
+
+    // Divider should have moved right.
+    assert!(
+        div_x_after > div_x_before,
+        "divider should shift right: before={div_x_before}, after={div_x_after}",
+    );
+
+    // Pane layouts should be consistent with divider position.
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    let l1 = layouts.iter().find(|l| l.pane_id == p(1)).unwrap();
+    let l2 = layouts.iter().find(|l| l.pane_id == p(2)).unwrap();
+
+    // Pane 1's right edge should be at or before the divider.
+    assert!(l1.pixel_rect.x + l1.pixel_rect.width <= div_x_after + 1.0);
+    // Pane 2's left edge should be at or after the divider's right edge.
+    assert!(l2.pixel_rect.x >= div_x_after + desc.divider_px - 1.0);
+}
+
+#[test]
+fn divider_position_after_horizontal_resize() {
+    let desc = standard_desc();
+
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Horizontal, p(2), 0.5);
+
+    let before = compute_dividers(&tree, &desc);
+    let div_y_before = before[0].rect.y;
+
+    let tree = tree.set_divider_ratio(p(1), p(2), 0.3);
+    let after = compute_dividers(&tree, &desc);
+    let div_y_after = after[0].rect.y;
+
+    // Shrinking first child moves divider up.
+    assert!(
+        div_y_after < div_y_before,
+        "divider should shift up: before={div_y_before}, after={div_y_after}",
+    );
+}
+
+#[test]
+fn panes_dont_overlap_after_resize() {
+    let desc = standard_desc();
+    let floating = FloatingLayer::new();
+
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.set_divider_ratio(p(1), p(2), 0.8);
+
+    let layouts = compute_layout(&tree, &floating, p(1), &desc);
+    let l1 = layouts.iter().find(|l| l.pane_id == p(1)).unwrap();
+    let l2 = layouts.iter().find(|l| l.pane_id == p(2)).unwrap();
+
+    // Pane 1's right edge + divider should not exceed pane 2's left edge.
+    let gap = l2.pixel_rect.x - (l1.pixel_rect.x + l1.pixel_rect.width);
+    assert!(
+        gap >= desc.divider_px - 1.0,
+        "panes overlap or divider missing: gap={gap}, expected >= {}",
+        desc.divider_px,
+    );
+}
+
+#[test]
+fn resize_toward_updates_layout_correctly() {
+    let desc = standard_desc();
+    let floating = FloatingLayer::new();
+
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let before = compute_layout(&tree, &floating, p(1), &desc);
+    let w1_before = before
+        .iter()
+        .find(|l| l.pane_id == p(1))
+        .unwrap()
+        .pixel_rect
+        .width;
+
+    // Resize p1 rightward (grow first child).
+    let tree = tree.resize_toward(p(1), SplitDirection::Vertical, true, 0.1);
+    let after = compute_layout(&tree, &floating, p(1), &desc);
+    let w1_after = after
+        .iter()
+        .find(|l| l.pane_id == p(1))
+        .unwrap()
+        .pixel_rect
+        .width;
+
+    assert!(
+        w1_after > w1_before,
+        "p1 should be wider after resize_toward: before={w1_before}, after={w1_after}",
+    );
+}
+
+#[test]
 fn floating_pane_above_minimum_is_unchanged() {
     let desc = standard_desc();
     let tree = SplitTree::Leaf(p(1));

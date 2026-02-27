@@ -531,6 +531,96 @@ fn navigate_with_no_vertical_overlap() {
     assert_eq!(navigate(&layouts, p(1), Direction::Down), Some(p(2)));
 }
 
+// ── 5-pane asymmetric layout (Ghostty-style) ─────────────────────
+
+/// Complex 5-pane layout:
+/// ```text
+///   p1 (0,0,400,400)    | p2 (400,0,600,200)
+///                        | p3 (400,200,300,200) | p4 (700,200,300,200)
+///   p5 (0,400,1000,400) — full width bottom
+/// ```
+fn asymmetric_5_pane() -> Vec<PaneLayout> {
+    vec![
+        tiled(1, 0.0, 0.0, 400.0, 400.0),
+        tiled(2, 400.0, 0.0, 600.0, 200.0),
+        tiled(3, 400.0, 200.0, 300.0, 200.0),
+        tiled(4, 700.0, 200.0, 300.0, 200.0),
+        tiled(5, 0.0, 400.0, 1000.0, 400.0),
+    ]
+}
+
+#[test]
+fn navigate_5_pane_right_from_p1() {
+    let layouts = asymmetric_5_pane();
+    // p1 center (200,200). To the right: p2 (700,100), p3 (550,300), p4 (850,300).
+    // p3 has primary_dist=350 + perp=100*0.5=50 → 400.
+    // p2 has primary_dist=500 + perp=100*0.5=50 → 550.
+    // p4 has primary_dist=650 + perp=100*0.5=50 → 700.
+    // p3 wins (nearest to the right).
+    let result = navigate(&layouts, p(1), Direction::Right);
+    assert_eq!(result, Some(p(3)));
+}
+
+#[test]
+fn navigate_5_pane_down_from_p4() {
+    let layouts = asymmetric_5_pane();
+    // p4 center (850,300). Below: p5 center (500,600).
+    assert_eq!(navigate(&layouts, p(4), Direction::Down), Some(p(5)));
+}
+
+#[test]
+fn navigate_5_pane_up_from_p5() {
+    let layouts = asymmetric_5_pane();
+    // p5 center (500,600). Above: p1 (200,200), p2 (700,100), p3 (550,300), p4 (850,300).
+    // p3: primary=300 + perp=50*0.5=25 → 325.
+    // p4: primary=300 + perp=350*0.5=175 → 475.
+    // p1: primary=400 + perp=300*0.5=150 → 550.
+    // p2: primary=500 + perp=200*0.5=100 → 600.
+    // p3 wins.
+    assert_eq!(navigate(&layouts, p(5), Direction::Up), Some(p(3)));
+}
+
+#[test]
+fn navigate_5_pane_left_from_p4() {
+    let layouts = asymmetric_5_pane();
+    // p4 center (850,300). To the left: p1 (200,200), p2 (700,100), p3 (550,300).
+    // p2: primary=150, perp=200*0.5=100 → 250.
+    // p3: primary=300, perp=0 → 300.
+    // p1: primary=650, perp=100*0.5=50 → 700.
+    // p2 wins (closest score).
+    assert_eq!(navigate(&layouts, p(4), Direction::Left), Some(p(2)));
+}
+
+#[test]
+fn navigate_5_pane_edge_cases() {
+    let layouts = asymmetric_5_pane();
+    // p1 has nothing to the left.
+    assert_eq!(navigate(&layouts, p(1), Direction::Left), None);
+    // p1 center (200,200); p2 center (700,100) is above → p2 is reachable.
+    assert_eq!(navigate(&layouts, p(1), Direction::Up), Some(p(2)));
+    // p5 has nothing below.
+    assert_eq!(navigate(&layouts, p(5), Direction::Down), None);
+    // p2 center (700,100); nothing above it in the layout.
+    assert_eq!(navigate(&layouts, p(2), Direction::Up), None);
+}
+
+#[test]
+fn cycle_5_pane_visits_all_in_order() {
+    let layouts = asymmetric_5_pane();
+    assert_eq!(cycle(&layouts, p(1), true), Some(p(2)));
+    assert_eq!(cycle(&layouts, p(2), true), Some(p(3)));
+    assert_eq!(cycle(&layouts, p(3), true), Some(p(4)));
+    assert_eq!(cycle(&layouts, p(4), true), Some(p(5)));
+    assert_eq!(cycle(&layouts, p(5), true), Some(p(1)));
+}
+
+#[test]
+fn cycle_5_pane_backward_wraps() {
+    let layouts = asymmetric_5_pane();
+    assert_eq!(cycle(&layouts, p(1), false), Some(p(5)));
+    assert_eq!(cycle(&layouts, p(5), false), Some(p(4)));
+}
+
 // ── Degenerate geometry ─────────────────────────────────────────
 
 #[test]
