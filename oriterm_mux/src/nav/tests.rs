@@ -437,3 +437,146 @@ fn cycle_with_floating_panes_visits_all() {
     assert_eq!(cycle(&layouts, p(1), false), Some(p(10)));
     assert_eq!(cycle(&layouts, p(10), false), Some(p(2)));
 }
+
+// ── Navigate: single pane ────────────────────────────────────────
+
+#[test]
+fn navigate_single_pane_returns_none_all_directions() {
+    let layouts = vec![tiled(1, 0.0, 0.0, 1000.0, 800.0)];
+    assert_eq!(navigate(&layouts, p(1), Direction::Up), None);
+    assert_eq!(navigate(&layouts, p(1), Direction::Down), None);
+    assert_eq!(navigate(&layouts, p(1), Direction::Left), None);
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), None);
+}
+
+// ── Navigate: floating → tiled ──────────────────────────────────
+
+#[test]
+fn navigate_from_floating_to_tiled() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 500.0, 800.0),
+        tiled(2, 500.0, 0.0, 500.0, 800.0),
+        floating(10, 200.0, 200.0, 200.0, 200.0),
+    ];
+    // Floating p10 center (300,300). Navigate right → p2 center (750,400).
+    assert_eq!(navigate(&layouts, p(10), Direction::Right), Some(p(2)));
+    // Navigate left → p1 center (250,400). p1's center.x < p10's center.x.
+    assert_eq!(navigate(&layouts, p(10), Direction::Left), Some(p(1)));
+}
+
+#[test]
+fn navigate_from_floating_to_floating() {
+    // Two floating panes side-by-side with no tiled pane between them.
+    let layouts = vec![
+        floating(10, 100.0, 100.0, 200.0, 200.0),
+        floating(11, 600.0, 100.0, 200.0, 200.0),
+    ];
+    // p10 center (200,200), p11 center (700,200). Navigate right from p10.
+    assert_eq!(navigate(&layouts, p(10), Direction::Right), Some(p(11)));
+    assert_eq!(navigate(&layouts, p(11), Direction::Left), Some(p(10)));
+}
+
+// ── Multiple overlapping floating panes (z-order) ───────────────
+
+#[test]
+fn nearest_pane_prefers_topmost_floating_in_overlap() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 1000.0, 800.0),
+        floating(10, 100.0, 100.0, 300.0, 300.0),
+        floating(11, 150.0, 150.0, 300.0, 300.0), // later = higher z
+    ];
+    // Click in overlap region of both floats — p11 (higher z) should win.
+    assert_eq!(nearest_pane(&layouts, 250.0, 250.0), Some(p(11)));
+}
+
+#[test]
+fn nearest_pane_falls_through_to_lower_float() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 1000.0, 800.0),
+        floating(10, 100.0, 100.0, 300.0, 300.0),
+        floating(11, 500.0, 500.0, 200.0, 200.0),
+    ];
+    // Click in p10 only (not in p11 region) — p10 should win.
+    assert_eq!(nearest_pane(&layouts, 200.0, 200.0), Some(p(10)));
+}
+
+// ── Partial overlap edge adjacency ──────────────────────────────
+
+#[test]
+fn navigate_with_partial_vertical_overlap() {
+    // Pane 2 only partially overlaps with pane 1's vertical range.
+    // p1: (0,0, 500, 400), p2: (500, 200, 500, 400)
+    // p2 starts at y=200, so only overlaps bottom half of p1's height.
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 500.0, 400.0),
+        tiled(2, 500.0, 200.0, 500.0, 400.0),
+    ];
+    // p1 center (250,200), p2 center (750,400). Navigate right: p2 is to the right.
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), Some(p(2)));
+    assert_eq!(navigate(&layouts, p(2), Direction::Left), Some(p(1)));
+}
+
+#[test]
+fn navigate_with_no_vertical_overlap() {
+    // Pane 2 is to the right but completely below pane 1's vertical range.
+    // Still reachable via centroid navigation.
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 500.0, 200.0),
+        tiled(2, 500.0, 400.0, 500.0, 200.0),
+    ];
+    // p1 center (250,100), p2 center (750,500).
+    // Navigate right from p1: p2's center.x > p1's center.x → reachable.
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), Some(p(2)));
+    // Navigate down from p1: p2's center.y > p1's center.y → reachable.
+    assert_eq!(navigate(&layouts, p(1), Direction::Down), Some(p(2)));
+}
+
+// ── Degenerate geometry ─────────────────────────────────────────
+
+#[test]
+fn navigate_with_zero_width_pane_does_not_panic() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 500.0, 400.0),
+        tiled(2, 500.0, 0.0, 0.0, 400.0), // zero-width (transient during resize)
+    ];
+    // Should not panic. p2's center is (500, 200). p1's center is (250, 200).
+    // Navigate right from p1: p2's center.x > p1's center.x → reachable.
+    let _ = navigate(&layouts, p(1), Direction::Right);
+    let _ = navigate(&layouts, p(2), Direction::Left);
+}
+
+#[test]
+fn navigate_with_zero_height_pane_does_not_panic() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 500.0, 400.0),
+        tiled(2, 0.0, 400.0, 500.0, 0.0), // zero-height
+    ];
+    let _ = navigate(&layouts, p(1), Direction::Down);
+    let _ = navigate(&layouts, p(2), Direction::Up);
+}
+
+#[test]
+fn nearest_pane_with_zero_size_pane_does_not_panic() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 500.0, 400.0),
+        tiled(2, 500.0, 0.0, 0.0, 0.0),
+    ];
+    // Click in p1's area — should find p1.
+    assert_eq!(nearest_pane(&layouts, 250.0, 200.0), Some(p(1)));
+    // Click at p2's origin — zero-size pane contains nothing.
+    assert_eq!(nearest_pane(&layouts, 500.0, 0.0), None);
+}
+
+// ── nearest_pane: floating-only layouts ─────────────────────────
+
+#[test]
+fn nearest_pane_with_only_floating_panes() {
+    let layouts = vec![
+        floating(10, 100.0, 100.0, 200.0, 200.0),
+        floating(11, 500.0, 500.0, 200.0, 200.0),
+    ];
+    assert_eq!(nearest_pane(&layouts, 200.0, 200.0), Some(p(10)));
+    assert_eq!(nearest_pane(&layouts, 600.0, 600.0), Some(p(11)));
+    // Outside all floats.
+    assert_eq!(nearest_pane(&layouts, 0.0, 0.0), None);
+}

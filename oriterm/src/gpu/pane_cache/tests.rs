@@ -226,3 +226,118 @@ fn selective_dirty_only_reprepares_dirty_pane() {
     assert!(!called2, "clean pane 2 should use cache");
     assert_eq!(frame2.backgrounds.len(), 1, "pane 2 cached frame untouched");
 }
+
+// ── is_cached ────────────────────────────────────────────────────
+
+#[test]
+fn is_cached_true_after_prepare() {
+    let mut cache = PaneRenderCache::new();
+    let id = PaneId::from_raw(1);
+    let layout = make_layout(id, 0.0, 0.0, 640.0, 480.0);
+
+    assert!(!cache.is_cached(id, &layout), "empty cache");
+
+    cache.get_or_prepare(id, &layout, true, |f| push_marker(f, 1.0));
+    assert!(cache.is_cached(id, &layout));
+}
+
+#[test]
+fn is_cached_false_after_remove() {
+    let mut cache = PaneRenderCache::new();
+    let id = PaneId::from_raw(1);
+    let layout = make_layout(id, 0.0, 0.0, 640.0, 480.0);
+
+    cache.get_or_prepare(id, &layout, true, |f| push_marker(f, 1.0));
+    cache.remove(id);
+    assert!(!cache.is_cached(id, &layout));
+}
+
+#[test]
+fn is_cached_false_after_invalidate_all() {
+    let mut cache = PaneRenderCache::new();
+    let id = PaneId::from_raw(1);
+    let layout = make_layout(id, 0.0, 0.0, 640.0, 480.0);
+
+    cache.get_or_prepare(id, &layout, true, |f| push_marker(f, 1.0));
+    cache.invalidate_all();
+    assert!(!cache.is_cached(id, &layout));
+}
+
+#[test]
+fn is_cached_false_when_layout_mismatches() {
+    let mut cache = PaneRenderCache::new();
+    let id = PaneId::from_raw(1);
+    let layout_a = make_layout(id, 0.0, 0.0, 640.0, 480.0);
+    let layout_b = make_layout(id, 0.0, 0.0, 800.0, 600.0);
+
+    cache.get_or_prepare(id, &layout_a, true, |f| push_marker(f, 1.0));
+    assert!(cache.is_cached(id, &layout_a));
+    assert!(
+        !cache.is_cached(id, &layout_b),
+        "different layout should miss"
+    );
+}
+
+// ── get_cached ───────────────────────────────────────────────────
+
+#[test]
+fn get_cached_returns_some_after_prepare() {
+    let mut cache = PaneRenderCache::new();
+    let id = PaneId::from_raw(1);
+    let layout = make_layout(id, 0.0, 0.0, 640.0, 480.0);
+
+    cache.get_or_prepare(id, &layout, true, |f| push_marker(f, 1.0));
+    let cached = cache.get_cached(id);
+    assert!(cached.is_some());
+    assert_eq!(cached.unwrap().backgrounds.len(), 1);
+}
+
+#[test]
+fn get_cached_returns_none_for_unknown_pane() {
+    let cache = PaneRenderCache::new();
+    assert!(cache.get_cached(PaneId::from_raw(99)).is_none());
+}
+
+#[test]
+fn get_cached_returns_none_after_remove() {
+    let mut cache = PaneRenderCache::new();
+    let id = PaneId::from_raw(1);
+    let layout = make_layout(id, 0.0, 0.0, 640.0, 480.0);
+
+    cache.get_or_prepare(id, &layout, true, |f| push_marker(f, 1.0));
+    cache.remove(id);
+    assert!(cache.get_cached(id).is_none());
+}
+
+// ── invalidate (single pane) ────────────────────────────────────
+
+#[test]
+fn invalidate_single_pane_triggers_reprepare() {
+    let mut cache = PaneRenderCache::new();
+    let id1 = PaneId::from_raw(1);
+    let id2 = PaneId::from_raw(2);
+    let layout1 = make_layout(id1, 0.0, 0.0, 640.0, 480.0);
+    let layout2 = make_layout(id2, 640.0, 0.0, 640.0, 480.0);
+
+    // Seed both panes.
+    cache.get_or_prepare(id1, &layout1, true, |f| push_marker(f, 1.0));
+    cache.get_or_prepare(id2, &layout2, true, |f| push_marker(f, 2.0));
+
+    // Invalidate only pane 1.
+    cache.invalidate(id1);
+
+    // Pane 1 should re-prepare.
+    let mut called1 = false;
+    cache.get_or_prepare(id1, &layout1, false, |f| {
+        called1 = true;
+        push_marker(f, 10.0);
+    });
+    assert!(called1, "invalidated pane should re-prepare");
+
+    // Pane 2 should still be cached.
+    let mut called2 = false;
+    cache.get_or_prepare(id2, &layout2, false, |_f| {
+        called2 = true;
+    });
+    assert!(!called2, "non-invalidated pane should use cache");
+}
