@@ -3189,3 +3189,564 @@ fn integration_undo_triple_split_restores_original() {
     // No more undo entries.
     assert!(!mux.undo_split(tid, &live));
 }
+
+// -- High priority: undo/redo interaction with floating pane transitions --
+
+#[test]
+fn undo_move_to_floating_restores_tiled_layout() {
+    // move_pane_to_floating modifies the split tree via set_tree, which
+    // pushes to the undo stack. Undoing should restore the original tree.
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    let available = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+    };
+
+    // Float p2 — tree changes from Split(p1,p2) to Leaf(p1).
+    assert!(mux.move_pane_to_floating(tid, p2, &available));
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().panes(), vec![p1]);
+    assert!(tab.is_floating(p2));
+    drain(&mut mux);
+
+    // Undo — tree should restore to Split(p1,p2).
+    let live: std::collections::HashSet<_> = [p1, p2].into_iter().collect();
+    assert!(mux.undo_split(tid, &live));
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().panes().len(), 2);
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p2));
+}
+
+#[test]
+fn undo_move_to_tiled_restores_tree_before_tiling() {
+    // move_pane_to_tiled modifies the split tree (splits next to anchor),
+    // pushing to the undo stack. Undoing should restore the tree before tiling.
+    let (mut mux, _wid, tid, p1, p2) = one_pane_with_floating();
+    drain(&mut mux);
+
+    // Move floating pane to tiled — tree changes from Leaf(p1) to Split(p1,p2).
+    assert!(mux.move_pane_to_tiled(tid, p2));
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().panes().len(), 2);
+    drain(&mut mux);
+
+    // Undo — tree should revert to Leaf(p1).
+    let live: std::collections::HashSet<_> = [p1, p2].into_iter().collect();
+    assert!(mux.undo_split(tid, &live));
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().panes(), vec![p1]);
+}
+
+// -- High priority: active pane consistency through multi-step cascade --
+
+#[test]
+fn active_pane_stable_through_non_active_close_cascade() {
+    // 3-pane tree with p3 active. Close p1 (not active, not first_pane after
+    // removal). Active pane should stay p3 through the entire cascade.
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+    tab.set_active_pane(p3);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2, p3] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    // Close p1 — p3 is active and should remain active.
+    let result = mux.close_pane(p1);
+    assert_eq!(result, ClosePaneResult::PaneRemoved);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(
+        tab.active_pane(),
+        p3,
+        "active pane should remain p3 after closing non-active p1"
+    );
+    assert_eq!(tab.all_panes().len(), 2);
+
+    // Close p2 — p3 is still active.
+    let result = mux.close_pane(p2);
+    assert_eq!(result, ClosePaneResult::PaneRemoved);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(
+        tab.active_pane(),
+        p3,
+        "active pane should remain p3 after closing non-active p2"
+    );
+    assert_eq!(tab.all_panes().len(), 1);
+}
+
+// -- High priority: equalize after asymmetric pane removal --
+
+#[test]
+fn equalize_after_asymmetric_removal_balances_tree() {
+    // [p1 (0.3) | [p2 (0.4) / p3]]. Close p2, leaving [p1 (0.3) | p3].
+    // Equalize should reset to 0.5.
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.3);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.4);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2, p3] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    // Close p2 — tree collapses to [p1 | p3] with the outer ratio (0.3).
+    mux.close_pane(p2);
+    drain(&mut mux);
+
+    // The remaining split should have the skewed ratio.
+    let tab = mux.session().get_tab(tid).unwrap();
+    let (_, ratio) = tab.tree().parent_split(p1).unwrap();
+    assert!(
+        (ratio - 0.3).abs() < f32::EPSILON,
+        "ratio should be 0.3 before equalize, got {ratio}"
+    );
+
+    // Equalize — should reset to 0.5.
+    mux.equalize_panes(tid);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    let (_, ratio) = tab.tree().parent_split(p1).unwrap();
+    assert!(
+        (ratio - 0.5).abs() < f32::EPSILON,
+        "ratio should be 0.5 after equalize, got {ratio}"
+    );
+}
+
+// -- High priority: zoom + close sibling + unzoom chain --
+
+#[test]
+fn zoom_close_sibling_unzoom_chain() {
+    // 3-pane tree: p1, p2, p3. Zoom p1, close p2 (sibling), unzoom.
+    // Verify tree is valid and active pane is correct.
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2, p3] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    // Zoom p1.
+    mux.set_active_pane(tid, p1);
+    mux.toggle_zoom(tid);
+    assert_eq!(mux.session().get_tab(tid).unwrap().zoomed_pane(), Some(p1));
+    drain(&mut mux);
+
+    // Close p2 (a non-zoomed sibling). Zoom should still be set on p1
+    // because we didn't close the zoomed pane.
+    mux.close_pane(p2);
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(
+        tab.zoomed_pane(),
+        Some(p1),
+        "zoom should persist after closing non-zoomed sibling"
+    );
+    assert_eq!(tab.all_panes().len(), 2);
+    drain(&mut mux);
+
+    // Unzoom.
+    mux.unzoom(tid);
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.zoomed_pane(), None);
+    assert_eq!(tab.active_pane(), p1);
+
+    // Tree should still be valid with p1 and p3.
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p3));
+    assert_eq!(tab.all_panes().len(), 2);
+}
+
+// -- Medium priority: resize divider with floating panes present --
+
+#[test]
+fn resize_divider_with_floating_panes_present() {
+    // One tiled split + one floating pane. Resizing the tiled divider
+    // should update the tiled tree without affecting the floating layer.
+    let (mut mux, _wid, tid, p1, p2) = one_pane_with_floating();
+    // p1 is tiled, p2 is floating. We need a tiled split, so add p3 tiled.
+    let p3 = PaneId::from_raw(300);
+    let did = mux.default_domain();
+
+    mux.pane_registry.register(PaneEntry {
+        pane: p3,
+        tab: tid,
+        domain: did,
+    });
+    {
+        let tab = mux.session.get_tab_mut(tid).unwrap();
+        let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p3, 0.5);
+        tab.set_tree(tree);
+    }
+    drain(&mut mux);
+
+    // Resize the tiled divider between p1 and p3.
+    mux.set_divider_ratio(tid, p1, p3, 0.7);
+
+    // Verify tiled tree updated.
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.7).abs() < f32::EPSILON,
+            "ratio should be 0.7, got {ratio}"
+        );
+    } else {
+        panic!("expected Split");
+    }
+
+    // Floating layer should be untouched.
+    assert!(
+        tab.is_floating(p2),
+        "floating pane should still be in floating layer"
+    );
+    assert_eq!(tab.floating().panes().len(), 1);
+
+    // Notification should be TabLayoutChanged (not FloatingPaneChanged).
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid))
+    );
+}
+
+// -- Medium priority: move_pane_to_tiled on already-tiled pane --
+
+#[test]
+fn move_pane_to_tiled_on_tiled_pane_is_noop() {
+    let (mut mux, _wid, tid, p1, _p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // p1 is tiled, not floating. move_pane_to_tiled should return false.
+    let moved = mux.move_pane_to_tiled(tid, p1);
+    assert!(
+        !moved,
+        "move_pane_to_tiled on a tiled pane should be a no-op"
+    );
+
+    // Tree should be unchanged.
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().panes().len(), 2);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "no notifications when move_pane_to_tiled is a no-op"
+    );
+}
+
+// -- Medium priority: move_pane_to_floating on already-floating pane --
+
+#[test]
+fn move_pane_to_floating_on_floating_pane_is_noop() {
+    let (mut mux, _wid, tid, _p1, p2) = one_pane_with_floating();
+    drain(&mut mux);
+
+    let available = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+    };
+
+    // p2 is already floating. Trying to float it again should fail because
+    // it's not in the split tree (tree.remove returns None → false).
+    let moved = mux.move_pane_to_floating(tid, p2, &available);
+    assert!(
+        !moved,
+        "move_pane_to_floating on an already-floating pane should be a no-op"
+    );
+
+    // State should be unchanged.
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert!(tab.is_floating(p2));
+    assert_eq!(tab.floating().panes().len(), 1);
+}
+
+// -- Medium priority: set_floating_pane_rect with degenerate dimensions --
+
+#[test]
+fn set_floating_pane_rect_degenerate_dimensions() {
+    let (mut mux, _wid, tid, _p1, p2) = one_pane_with_floating();
+    drain(&mut mux);
+
+    // Zero-width/height rect.
+    mux.set_floating_pane_rect(
+        tid,
+        p2,
+        Rect {
+            x: 10.0,
+            y: 20.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    );
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    let rect = tab.floating().pane_rect(p2).unwrap();
+    assert!((rect.width).abs() < f32::EPSILON, "width should be 0");
+    assert!((rect.height).abs() < f32::EPSILON, "height should be 0");
+    drain(&mut mux);
+
+    // Negative position rect.
+    mux.set_floating_pane_rect(
+        tid,
+        p2,
+        Rect {
+            x: -100.0,
+            y: -50.0,
+            width: 200.0,
+            height: 150.0,
+        },
+    );
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    let rect = tab.floating().pane_rect(p2).unwrap();
+    assert!(
+        (rect.x - (-100.0)).abs() < f32::EPSILON,
+        "negative x should be stored"
+    );
+    assert!(
+        (rect.y - (-50.0)).abs() < f32::EPSILON,
+        "negative y should be stored"
+    );
+
+    // Should emit FloatingPaneChanged each time.
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::FloatingPaneChanged(id) if *id == tid))
+    );
+}
+
+// -- Medium priority: raise single floating pane does not panic --
+
+#[test]
+fn raise_single_floating_pane_does_not_panic() {
+    let (mut mux, _wid, tid, _p1, p2) = one_pane_with_floating();
+    drain(&mut mux);
+
+    // Raise the only floating pane — should not panic, pane stays in layer.
+    mux.raise_floating_pane(tid, p2);
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(tab.floating().panes().len(), 1);
+    assert_eq!(tab.floating().panes().first().unwrap().pane_id, p2);
+
+    // Should emit FloatingPaneChanged.
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::FloatingPaneChanged(id) if *id == tid))
+    );
+}
+
+// -- Low priority: rapid set_divider_ratio calls each emit notification --
+
+#[test]
+fn rapid_divider_ratio_calls_each_emit_notification() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // 5 rapid ratio changes.
+    for ratio in [0.2, 0.4, 0.6, 0.8, 0.5] {
+        mux.set_divider_ratio(tid, p1, p2, ratio);
+    }
+
+    let notifs = drain(&mut mux);
+    let layout_count = notifs
+        .iter()
+        .filter(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid))
+        .count();
+    assert_eq!(
+        layout_count, 5,
+        "each set_divider_ratio call should emit TabLayoutChanged"
+    );
+
+    // Final ratio should be the last applied value.
+    let tab = mux.session().get_tab(tid).unwrap();
+    if let SplitTree::Split { ratio, .. } = tab.tree() {
+        assert!(
+            (*ratio - 0.5).abs() < f32::EPSILON,
+            "final ratio should be 0.5, got {ratio}"
+        );
+    }
+}
+
+// -- Low priority: deeply nested tree (5 levels) --
+
+#[test]
+fn deeply_nested_tree_operations() {
+    // Build a 5-level deep tree: p1 | (p2 / (p3 | (p4 / p5))).
+    // Verify close, equalize, and undo work at depth.
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let did = mux.default_domain();
+
+    let panes: Vec<PaneId> = (100..=104).map(PaneId::from_raw).collect();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, panes[0]);
+    let tree = tab
+        .tree()
+        .split_at(panes[0], SplitDirection::Vertical, panes[1], 0.5);
+    tab.set_tree(tree);
+    let tree = tab
+        .tree()
+        .split_at(panes[1], SplitDirection::Horizontal, panes[2], 0.5);
+    tab.set_tree(tree);
+    let tree = tab
+        .tree()
+        .split_at(panes[2], SplitDirection::Vertical, panes[3], 0.5);
+    tab.set_tree(tree);
+    let tree = tab
+        .tree()
+        .split_at(panes[3], SplitDirection::Horizontal, panes[4], 0.5);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    for &pid in &panes {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    // Verify all 5 panes are in the tree.
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().pane_count(), 5);
+
+    // Equalize should work at all levels.
+    mux.equalize_panes(tid);
+    drain(&mut mux);
+
+    // Close the deepest pane (p5).
+    let result = mux.close_pane(panes[4]);
+    assert_eq!(result, ClosePaneResult::PaneRemoved);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().pane_count(), 4);
+    assert!(!tab.tree().contains(panes[4]));
+    drain(&mut mux);
+
+    // Close p4 (was the second deepest).
+    let result = mux.close_pane(panes[3]);
+    assert_eq!(result, ClosePaneResult::PaneRemoved);
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().pane_count(), 3);
+
+    // Undo should restore p4.
+    let live: std::collections::HashSet<_> = panes.iter().copied().collect();
+    assert!(mux.undo_split(tid, &live));
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().pane_count(), 4);
+    assert!(tab.tree().contains(panes[3]));
+}
+
+// -- Low priority: close_window interleaved with poll_events --
+
+#[test]
+fn close_window_with_queued_events_for_closed_panes() {
+    // Queue PaneExited and PaneOutput events for panes, then close the
+    // window before polling. poll_events should handle stale events
+    // gracefully — no panic, no orphaned state.
+    let (mut mux, wid, _tid, p1, p2) = two_pane_setup();
+    let tx = mux.event_tx().clone();
+
+    // Queue events for both panes.
+    tx.send(MuxEvent::PaneOutput(p1)).unwrap();
+    tx.send(MuxEvent::PaneBell(p2)).unwrap();
+    tx.send(MuxEvent::PaneExited {
+        pane_id: p1,
+        exit_code: 0,
+    })
+    .unwrap();
+
+    // Close the window BEFORE polling events.
+    let closed = mux.close_window(wid);
+    assert_eq!(closed.len(), 2);
+    drain(&mut mux);
+
+    // Now poll the stale events — should not panic.
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    // Everything should be empty — no orphaned registrations.
+    assert!(mux.pane_registry().is_empty());
+    assert_eq!(mux.session().window_count(), 0);
+    assert_eq!(mux.session().tab_count(), 0);
+}

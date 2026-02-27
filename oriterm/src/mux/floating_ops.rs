@@ -75,7 +75,11 @@ impl InProcessMux {
             return false;
         };
 
-        // Don't allow floating the last tiled pane.
+        // Don't allow floating a pane that isn't in the tiled tree
+        // (already floating or not present), nor the last tiled pane.
+        if !tab.tree().contains(pane_id) {
+            return false;
+        }
         let Some(new_tree) = tab.tree().remove(pane_id) else {
             return false;
         };
