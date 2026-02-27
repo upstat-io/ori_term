@@ -117,6 +117,7 @@ fn frame_input_grid_dimensions() {
         hovered_cell: None,
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
+        fg_dim: 1.0,
     };
 
     assert_eq!(input.columns(), 100);
@@ -138,6 +139,7 @@ fn frame_input_needs_full_repaint() {
         hovered_cell: None,
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
+        fg_dim: 1.0,
     };
 
     assert!(input.needs_full_repaint());
@@ -158,6 +160,7 @@ fn frame_input_incremental_repaint() {
         hovered_cell: None,
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
+        fg_dim: 1.0,
     };
 
     assert!(!input.needs_full_repaint());

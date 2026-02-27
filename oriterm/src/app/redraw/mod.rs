@@ -1,5 +1,7 @@
 //! Three-phase rendering pipeline: Extract → Prepare → Render.
 
+mod multi_pane;
+
 use std::cell::Cell;
 use std::time::Instant;
 
@@ -42,6 +44,13 @@ impl App {
             .as_mut()
             .map_or_else(Vec::new, |f| std::mem::take(&mut f.hovered_url_segments));
         self.fill_hovered_url_viewport_segments(&mut url_segments);
+
+        // Multi-pane check: if the active tab has splits, dispatch to the
+        // multi-pane renderer which iterates all panes in one GPU frame.
+        if let Some((layouts, dividers)) = self.compute_pane_layouts() {
+            self.handle_redraw_multi_pane(&layouts, &dividers, &url_segments);
+            return;
+        }
 
         // Resolve pane ID before the render block: `active_pane_id()` borrows
         // `&self`, which conflicts with the `&mut self.renderer` inside the

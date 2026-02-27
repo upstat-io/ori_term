@@ -270,6 +270,7 @@ fn fill_frame(
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
+    let fg_dim = input.fg_dim;
     let (ox, oy) = origin;
     let sel = input.selection.as_ref();
     let search = input.search.as_ref();
@@ -346,7 +347,7 @@ fn fill_frame(
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                frame.glyphs.push_glyph(rect, uv, fg, 1.0, entry.page);
+                frame.glyphs.push_glyph(rect, uv, fg, fg_dim, entry.page);
             }
         }
     }
@@ -383,7 +384,7 @@ fn fill_frame(
     clippy::too_many_lines,
     reason = "linear pipeline: bg → decorations → builtins → shaped glyphs → cursors"
 )]
-fn fill_frame_shaped(
+pub(crate) fn fill_frame_shaped(
     input: &FrameInput,
     atlas: &dyn AtlasLookup,
     shaped: &ShapedFrame,
@@ -394,6 +395,7 @@ fn fill_frame_shaped(
     let cw = input.cell_size.width;
     let ch = input.cell_size.height;
     let baseline = input.cell_size.baseline;
+    let fg_dim = input.fg_dim;
     let (ox, oy) = origin;
     let sel = input.selection.as_ref();
     let search = input.search.as_ref();
@@ -468,7 +470,7 @@ fn fill_frame_shaped(
                     w: entry.width as f32,
                     h: entry.height as f32,
                 };
-                frame.glyphs.push_glyph(rect, uv, fg, 1.0, entry.page);
+                frame.glyphs.push_glyph(rect, uv, fg, fg_dim, entry.page);
             }
             continue;
         }
@@ -484,6 +486,7 @@ fn fill_frame_shaped(
                 baseline,
                 size_q6: shaped.size_q6(),
                 hinted: shaped.hinted(),
+                fg_dim,
                 atlas,
                 frame,
             }
@@ -519,6 +522,7 @@ struct GlyphEmitter<'a> {
     baseline: f32,
     size_q6: u32,
     hinted: bool,
+    fg_dim: f32,
     atlas: &'a dyn AtlasLookup,
     frame: &'a mut PreparedFrame,
 }
@@ -586,7 +590,7 @@ impl GlyphEmitter<'_> {
                     AtlasKind::Subpixel => &mut self.frame.subpixel_glyphs,
                     AtlasKind::Mono => &mut self.frame.glyphs,
                 };
-                writer.push_glyph_with_bg(rect, uv, fg, bg, 1.0, entry.page);
+                writer.push_glyph_with_bg(rect, uv, fg, bg, self.fg_dim, entry.page);
             }
         }
     }

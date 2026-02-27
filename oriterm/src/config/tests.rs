@@ -1781,3 +1781,56 @@ fn parse_hex_color_rejects_too_long() {
 fn parse_hex_color_rejects_too_short() {
     assert!(parse_hex_color("#FF880").is_none());
 }
+
+// ── PaneConfig ──
+
+#[test]
+fn pane_config_defaults() {
+    let cfg = PaneConfig::default();
+    assert!((cfg.divider_px - 1.0).abs() < f32::EPSILON);
+    assert_eq!(cfg.min_cells, (10, 3));
+    assert!(!cfg.dim_inactive);
+    assert!((cfg.inactive_opacity - 0.7).abs() < f32::EPSILON);
+}
+
+#[test]
+fn pane_config_effective_opacity_clamps() {
+    let mut cfg = PaneConfig::default();
+    cfg.inactive_opacity = 1.5;
+    assert!((cfg.effective_inactive_opacity() - 1.0).abs() < f32::EPSILON);
+
+    cfg.inactive_opacity = -0.5;
+    assert!((cfg.effective_inactive_opacity() - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn pane_config_effective_opacity_nan_defaults() {
+    let mut cfg = PaneConfig::default();
+    cfg.inactive_opacity = f32::NAN;
+    assert!((cfg.effective_inactive_opacity() - 0.7).abs() < f32::EPSILON);
+}
+
+#[test]
+fn pane_config_roundtrip() {
+    let cfg = Config::default();
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert!((parsed.pane.divider_px - 1.0).abs() < f32::EPSILON);
+    assert_eq!(parsed.pane.min_cells, (10, 3));
+    assert!(!parsed.pane.dim_inactive);
+}
+
+#[test]
+fn pane_config_partial_toml() {
+    let toml_str = r#"
+[pane]
+dim_inactive = true
+inactive_opacity = 0.5
+"#;
+    let cfg: Config = toml::from_str(toml_str).expect("parse");
+    assert!(cfg.pane.dim_inactive);
+    assert!((cfg.pane.inactive_opacity - 0.5).abs() < f32::EPSILON);
+    // Defaults for unspecified fields.
+    assert!((cfg.pane.divider_px - 1.0).abs() < f32::EPSILON);
+    assert_eq!(cfg.pane.min_cells, (10, 3));
+}

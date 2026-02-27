@@ -7,6 +7,7 @@
 
 mod font_config;
 mod helpers;
+mod multi_pane;
 
 use std::collections::HashSet;
 use std::fmt;

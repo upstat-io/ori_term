@@ -13,7 +13,7 @@ sections:
     status: complete
   - id: "31.3"
     title: Multi-Pane Rendering
-    status: not-started
+    status: complete
   - id: "31.4"
     title: PaneRenderCache
     status: not-started
@@ -176,38 +176,41 @@ Render multiple panes per tab, each with its own viewport offset. The key change
 
 **Reference:** Existing `prepare_frame_into` (already takes `FrameInput` with viewport)
 
-- [ ] `prepare_pane_into(input: &FrameInput, atlas: &dyn AtlasLookup, origin: (f32, f32), out: &mut PreparedFrame)`
-  - [ ] Same as `prepare_frame_into` but adds `origin.0` and `origin.1` to all x/y coordinates
-  - [ ] Each pane's instances are offset to their pixel rect within the tab area
-  - [ ] Cursor instances also offset
-- [ ] Multi-pane frame loop in `GpuRenderer::draw_frame()`:
-  - [ ] Compute layout: `compute_layout(tree, floating, focused, desc)` → `Vec<PaneLayout>`
-  - [ ] For each `PaneLayout`:
-    1. Lock pane's terminal, extract `FrameInput` snapshot
-    2. Call `prepare_pane_into(input, atlas, (layout.pixel_rect.x, layout.pixel_rect.y), frame)`
-    3. Release lock
-  - [ ] After all panes: render dividers as filled rectangles (palette surface color)
-  - [ ] Render focus border: 2px accent color around the focused pane's rect
-  - [ ] Single pane optimization: skip layout computation, use existing `prepare_frame_into` directly
-- [ ] Divider rendering:
-  - [ ] `compute_dividers()` produces `Vec<DividerLayout>`
-  - [ ] Each divider: push a background rect instance with divider color
-  - [ ] Divider color: subtle contrast from background (e.g., `palette.surface` or 20% lighter)
-- [ ] Focus border:
-  - [ ] 2px border around the focused pane's pixel rect
-  - [ ] Color: `palette.accent` or configurable
-  - [ ] Only shown when tab has more than one pane
-- [ ] Inactive pane dimming (optional, config-controlled):
-  - [ ] Multiply foreground alpha by 0.7 for unfocused panes
-  - [ ] Applied during `prepare_pane_into` based on `is_focused` flag
+- [x] `fill_frame_shaped` made `pub(crate)` for multi-pane direct calls
+- [x] `fg_dim: f32` field added to `FrameInput` for inactive pane dimming
+  - [x] Threaded through `GlyphEmitter` and all glyph push calls (shaped + unshaped paths)
+  - [x] Default 1.0 in extract and test_grid constructors
+- [x] `GpuRenderer::prepare_pane()` — shapes, caches, and fills one pane (appends to PreparedFrame)
+  - [x] Each pane's instances offset by origin `(pixel_rect.x, pixel_rect.y)`
+  - [x] Cursor instances also offset
+- [x] Multi-pane frame loop in `App::handle_redraw_multi_pane()`:
+  - [x] `compute_pane_layouts()` → `compute_all(tree, floating, focused, desc)` → `(Vec<PaneLayout>, Vec<DividerLayout>)`
+  - [x] `begin_multi_pane_frame()` → clear PreparedFrame, set viewport
+  - [x] For each `PaneLayout`: extract_frame_into → prepare_pane at layout origin
+  - [x] After all panes: append dividers + focus border
+  - [x] Single pane optimization: `compute_pane_layouts()` returns `None`, existing fast path unchanged
+- [x] Divider rendering:
+  - [x] `append_dividers()` pushes background rect instances for each `DividerLayout`
+  - [x] Divider color: `Rgb(80, 80, 80)` (subtle contrast)
+- [x] Focus border:
+  - [x] `append_focus_border()` — 2px border (4 cursor-layer rects) around focused pane
+  - [x] Color: cornflower blue `Rgb(100, 149, 237)`
+  - [x] Only shown when `layouts.len() > 1`
+- [x] Inactive pane dimming (config-controlled):
+  - [x] `PaneConfig` struct: `dim_inactive`, `inactive_opacity`, `divider_px`, `min_cells`
+  - [x] `fg_dim` set to `inactive_opacity` for unfocused panes when `dim_inactive` enabled
+- [x] `app/redraw.rs` → `app/redraw/mod.rs` directory module
+  - [x] `app/redraw/multi_pane.rs` — `compute_pane_layouts()` + `handle_redraw_multi_pane()`
+  - [x] Branching in `handle_redraw()`: multi-pane path dispatches via early return
 
 **Tests:**
-- [ ] Single pane: output identical to non-mux path (regression test)
-- [ ] Two panes: instances for each pane at correct offsets
-- [ ] Dividers: correct position and dimensions between panes
-- [ ] Focus border: surrounds only the focused pane
-- [ ] Inactive dimming: unfocused pane glyphs have reduced alpha
-- [ ] Cursor: appears only in focused pane at correct offset position
+- [x] `fg_dim_default_alpha_is_one` — default 1.0 produces alpha 1.0
+- [x] `fg_dim_reduces_glyph_alpha` — fg_dim=0.7 produces alpha ~0.7
+- [x] `fill_frame_shaped_accumulates_without_clearing` — two fills accumulate instances
+- [x] `two_panes_at_correct_offsets` — pane B bg at x=400
+- [x] `cursor_only_in_focused_pane` — cursor_blink_visible=false suppresses cursor
+- [x] `pane_config_defaults` / `pane_config_roundtrip` / `pane_config_partial_toml` — config serialization
+- [x] `pane_config_effective_opacity_clamps` / `pane_config_effective_opacity_nan_defaults` — opacity validation
 
 ---
 

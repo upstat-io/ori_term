@@ -2878,3 +2878,138 @@ fn shaped_ligature_selection_col1_does_not_duplicate_glyph() {
     let bg2 = nth_instance(frame.backgrounds.as_bytes(), 2);
     assert_eq!(bg2.bg_color, normal_bg, "col 2 should have normal bg");
 }
+
+// ── fg_dim dimming ──
+
+#[test]
+fn fg_dim_default_alpha_is_one() {
+    let input = FrameInput::test_grid(1, 1, "A");
+    let atlas = atlas_with(&['A']);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    // fg_color[3] is the alpha component — default fg_dim=1.0.
+    assert_eq!(
+        fg.fg_color[3], 1.0,
+        "default fg_dim should produce alpha 1.0"
+    );
+}
+
+#[test]
+fn fg_dim_reduces_glyph_alpha() {
+    let mut input = FrameInput::test_grid(1, 1, "A");
+    input.fg_dim = 0.7;
+    input.content.cursor.visible = false;
+    let atlas = atlas_with(&['A']);
+
+    let frame = prepare_frame(&input, &atlas, (0.0, 0.0));
+
+    let fg = nth_instance(frame.glyphs.as_bytes(), 0);
+    assert!(
+        (fg.fg_color[3] - 0.7).abs() < 0.001,
+        "fg_dim=0.7 should produce alpha ~0.7, got {}",
+        fg.fg_color[3],
+    );
+}
+
+// ── Multi-pane instance accumulation ──
+
+#[test]
+fn fill_frame_shaped_accumulates_without_clearing() {
+    use super::fill_frame_shaped;
+
+    let input_a = FrameInput::test_grid(2, 1, "AB");
+    let input_b = FrameInput::test_grid(2, 1, "CD");
+    let atlas = empty_atlas();
+
+    // Shape empty frames (no glyph hits, but backgrounds still accumulate).
+    let shaped_a = ShapedFrame::new(2, 0);
+    let shaped_b = ShapedFrame::new(2, 0);
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(32, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+
+    // First fill: pane A at origin (0,0).
+    fill_frame_shaped(&input_a, &atlas, &shaped_a, &mut frame, (0.0, 0.0), true);
+    let count_after_a = frame.backgrounds.len();
+
+    // Second fill: pane B at origin (16,0) — appends, does NOT clear.
+    fill_frame_shaped(&input_b, &atlas, &shaped_b, &mut frame, (16.0, 0.0), false);
+    let count_after_b = frame.backgrounds.len();
+
+    assert_eq!(count_after_a, 2, "pane A should produce 2 bg instances");
+    assert_eq!(
+        count_after_b, 4,
+        "pane B should append 2 more, total 4 bg instances"
+    );
+}
+
+#[test]
+fn two_panes_at_correct_offsets() {
+    use super::fill_frame_shaped;
+
+    let input_a = FrameInput::test_grid(1, 1, "A");
+    let input_b = FrameInput::test_grid(1, 1, "B");
+    let atlas = empty_atlas();
+    let shaped = ShapedFrame::new(1, 0);
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(16, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+
+    // Pane A at (0, 0).
+    fill_frame_shaped(&input_a, &atlas, &shaped, &mut frame, (0.0, 0.0), true);
+    // Pane B at (400, 0).
+    fill_frame_shaped(&input_b, &atlas, &shaped, &mut frame, (400.0, 0.0), false);
+
+    // Pane A background at x=0.
+    let bg_a = nth_instance(frame.backgrounds.as_bytes(), 0);
+    assert_eq!(bg_a.pos.0, 0.0, "pane A bg should be at x=0");
+
+    // Pane B background at x=400.
+    let bg_b = nth_instance(frame.backgrounds.as_bytes(), 1);
+    assert_eq!(bg_b.pos.0, 400.0, "pane B bg should be at x=400");
+}
+
+#[test]
+fn cursor_only_in_focused_pane() {
+    use super::fill_frame_shaped;
+
+    let input_focused = FrameInput::test_grid(1, 1, "A");
+    let mut input_unfocused = FrameInput::test_grid(1, 1, "B");
+    input_unfocused.content.cursor.visible = true;
+
+    let atlas = empty_atlas();
+    let shaped = ShapedFrame::new(1, 0);
+
+    let mut frame = PreparedFrame::new(ViewportSize::new(16, 16), Rgb { r: 0, g: 0, b: 0 }, 1.0);
+
+    // Focused pane: cursor_blink_visible = true.
+    fill_frame_shaped(
+        &input_focused,
+        &atlas,
+        &shaped,
+        &mut frame,
+        (0.0, 0.0),
+        true,
+    );
+    let cursor_after_focused = frame.cursors.len();
+
+    // Unfocused pane: cursor_blink_visible = false.
+    fill_frame_shaped(
+        &input_unfocused,
+        &atlas,
+        &shaped,
+        &mut frame,
+        (100.0, 0.0),
+        false,
+    );
+    let cursor_after_unfocused = frame.cursors.len();
+
+    assert_eq!(
+        cursor_after_focused, 1,
+        "focused pane should emit 1 cursor instance"
+    );
+    assert_eq!(
+        cursor_after_unfocused, 1,
+        "unfocused pane should not add more cursor instances"
+    );
+}

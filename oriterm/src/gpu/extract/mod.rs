@@ -59,6 +59,7 @@ pub(crate) fn extract_frame<T: EventListener>(
         hovered_cell: None,
         hovered_url_segments: Vec::new(),
         mark_cursor: None,
+        fg_dim: 1.0,
     }
 }
 
@@ -99,6 +100,7 @@ pub(crate) fn extract_frame_into<T: EventListener>(
     out.hovered_cell = None;
     out.hovered_url_segments.clear();
     out.mark_cursor = None;
+    out.fg_dim = 1.0;
 }
 
 /// Extract semantic palette colors from the terminal.

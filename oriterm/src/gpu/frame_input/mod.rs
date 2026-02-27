@@ -216,6 +216,12 @@ pub struct FrameInput {
     /// `content.cursor`. Set by the app layer after extraction when mark
     /// mode is active; the extracted content is never mutated.
     pub mark_cursor: Option<MarkCursorOverride>,
+    /// Foreground alpha multiplier for inactive pane dimming.
+    ///
+    /// 1.0 = fully opaque (default, focused pane). Values < 1.0 dim glyph
+    /// alpha proportionally for unfocused panes. Set by the multi-pane
+    /// render path; single-pane rendering always uses 1.0.
+    pub fg_dim: f32,
 }
 
 impl FrameInput {
@@ -308,6 +314,7 @@ impl FrameInput {
             hovered_cell: None,
             hovered_url_segments: Vec::new(),
             mark_cursor: None,
+            fg_dim: 1.0,
         }
     }
 }

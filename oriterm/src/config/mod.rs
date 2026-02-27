@@ -30,6 +30,7 @@ pub struct Config {
     pub window: WindowConfig,
     pub behavior: BehaviorConfig,
     pub bell: BellConfig,
+    pub pane: PaneConfig,
     #[serde(default)]
     pub keybind: Vec<KeybindConfig>,
 }
@@ -426,6 +427,38 @@ impl Default for BehaviorConfig {
 }
 
 pub use bell::BellConfig;
+
+/// Pane splitting and layout configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PaneConfig {
+    /// Divider thickness in logical pixels between split panes.
+    pub divider_px: f32,
+    /// Minimum pane size in cells `(columns, rows)`.
+    pub min_cells: (u16, u16),
+    /// Dim inactive (unfocused) panes to reduce visual clutter.
+    pub dim_inactive: bool,
+    /// Alpha multiplier for inactive pane glyphs (0.0–1.0).
+    pub inactive_opacity: f32,
+}
+
+impl Default for PaneConfig {
+    fn default() -> Self {
+        Self {
+            divider_px: 1.0,
+            min_cells: (10, 3),
+            dim_inactive: false,
+            inactive_opacity: 0.7,
+        }
+    }
+}
+
+impl PaneConfig {
+    /// Returns `inactive_opacity` clamped to [0.0, 1.0], defaulting to 0.7 for NaN.
+    pub fn effective_inactive_opacity(&self) -> f32 {
+        clamp_or_default(self.inactive_opacity, 0.0, 1.0, 0.7)
+    }
+}
 
 /// TOML-serializable keybinding entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
