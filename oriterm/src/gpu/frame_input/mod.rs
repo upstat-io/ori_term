@@ -47,11 +47,11 @@ impl FrameSelection {
 ///
 /// Contains the match data and viewport mapping needed to classify cells
 /// for search highlighting. Built from `SearchState` without cloning the
-/// full state — borrows the match list via `Arc` sharing.
+/// full state — copies the match list for frame-local access.
 #[derive(Debug)]
 pub struct FrameSearch {
-    /// Matches from the search state (shared, not cloned).
-    matches: std::sync::Arc<[SearchMatch]>,
+    /// Matches from the search state (copied per frame).
+    matches: Vec<SearchMatch>,
     /// Index of the focused match.
     focused: usize,
     /// Stable row index of viewport line 0.
@@ -66,7 +66,7 @@ impl FrameSearch {
     /// Build from an active search state and the viewport's stable row base.
     pub fn new(state: &SearchState, stable_row_base: u64) -> Self {
         Self {
-            matches: state.matches().into(),
+            matches: state.matches().to_vec(),
             focused: state.focused_index(),
             base_stable: stable_row_base,
             match_count: state.matches().len(),
@@ -128,7 +128,7 @@ impl FrameSearch {
     pub fn for_test(matches: Vec<SearchMatch>, focused: usize, stable_row_base: u64) -> Self {
         Self {
             match_count: matches.len(),
-            matches: matches.into(),
+            matches,
             focused,
             base_stable: stable_row_base,
             query: String::from("test"),
