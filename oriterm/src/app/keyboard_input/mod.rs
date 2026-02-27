@@ -218,6 +218,10 @@ impl App {
     ///
     /// `SmartCopy` returns `false` when no selection exists (fall through to PTY
     /// so Ctrl+C sends SIGINT). Other actions always consume the event.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "action dispatch table — inherently one arm per variant"
+    )]
     fn execute_action(&mut self, action: &Action) -> bool {
         match action {
             Action::Copy => {
@@ -296,7 +300,12 @@ impl App {
             | Action::FocusPaneRight
             | Action::NextPane
             | Action::PrevPane
-            | Action::ClosePane => {
+            | Action::ClosePane
+            | Action::ResizePaneUp
+            | Action::ResizePaneDown
+            | Action::ResizePaneLeft
+            | Action::ResizePaneRight
+            | Action::EqualizePanes => {
                 self.execute_pane_action(action);
                 true
             }

@@ -10,6 +10,7 @@ mod clipboard_ops;
 pub(crate) mod config_reload;
 mod cursor_blink;
 mod cursor_hover;
+mod divider_drag;
 mod init;
 mod keyboard_input;
 mod mark_mode;
@@ -32,6 +33,7 @@ use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
 use oriterm_core::TermMode;
+use oriterm_mux::layout::DividerLayout;
 use oriterm_mux::{PaneId, WindowId as MuxWindowId};
 
 use self::cursor_blink::CursorBlink;
@@ -143,6 +145,11 @@ pub(crate) struct App {
     // Currently hovered URL (set on Ctrl+mouse move, cleared on Ctrl release).
     hovered_url: Option<DetectedUrl>,
 
+    // Divider currently under the cursor (for hover cursor icon).
+    hovering_divider: Option<DividerLayout>,
+    // Active divider drag state (ratio tracking during drag).
+    divider_drag: Option<divider_drag::DividerDragState>,
+
     // Active UI theme. Centralized here so all widget creation and event
     // contexts use a single source of truth. When dynamic theming arrives,
     // only this field and the theme-change handler need updating.
@@ -198,6 +205,8 @@ impl App {
             pending_paste: None,
             url_cache: UrlDetectCache::default(),
             hovered_url: None,
+            hovering_divider: None,
+            divider_drag: None,
             ui_theme,
             last_drag_area_press: None,
         }
@@ -456,6 +465,8 @@ impl ApplicationHandler<TermEvent> for App {
                 self.clear_chrome_hover();
                 self.clear_tab_bar_hover();
                 self.clear_url_hover();
+                self.clear_divider_hover();
+                self.cancel_divider_drag();
                 self.release_tab_width_lock();
             }
 
@@ -466,6 +477,12 @@ impl ApplicationHandler<TermEvent> for App {
 
                 // Forward move events to overlays for per-widget hover tracking.
                 if self.try_overlay_mouse_move(position) {
+                    return;
+                }
+
+                // Divider hover/drag: check before terminal mouse handling.
+                // Active drag consumes all moves.
+                if self.update_divider_hover(position) {
                     return;
                 }
 

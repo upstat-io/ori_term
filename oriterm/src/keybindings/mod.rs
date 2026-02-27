@@ -73,6 +73,16 @@ pub(crate) enum Action {
     PrevPane,
     /// Close the focused pane (not the entire tab).
     ClosePane,
+    /// Resize the focused pane upward (push nearest horizontal border up).
+    ResizePaneUp,
+    /// Resize the focused pane downward (push nearest horizontal border down).
+    ResizePaneDown,
+    /// Resize the focused pane leftward (push nearest vertical border left).
+    ResizePaneLeft,
+    /// Resize the focused pane rightward (push nearest vertical border right).
+    ResizePaneRight,
+    /// Reset all split ratios to equal (0.5).
+    EqualizePanes,
     /// Send literal bytes to the PTY.
     SendText(String),
     /// Explicitly unbinds a default binding.
@@ -119,6 +129,11 @@ impl Action {
             Self::NextPane => "NextPane",
             Self::PrevPane => "PrevPane",
             Self::ClosePane => "ClosePane",
+            Self::ResizePaneUp => "ResizePaneUp",
+            Self::ResizePaneDown => "ResizePaneDown",
+            Self::ResizePaneLeft => "ResizePaneLeft",
+            Self::ResizePaneRight => "ResizePaneRight",
+            Self::EqualizePanes => "EqualizePanes",
             Self::SendText(_) => "SendText",
             Self::None => "None",
         }

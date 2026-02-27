@@ -278,6 +278,69 @@ impl InProcessMux {
         Ok((new_pane_id, pane))
     }
 
+    /// Set the ratio of a specific divider identified by the pane pair.
+    ///
+    /// The divider is the split where `first` contains `pane_before` and
+    /// `second` contains `pane_after`. Emits `TabLayoutChanged`.
+    pub(crate) fn set_divider_ratio(
+        &mut self,
+        tab_id: TabId,
+        pane_before: PaneId,
+        pane_after: PaneId,
+        new_ratio: f32,
+    ) {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return;
+        };
+        let new_tree = tab
+            .tree()
+            .set_divider_ratio(pane_before, pane_after, new_ratio);
+        tab.set_tree(new_tree);
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+    }
+
+    /// Resize a pane by adjusting the nearest qualifying split border.
+    ///
+    /// `axis` is the split direction to match, `pane_in_first` selects the
+    /// qualifying child side, and `delta` adjusts the ratio. See
+    /// [`SplitTree::resize_toward`] for the algorithm. Emits
+    /// `TabLayoutChanged` if a qualifying split was found.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "resize requires tab + pane + axis + side + delta"
+    )]
+    pub(crate) fn resize_pane(
+        &mut self,
+        tab_id: TabId,
+        pane_id: PaneId,
+        axis: SplitDirection,
+        pane_in_first: bool,
+        delta: f32,
+    ) {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return;
+        };
+        let old_tree = tab.tree().clone();
+        let new_tree = old_tree.resize_toward(pane_id, axis, pane_in_first, delta);
+        if new_tree != old_tree {
+            tab.set_tree(new_tree);
+            self.notifications
+                .push(MuxNotification::TabLayoutChanged(tab_id));
+        }
+    }
+
+    /// Reset all split ratios to 0.5 (equal sizing).
+    pub(crate) fn equalize_panes(&mut self, tab_id: TabId) {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return;
+        };
+        let new_tree = tab.tree().equalize();
+        tab.set_tree(new_tree);
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+    }
+
     /// Handle the window after a tab has been removed from it.
     ///
     /// Removes the tab from the window. If the window is now empty, removes

@@ -461,3 +461,222 @@ fn split_at_with_existing_pane_id_from_another_leaf() {
     let panes = tree.panes();
     assert_eq!(panes, vec![p(1), p(2), p(1)]);
 }
+
+// ── set_divider_ratio ─────────────────────────────────────────────
+
+#[test]
+fn set_divider_ratio_simple_split() {
+    // p1 | p2 — set the divider between them.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let updated = tree.set_divider_ratio(p(1), p(2), 0.7);
+    if let SplitTree::Split { ratio, .. } = &updated {
+        assert!((*ratio - 0.7).abs() < f32::EPSILON);
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn set_divider_ratio_nested_inner() {
+    // Root: (A | B) | C — set inner divider (A-B).
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(3), 0.5);
+    // Tree is: Split(V, Split(V, p1, p3), p2)
+
+    let updated = tree.set_divider_ratio(p(1), p(3), 0.3);
+
+    // Inner split (between p1 and p3) should have new ratio.
+    assert_eq!(
+        updated.parent_split(p(1)),
+        Some((SplitDirection::Vertical, 0.3))
+    );
+    // Outer split should be unchanged.
+    if let SplitTree::Split { ratio, .. } = &updated {
+        assert!((*ratio - 0.5).abs() < f32::EPSILON);
+    }
+}
+
+#[test]
+fn set_divider_ratio_nested_outer() {
+    // Root: Split(V, Split(V, A, B), C)
+    // The outer divider is between B (rightmost of first) and C.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(3), 0.5);
+    // Tree: Split(V, Split(V, p1, p3), p2)
+    // Outer divider: pane_before = p3 (rightmost of first), pane_after = p2.
+
+    let updated = tree.set_divider_ratio(p(3), p(2), 0.8);
+    if let SplitTree::Split { ratio, .. } = &updated {
+        assert!((*ratio - 0.8).abs() < f32::EPSILON);
+    }
+}
+
+#[test]
+fn set_divider_ratio_clamps() {
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let updated = tree.set_divider_ratio(p(1), p(2), 0.0);
+    if let SplitTree::Split { ratio, .. } = &updated {
+        assert!((*ratio - 0.1).abs() < f32::EPSILON);
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn set_divider_ratio_nonexistent_panes() {
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let updated = tree.set_divider_ratio(p(99), p(100), 0.7);
+    assert_eq!(updated, tree);
+}
+
+#[test]
+fn set_divider_ratio_on_leaf() {
+    let tree = SplitTree::leaf(p(1));
+    let updated = tree.set_divider_ratio(p(1), p(2), 0.7);
+    assert_eq!(updated, tree);
+}
+
+// ── resize_toward ──────────────────────────────────────────────────
+
+#[test]
+fn resize_toward_right_pane_in_first() {
+    // p1 | p2 — resize p1 rightward (grow first).
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let resized = tree.resize_toward(p(1), SplitDirection::Vertical, true, 0.05);
+    if let SplitTree::Split { ratio, .. } = &resized {
+        assert!((*ratio - 0.55).abs() < f32::EPSILON);
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn resize_toward_left_pane_in_second() {
+    // p1 | p2 — resize p2 leftward (shrink first, grow second).
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let resized = tree.resize_toward(p(2), SplitDirection::Vertical, false, -0.05);
+    if let SplitTree::Split { ratio, .. } = &resized {
+        assert!((*ratio - 0.45).abs() < f32::EPSILON);
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn resize_toward_no_matching_split() {
+    // p1 | p2 (Vertical) — try resizing with Horizontal axis.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let resized = tree.resize_toward(p(1), SplitDirection::Horizontal, true, 0.05);
+    assert_eq!(resized, tree);
+}
+
+#[test]
+fn resize_toward_wrong_side_noop() {
+    // p1 | p2 — p2 is in second, but pane_in_first=true → no match.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+
+    let resized = tree.resize_toward(p(2), SplitDirection::Vertical, true, 0.05);
+    assert_eq!(resized, tree);
+}
+
+#[test]
+fn resize_toward_nested_finds_deepest() {
+    // Root: Split(V, Split(V, A, B), C)
+    // Resize A rightward — should adjust the INNER split (nearest to A).
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(3), 0.5);
+    // Tree: Split(V, 0.5, Split(V, 0.5, p1, p3), p2)
+
+    let resized = tree.resize_toward(p(1), SplitDirection::Vertical, true, 0.1);
+
+    // Inner split should be adjusted.
+    assert_eq!(
+        resized.parent_split(p(1)),
+        Some((SplitDirection::Vertical, 0.6))
+    );
+    // Outer split unchanged.
+    if let SplitTree::Split { ratio, .. } = &resized {
+        assert!((*ratio - 0.5).abs() < f32::EPSILON);
+    }
+}
+
+#[test]
+fn resize_toward_nested_outer_when_inner_wrong_side() {
+    // Root: Split(V, Split(V, A, B), C)
+    // Resize B rightward — B is in SECOND of inner split, so inner doesn't
+    // qualify (pane_in_first=true). Outer qualifies: B is in first subtree.
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(3), 0.5);
+    // Tree: Split(V, 0.5, Split(V, 0.5, p1, p3), p2)
+
+    let resized = tree.resize_toward(p(3), SplitDirection::Vertical, true, 0.1);
+
+    // Inner split unchanged (p3 is second child).
+    assert_eq!(
+        resized.parent_split(p(1)),
+        Some((SplitDirection::Vertical, 0.5))
+    );
+    // Outer split adjusted (p3 is in first subtree of outer).
+    if let SplitTree::Split { ratio, .. } = &resized {
+        assert!((*ratio - 0.6).abs() < f32::EPSILON);
+    }
+}
+
+#[test]
+fn resize_toward_clamps_at_bounds() {
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.15);
+
+    let resized = tree.resize_toward(p(2), SplitDirection::Vertical, false, -0.1);
+    if let SplitTree::Split { ratio, .. } = &resized {
+        assert!((*ratio - 0.1).abs() < f32::EPSILON, "got {ratio}");
+    } else {
+        panic!("expected Split");
+    }
+}
+
+#[test]
+fn resize_toward_on_leaf_noop() {
+    let tree = SplitTree::leaf(p(1));
+    let resized = tree.resize_toward(p(1), SplitDirection::Vertical, true, 0.1);
+    assert_eq!(resized, tree);
+}
+
+#[test]
+fn resize_toward_mixed_directions() {
+    // Root: Split(V, Split(H, A, B), C)
+    // Resize A downward (Horizontal, pane_in_first=true).
+    let tree = SplitTree::leaf(p(1));
+    let tree = tree.split_at(p(1), SplitDirection::Vertical, p(2), 0.5);
+    let tree = tree.split_at(p(1), SplitDirection::Horizontal, p(3), 0.5);
+    // Tree: Split(V, 0.5, Split(H, 0.5, p1, p3), p2)
+
+    let resized = tree.resize_toward(p(1), SplitDirection::Horizontal, true, 0.1);
+
+    // Inner horizontal split adjusted.
+    assert_eq!(
+        resized.parent_split(p(1)),
+        Some((SplitDirection::Horizontal, 0.6))
+    );
+    // Outer vertical split unchanged.
+    if let SplitTree::Split { ratio, .. } = &resized {
+        assert!((*ratio - 0.5).abs() < f32::EPSILON);
+    }
+}

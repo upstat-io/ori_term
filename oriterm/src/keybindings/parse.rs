@@ -165,6 +165,11 @@ pub(crate) fn parse_action(s: &str) -> Option<Action> {
         "NextPane" => Action::NextPane,
         "PrevPane" => Action::PrevPane,
         "ClosePane" => Action::ClosePane,
+        "ResizePaneUp" => Action::ResizePaneUp,
+        "ResizePaneDown" => Action::ResizePaneDown,
+        "ResizePaneLeft" => Action::ResizePaneLeft,
+        "ResizePaneRight" => Action::ResizePaneRight,
+        "EqualizePanes" => Action::EqualizePanes,
         "None" => Action::None,
         _ => return None,
     })

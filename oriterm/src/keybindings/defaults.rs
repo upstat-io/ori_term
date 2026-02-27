@@ -70,6 +70,24 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         bind(ch("["), ca, Action::PrevPane),
         bind(ch("]"), ca, Action::NextPane),
         bind(ch("w"), cs, Action::ClosePane),
+        // Pane resize (Ctrl+Alt+Shift+Arrow for resize, Ctrl+Shift+= for equalize).
+        bind(named(NamedKey::ArrowUp), ca | shift, Action::ResizePaneUp),
+        bind(
+            named(NamedKey::ArrowDown),
+            ca | shift,
+            Action::ResizePaneDown,
+        ),
+        bind(
+            named(NamedKey::ArrowLeft),
+            ca | shift,
+            Action::ResizePaneLeft,
+        ),
+        bind(
+            named(NamedKey::ArrowRight),
+            ca | shift,
+            Action::ResizePaneRight,
+        ),
+        bind(ch("="), cs, Action::EqualizePanes),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),

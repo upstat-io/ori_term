@@ -17,8 +17,6 @@ struct CachedPaneFrame {
     prepared: PreparedFrame,
     /// Layout at time of preparation (for invalidation on resize/move).
     layout: PaneLayout,
-    /// Monotonic counter incremented on each prepare.
-    generation: u64,
 }
 
 /// Per-pane render cache.
@@ -28,8 +26,6 @@ struct CachedPaneFrame {
 /// its layout unchanged, the cached frame is returned without re-preparing.
 pub(crate) struct PaneRenderCache {
     entries: HashMap<PaneId, CachedPaneFrame>,
-    /// Global generation counter for staleness detection.
-    next_generation: u64,
 }
 
 impl PaneRenderCache {
@@ -37,7 +33,6 @@ impl PaneRenderCache {
     pub(crate) fn new() -> Self {
         Self {
             entries: HashMap::new(),
-            next_generation: 0,
         }
     }
 
@@ -56,9 +51,6 @@ impl PaneRenderCache {
         dirty: bool,
         prepare_fn: impl FnOnce(&mut PreparedFrame),
     ) -> &PreparedFrame {
-        let generation = self.next_generation;
-        self.next_generation += 1;
-
         let entry = self.entries.entry(pane_id);
 
         match entry {
@@ -72,7 +64,6 @@ impl PaneRenderCache {
                 cached.prepared.clear();
                 prepare_fn(&mut cached.prepared);
                 cached.layout = layout.clone();
-                cached.generation = generation;
                 &occ.into_mut().prepared
             }
             std::collections::hash_map::Entry::Vacant(vac) => {
@@ -86,7 +77,6 @@ impl PaneRenderCache {
                 let cached = vac.insert(CachedPaneFrame {
                     prepared,
                     layout: layout.clone(),
-                    generation,
                 });
                 &cached.prepared
             }

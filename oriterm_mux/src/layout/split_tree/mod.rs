@@ -300,6 +300,86 @@ impl SplitTree {
         }
     }
 
+    /// Set the ratio of the split node identified by the pane pair.
+    ///
+    /// The divider is the split where `first` contains `pane_before` and
+    /// `second` contains `pane_after`. Returns `self` unchanged if no such
+    /// split exists.
+    #[must_use]
+    pub fn set_divider_ratio(
+        &self,
+        pane_before: PaneId,
+        pane_after: PaneId,
+        new_ratio: f32,
+    ) -> Self {
+        let new_ratio = clamp_ratio(new_ratio);
+        match self {
+            Self::Leaf(_) => self.clone(),
+            Self::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                if first.contains(pane_before) && second.contains(pane_after) {
+                    Self::Split {
+                        direction: *direction,
+                        ratio: new_ratio,
+                        first: Arc::clone(first),
+                        second: Arc::clone(second),
+                    }
+                } else if first.contains(pane_before) && first.contains(pane_after) {
+                    Self::Split {
+                        direction: *direction,
+                        ratio: *ratio,
+                        first: Arc::new(first.set_divider_ratio(
+                            pane_before,
+                            pane_after,
+                            new_ratio,
+                        )),
+                        second: Arc::clone(second),
+                    }
+                } else if second.contains(pane_before) && second.contains(pane_after) {
+                    Self::Split {
+                        direction: *direction,
+                        ratio: *ratio,
+                        first: Arc::clone(first),
+                        second: Arc::new(second.set_divider_ratio(
+                            pane_before,
+                            pane_after,
+                            new_ratio,
+                        )),
+                    }
+                } else {
+                    self.clone()
+                }
+            }
+        }
+    }
+
+    /// Resize a pane by adjusting the nearest qualifying split border.
+    ///
+    /// Finds the deepest ancestor split on the path from root to `pane`
+    /// where:
+    /// - The split direction matches `axis`.
+    /// - The pane is in `first` when `pane_in_first` is true, or in
+    ///   `second` when false.
+    ///
+    /// Then adjusts that split's ratio by `delta` (positive grows first
+    /// child, negative shrinks it). Clamped to 0.1..=0.9.
+    ///
+    /// Returns `self` unchanged if no qualifying split exists.
+    #[must_use]
+    pub fn resize_toward(
+        &self,
+        pane: PaneId,
+        axis: SplitDirection,
+        pane_in_first: bool,
+        delta: f32,
+    ) -> Self {
+        self.resize_toward_inner(pane, axis, pane_in_first, delta).0
+    }
+
     /// Recursively set all split ratios to 0.5 (equal sizing).
     #[must_use]
     pub fn equalize(&self) -> Self {
@@ -331,6 +411,84 @@ impl SplitTree {
     }
 
     // ── Private helpers ───────────────────────────────────────────
+
+    /// Returns `(new_tree, changed)` where `changed` is true when a deeper
+    /// split was adjusted.
+    fn resize_toward_inner(
+        &self,
+        pane: PaneId,
+        axis: SplitDirection,
+        pane_in_first: bool,
+        delta: f32,
+    ) -> (Self, bool) {
+        match self {
+            Self::Leaf(_) => (self.clone(), false),
+            Self::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                if first.contains(pane) {
+                    let (new_first, changed) =
+                        first.resize_toward_inner(pane, axis, pane_in_first, delta);
+                    if changed {
+                        return (
+                            Self::Split {
+                                direction: *direction,
+                                ratio: *ratio,
+                                first: Arc::new(new_first),
+                                second: Arc::clone(second),
+                            },
+                            true,
+                        );
+                    }
+                    if *direction == axis && pane_in_first {
+                        (
+                            Self::Split {
+                                direction: *direction,
+                                ratio: clamp_ratio(*ratio + delta),
+                                first: Arc::clone(first),
+                                second: Arc::clone(second),
+                            },
+                            true,
+                        )
+                    } else {
+                        (self.clone(), false)
+                    }
+                } else if second.contains(pane) {
+                    let (new_second, changed) =
+                        second.resize_toward_inner(pane, axis, pane_in_first, delta);
+                    if changed {
+                        return (
+                            Self::Split {
+                                direction: *direction,
+                                ratio: *ratio,
+                                first: Arc::clone(first),
+                                second: Arc::new(new_second),
+                            },
+                            true,
+                        );
+                    }
+                    if *direction == axis && !pane_in_first {
+                        (
+                            Self::Split {
+                                direction: *direction,
+                                ratio: clamp_ratio(*ratio + delta),
+                                first: Arc::clone(first),
+                                second: Arc::clone(second),
+                            },
+                            true,
+                        )
+                    } else {
+                        (self.clone(), false)
+                    }
+                } else {
+                    (self.clone(), false)
+                }
+            }
+        }
+    }
 
     fn collect_panes(&self, out: &mut Vec<PaneId>) {
         match self {

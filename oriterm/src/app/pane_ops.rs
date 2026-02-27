@@ -11,6 +11,9 @@ use oriterm_mux::{PaneId, SpawnConfig, TabId};
 use super::App;
 use crate::keybindings::Action;
 
+/// Per-keypress ratio adjustment for keyboard resize (5%).
+const RESIZE_STEP: f32 = 0.05;
+
 impl App {
     /// Dispatch a pane-related keybinding action.
     pub(super) fn execute_pane_action(&mut self, action: &Action) {
@@ -24,6 +27,11 @@ impl App {
             Action::NextPane => self.cycle_pane(true),
             Action::PrevPane => self.cycle_pane(false),
             Action::ClosePane => self.close_focused_pane(),
+            Action::ResizePaneUp => self.resize_pane_toward(Direction::Up),
+            Action::ResizePaneDown => self.resize_pane_toward(Direction::Down),
+            Action::ResizePaneLeft => self.resize_pane_toward(Direction::Left),
+            Action::ResizePaneRight => self.resize_pane_toward(Direction::Right),
+            Action::EqualizePanes => self.equalize_panes(),
             _ => {}
         }
     }
@@ -166,10 +174,42 @@ impl App {
         }
     }
 
+    /// Resize the focused pane by pushing the nearest split border.
+    ///
+    /// Translates a navigation direction to axis + side + delta:
+    /// - Right: push vertical border right (pane in first, +step)
+    /// - Left: push vertical border left (pane in second, −step)
+    /// - Down: push horizontal border down (pane in first, +step)
+    /// - Up: push horizontal border up (pane in second, −step)
+    pub(super) fn resize_pane_toward(&mut self, direction: Direction) {
+        let Some((tab_id, pane_id)) = self.active_pane_context() else {
+            return;
+        };
+        let (axis, pane_in_first, delta) = match direction {
+            Direction::Right => (SplitDirection::Vertical, true, RESIZE_STEP),
+            Direction::Left => (SplitDirection::Vertical, false, -RESIZE_STEP),
+            Direction::Down => (SplitDirection::Horizontal, true, RESIZE_STEP),
+            Direction::Up => (SplitDirection::Horizontal, false, -RESIZE_STEP),
+        };
+        let Some(mux) = &mut self.mux else { return };
+        mux.resize_pane(tab_id, pane_id, axis, pane_in_first, delta);
+        self.dirty = true;
+    }
+
+    /// Reset all split ratios in the active tab to 0.5.
+    pub(super) fn equalize_panes(&mut self) {
+        let Some((tab_id, _)) = self.active_pane_context() else {
+            return;
+        };
+        let Some(mux) = &mut self.mux else { return };
+        mux.equalize_panes(tab_id);
+        self.dirty = true;
+    }
+
     // -- Private helpers --
 
     /// Resolve `(tab_id, active_pane_id)` for the current active tab.
-    fn active_pane_context(&self) -> Option<(TabId, PaneId)> {
+    pub(super) fn active_pane_context(&self) -> Option<(TabId, PaneId)> {
         let mux = self.mux.as_ref()?;
         let win_id = self.active_window?;
         let tab_id = mux.active_tab_id(win_id)?;

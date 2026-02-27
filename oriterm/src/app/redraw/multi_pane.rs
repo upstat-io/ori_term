@@ -109,6 +109,7 @@ impl App {
             let cursor_blink_visible = !self.blinking_active || self.cursor_blink.is_visible();
 
             let mut focused_rect = None;
+            let mut focused_base = 0u64;
 
             for layout in layouts {
                 let pane_id = layout.pane_id;
@@ -184,8 +185,11 @@ impl App {
                         frame.hovered_url_segments.clear();
                     }
 
-                    // Cache blinking mode from focused pane.
                     if layout.is_focused {
+                        // Save stable row base for search bar restoration after the loop.
+                        focused_base = frame.content.stable_row_base;
+
+                        // Cache blinking mode from focused pane.
                         let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
                         if blinking_now && !self.blinking_active {
                             self.cursor_blink.reset();
@@ -221,6 +225,17 @@ impl App {
 
                 if layout.is_focused {
                     focused_rect = Some(layout.pixel_rect);
+                }
+            }
+
+            // Restore focused pane's search for the search bar — `frame.search`
+            // may have been overwritten by a non-focused dirty pane later in
+            // layout order.
+            if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
+                if let Some(pane) = self.panes.get(&focused.pane_id) {
+                    if let Some(frame) = self.frame.as_mut() {
+                        frame.search = pane.search().map(|s| FrameSearch::new(s, focused_base));
+                    }
                 }
             }
 

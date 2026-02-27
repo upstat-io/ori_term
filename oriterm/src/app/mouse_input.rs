@@ -141,6 +141,19 @@ impl App {
         let pressed = state == ElementState::Pressed;
         self.mouse.set_button_down(button, pressed);
 
+        // Divider drag: start on left-press when hovering a divider,
+        // finish on left-release when dragging.
+        if button == MouseButton::Left {
+            let consumed = if pressed {
+                self.try_start_divider_drag()
+            } else {
+                self.try_finish_divider_drag()
+            };
+            if consumed {
+                return;
+            }
+        }
+
         // Multi-pane click-to-focus: on any press in a multi-pane tab,
         // hit-test to find the target pane and switch focus if needed.
         // The click is NOT consumed — it falls through to selection/reporting

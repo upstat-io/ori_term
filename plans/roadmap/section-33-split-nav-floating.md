@@ -10,7 +10,7 @@ sections:
     status: in-progress
   - id: "33.2"
     title: Divider Drag Resize
-    status: not-started
+    status: in-progress
   - id: "33.3"
     title: Zoom + Unzoom
     status: not-started
@@ -118,30 +118,34 @@ Ghostty uses `Ctrl+Super+[/]` for cycle on Linux — we use `Ctrl+Alt` instead s
 
 Drag split dividers with the mouse to resize panes. Keyboard resize with modifier+arrow.
 
-**File:** `oriterm/src/app/input_mouse.rs`, `oriterm/src/drag.rs`
+**File:** `oriterm/src/app/divider_drag.rs`, `oriterm/src/app/mouse_input.rs`, `oriterm/src/app/pane_ops.rs`
 
-- [ ] Divider hit detection:
-  - [ ] 5px hit zone centered on the 2px divider (detect during `CursorMoved`)
-  - [ ] Change cursor icon: `CursorIcon::ColResize` for vertical splits, `CursorIcon::RowResize` for horizontal
-  - [ ] Store `hovering_divider: Option<DividerLayout>` on App
-- [ ] Divider drag state:
-  - [ ] On `MouseButton::Left` press while hovering divider: enter drag mode
-  - [ ] Store initial ratio and mouse position
-  - [ ] On `CursorMoved` during drag: compute new ratio from delta
-    - [ ] `new_ratio = initial_ratio + (delta_px / total_px)`
-    - [ ] Clamp to `0.1..=0.9`
-  - [ ] On `MouseButton::Left` release: commit ratio via `mux.set_ratio()`
-    - [ ] Immutable tree update: push old tree to undo stack
-  - [ ] Resize affected panes' PTYs after ratio change
-- [ ] Keyboard resize:
-  - [ ] `Ctrl+Alt+Arrow` — resize focused pane in direction (WezTerm: `Ctrl+Alt+Shift+Arrow`, Ghostty macOS: `Cmd+Ctrl+Arrow`)
-  - [ ] Find nearest ancestor split matching the arrow direction
-  - [ ] Adjust ratio by ±5% per keypress
-  - [ ] Clamp and resize PTYs
-- [ ] Equalize: `Ctrl+Shift+=` — reset all ratios to 0.5 (recursive)
-  - [ ] `mux.equalize(tab_id)` → immutable `SplitTree::equalize()`
+- [x] Divider hit detection:
+  - [x] 5px hit zone centered on the 2px divider (detect during `CursorMoved`)
+  - [x] Change cursor icon: `CursorIcon::ColResize` for vertical splits, `CursorIcon::RowResize` for horizontal
+  - [x] Store `hovering_divider: Option<DividerLayout>` on App
+- [x] Divider drag state:
+  - [x] On `MouseButton::Left` press while hovering divider: enter drag mode
+  - [x] Store initial ratio and mouse position
+  - [x] On `CursorMoved` during drag: compute new ratio from delta
+    - [x] `new_ratio = initial_ratio + (delta_px / total_px)`
+    - [x] Clamp to `0.1..=0.9`
+  - [x] On `MouseButton::Left` release: commit ratio via `mux.set_divider_ratio()`
+    - [ ] Immutable tree update: push old tree to undo stack  <!-- blocked-by:33.5 -->
+  - [x] Resize affected panes' PTYs after ratio change
+- [x] Keyboard resize:
+  - [x] `Ctrl+Alt+Shift+Arrow` — resize focused pane in direction
+  - [x] Find nearest ancestor split matching the arrow direction
+  - [x] Adjust ratio by ±5% per keypress
+  - [x] Clamp and resize PTYs
+- [x] Equalize: `Ctrl+Shift+=` — reset all ratios to 0.5 (recursive)
+  - [x] `mux.equalize_panes(tab_id)` → immutable `SplitTree::equalize()`
 
-**Tests:**
+**Tests (unit — SplitTree):**
+- [x] `set_divider_ratio`: simple, nested inner, nested outer, clamp, nonexistent
+- [x] `resize_toward`: right/left/up/down, nested deepest, wrong side noop, clamp, mixed directions
+
+**Tests (integration — manual):**
 - [ ] Hover on divider: cursor changes to resize icon
 - [ ] Hover off divider: cursor reverts to default
 - [ ] Drag divider: ratio updates proportionally to mouse movement
@@ -247,7 +251,7 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 
 **File:** `oriterm_mux/src/layout/history.rs`
 
-- [ ] `SplitHistory` struct on `MuxTab`:
+- [ ] `SplitHistory` struct on `MuxTab`:  <!-- unblocks:33.2 -->
   - [ ] `undo_stack: Vec<SplitTree>` — previous trees (most recent last), capacity 50
   - [ ] `redo_stack: Vec<SplitTree>` — trees undone (cleared on new mutation)
 - [ ] Undo: `Ctrl+Shift+U` → `Action::UndoSplit`
