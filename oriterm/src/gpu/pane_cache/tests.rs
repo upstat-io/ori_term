@@ -177,3 +177,52 @@ fn extend_from_merges_cached_frames() {
 
     assert_eq!(main.backgrounds.len(), 3, "2 from pane1 + 1 from pane2");
 }
+
+#[test]
+fn position_change_same_size_triggers_reprepare() {
+    let mut cache = PaneRenderCache::new();
+    let id = PaneId::from_raw(1);
+    let layout_a = make_layout(id, 0.0, 0.0, 640.0, 480.0);
+    // Same dimensions but different position (pane shifted right after sibling closed).
+    let layout_b = make_layout(id, 320.0, 0.0, 640.0, 480.0);
+
+    cache.get_or_prepare(id, &layout_a, true, |f| push_marker(f, 1.0));
+
+    let mut called = false;
+    cache.get_or_prepare(id, &layout_b, false, |f| {
+        called = true;
+        push_marker(f, 2.0);
+    });
+    assert!(called, "position change should trigger re-prepare");
+}
+
+#[test]
+fn selective_dirty_only_reprepares_dirty_pane() {
+    let mut cache = PaneRenderCache::new();
+    let id1 = PaneId::from_raw(1);
+    let id2 = PaneId::from_raw(2);
+    let layout1 = make_layout(id1, 0.0, 0.0, 640.0, 480.0);
+    let layout2 = make_layout(id2, 640.0, 0.0, 640.0, 480.0);
+
+    // Seed both.
+    cache.get_or_prepare(id1, &layout1, true, |f| push_marker(f, 1.0));
+    cache.get_or_prepare(id2, &layout2, true, |f| push_marker(f, 2.0));
+
+    // Only pane 1 is dirty.
+    let mut called1 = false;
+    let frame1 = cache.get_or_prepare(id1, &layout1, true, |f| {
+        called1 = true;
+        push_marker(f, 10.0);
+        push_marker(f, 11.0);
+    });
+    assert!(called1, "dirty pane 1 should re-prepare");
+    assert_eq!(frame1.backgrounds.len(), 2);
+
+    // Pane 2 is clean — should NOT re-prepare.
+    let mut called2 = false;
+    let frame2 = cache.get_or_prepare(id2, &layout2, false, |_f| {
+        called2 = true;
+    });
+    assert!(!called2, "clean pane 2 should use cache");
+    assert_eq!(frame2.backgrounds.len(), 1, "pane 2 cached frame untouched");
+}

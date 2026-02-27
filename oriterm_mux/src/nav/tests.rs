@@ -242,3 +242,198 @@ fn cycle_from_nonexistent_pane_returns_none() {
     let layouts = grid_2x2();
     assert_eq!(cycle(&layouts, p(99), true), None);
 }
+
+// ── Asymmetric T/L-shape navigation ─────────────────────────────
+
+/// T-shape: two panes on top, one full-width pane below.
+/// ```text
+///   p1 (0,0,500,400)    | p2 (500,0,500,400)
+///   p3 (0,400,1000,400) — full width
+/// ```
+fn t_shape() -> Vec<PaneLayout> {
+    vec![
+        tiled(1, 0.0, 0.0, 500.0, 400.0),
+        tiled(2, 500.0, 0.0, 500.0, 400.0),
+        tiled(3, 0.0, 400.0, 1000.0, 400.0),
+    ]
+}
+
+#[test]
+fn navigate_up_from_wide_bottom_pane_picks_nearest_above() {
+    // p3 center is (500, 600). Both p1 (250,200) and p2 (750,200) are above.
+    // p1 perp_dist=250, p2 perp_dist=250 — equal distance; first-in-list wins.
+    let layouts = t_shape();
+    let result = navigate(&layouts, p(3), Direction::Up);
+    assert!(
+        result == Some(p(1)) || result == Some(p(2)),
+        "should navigate to one of the top panes, got {result:?}",
+    );
+}
+
+#[test]
+fn navigate_down_to_wide_bottom_pane() {
+    let layouts = t_shape();
+    assert_eq!(navigate(&layouts, p(1), Direction::Down), Some(p(3)));
+    assert_eq!(navigate(&layouts, p(2), Direction::Down), Some(p(3)));
+}
+
+/// L-shape: tall left pane, two short panes stacked on the right.
+/// ```text
+///   p1 (0,0,500,800)  | p2 (500,0,500,400)
+///                      | p3 (500,400,500,400)
+/// ```
+fn l_shape() -> Vec<PaneLayout> {
+    vec![
+        tiled(1, 0.0, 0.0, 500.0, 800.0),
+        tiled(2, 500.0, 0.0, 500.0, 400.0),
+        tiled(3, 500.0, 400.0, 500.0, 400.0),
+    ]
+}
+
+#[test]
+fn navigate_left_from_short_pane_to_tall_pane() {
+    // p3 center is (750,600). Navigating left: only p1 (250,400) is to the left.
+    let layouts = l_shape();
+    assert_eq!(navigate(&layouts, p(3), Direction::Left), Some(p(1)));
+}
+
+#[test]
+fn navigate_right_from_tall_to_nearest_short() {
+    // p1 center is (250,400). p2 center is (750,200), p3 center is (750,600).
+    // Both are at primary_dist=500, but p2 perp_dist=200, p3 perp_dist=200 — tie.
+    // First-in-list (p2) wins.
+    let layouts = l_shape();
+    let result = navigate(&layouts, p(1), Direction::Right);
+    assert!(
+        result == Some(p(2)) || result == Some(p(3)),
+        "should navigate to one of the right panes, got {result:?}",
+    );
+}
+
+// ── 3-pane nested split ─────────────────────────────────────────
+
+/// 3-pane: left half split horizontally, right half is one pane.
+/// ```text
+///   p1 (0,0,500,400)    | p3 (500,0,500,800)
+///   p2 (0,400,500,400)  |
+/// ```
+fn nested_3_pane() -> Vec<PaneLayout> {
+    vec![
+        tiled(1, 0.0, 0.0, 500.0, 400.0),
+        tiled(2, 0.0, 400.0, 500.0, 400.0),
+        tiled(3, 500.0, 0.0, 500.0, 800.0),
+    ]
+}
+
+#[test]
+fn navigate_3_pane_all_directions() {
+    let layouts = nested_3_pane();
+    // p1 → right → p3.
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), Some(p(3)));
+    // p1 → down → p2.
+    assert_eq!(navigate(&layouts, p(1), Direction::Down), Some(p(2)));
+    // p2 → up → p1.
+    assert_eq!(navigate(&layouts, p(2), Direction::Up), Some(p(1)));
+    // p2 → right → p3.
+    assert_eq!(navigate(&layouts, p(2), Direction::Right), Some(p(3)));
+    // p3 → left → p1 or p2 (depends on centroid proximity).
+    let left = navigate(&layouts, p(3), Direction::Left);
+    assert!(
+        left == Some(p(1)) || left == Some(p(2)),
+        "p3 left should reach p1 or p2, got {left:?}",
+    );
+}
+
+#[test]
+fn cycle_3_pane_visits_all() {
+    let layouts = nested_3_pane();
+    assert_eq!(cycle(&layouts, p(1), true), Some(p(2)));
+    assert_eq!(cycle(&layouts, p(2), true), Some(p(3)));
+    assert_eq!(cycle(&layouts, p(3), true), Some(p(1)));
+}
+
+// ── Exhaustive removal ──────────────────────────────────────────
+
+#[test]
+fn navigate_after_progressive_pane_removal() {
+    // Start with 3 panes, remove them one by one. Navigation should never panic.
+    let mut layouts = nested_3_pane();
+
+    // Remove p2 — now p1 and p3 remain.
+    // p1 center (250,200), p3 center (750,400) — p3 is right and below.
+    layouts.retain(|l| l.pane_id != p(2));
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), Some(p(3)));
+    assert_eq!(navigate(&layouts, p(1), Direction::Down), Some(p(3)));
+
+    // Remove p3 — only p1 remains.
+    layouts.retain(|l| l.pane_id != p(3));
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), None);
+    assert_eq!(navigate(&layouts, p(1), Direction::Left), None);
+}
+
+#[test]
+fn cycle_after_progressive_pane_removal() {
+    let mut layouts = nested_3_pane();
+
+    // Remove p2.
+    layouts.retain(|l| l.pane_id != p(2));
+    assert_eq!(cycle(&layouts, p(1), true), Some(p(3)));
+    assert_eq!(cycle(&layouts, p(3), true), Some(p(1)));
+
+    // Remove p3 — single pane wraps to self.
+    layouts.retain(|l| l.pane_id != p(3));
+    assert_eq!(cycle(&layouts, p(1), true), Some(p(1)));
+    assert_eq!(cycle(&layouts, p(1), false), Some(p(1)));
+}
+
+// ── Border and tie-breaking ─────────────────────────────────────
+
+#[test]
+fn nearest_pane_on_exact_border_goes_to_right_neighbor() {
+    // Half-open intervals: x=500.0 is the first pixel of p2 (p1 ends at 500.0 exclusive).
+    let layouts = grid_2x2();
+    assert_eq!(nearest_pane(&layouts, 500.0, 200.0), Some(p(2)));
+}
+
+#[test]
+fn nearest_pane_just_inside_left_edge() {
+    let layouts = grid_2x2();
+    // x=499.9 is inside p1; x=500.0 is inside p2.
+    assert_eq!(nearest_pane(&layouts, 499.9, 200.0), Some(p(1)));
+}
+
+#[test]
+fn navigate_equidistant_candidates_is_deterministic() {
+    // 3 columns, equal width. From the center column, navigate right:
+    // only one candidate (p3). Navigate left: only one (p1).
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 333.0, 800.0),
+        tiled(2, 334.0, 0.0, 333.0, 800.0),
+        tiled(3, 668.0, 0.0, 332.0, 800.0),
+    ];
+    assert_eq!(navigate(&layouts, p(2), Direction::Right), Some(p(3)));
+    assert_eq!(navigate(&layouts, p(2), Direction::Left), Some(p(1)));
+
+    // From p1, navigate right: p2 and p3 are both to the right.
+    // p2 (primary_dist=168) beats p3 (primary_dist=502).
+    assert_eq!(navigate(&layouts, p(1), Direction::Right), Some(p(2)));
+}
+
+// ── Cycle with floating + tiled mixed ───────────────────────────
+
+#[test]
+fn cycle_with_floating_panes_visits_all() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 500.0, 800.0),
+        tiled(2, 500.0, 0.0, 500.0, 800.0),
+        floating(10, 200.0, 200.0, 300.0, 300.0),
+    ];
+    // Cycle visits in layout order: p1 → p2 → p10 → p1.
+    assert_eq!(cycle(&layouts, p(1), true), Some(p(2)));
+    assert_eq!(cycle(&layouts, p(2), true), Some(p(10)));
+    assert_eq!(cycle(&layouts, p(10), true), Some(p(1)));
+
+    // Backward: p1 → p10 → p2 → p1.
+    assert_eq!(cycle(&layouts, p(1), false), Some(p(10)));
+    assert_eq!(cycle(&layouts, p(10), false), Some(p(2)));
+}
