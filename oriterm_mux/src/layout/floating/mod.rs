@@ -3,8 +3,9 @@
 //! Floating panes have absolute position and size within the tab area, rendered
 //! on top of the tiled split layout. Inspired by Zellij's floating pane system.
 //!
-//! Like `SplitTree`, the `FloatingLayer` is immutable — all mutation methods
-//! return a new layer.
+//! Most mutation methods return a new `FloatingLayer` (like `SplitTree`).
+//! Hot-path operations (drag move/resize) have in-place `_mut` variants
+//! that avoid cloning the entire `Vec` on every mouse move.
 
 use crate::id::PaneId;
 use crate::layout::rect::Rect;
@@ -59,9 +60,10 @@ impl FloatingPane {
     }
 }
 
-/// An immutable layer of floating panes, ordered by z-order.
+/// Floating pane layer, ordered by z-order.
 ///
-/// All mutation methods return a new `FloatingLayer`.
+/// Structural methods (add, remove, raise, lower) return a new layer.
+/// Hot-path methods (move, resize) have in-place `_mut` variants.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FloatingLayer {
     /// Panes ordered by ascending z-order (front-most last).
@@ -172,6 +174,38 @@ impl FloatingLayer {
             })
             .collect();
         Self { panes }
+    }
+
+    /// Move a floating pane to a new position in-place.
+    ///
+    /// Hot-path variant of [`move_pane`](Self::move_pane) that avoids cloning
+    /// the entire Vec. Preferred during drag interactions (~60 calls/sec).
+    pub fn move_pane_mut(&mut self, pane_id: PaneId, x: f32, y: f32) {
+        if let Some(p) = self.panes.iter_mut().find(|p| p.pane_id == pane_id) {
+            p.rect.x = x;
+            p.rect.y = y;
+        }
+    }
+
+    /// Resize a floating pane in-place.
+    ///
+    /// Hot-path variant of [`resize_pane`](Self::resize_pane) that avoids
+    /// cloning the entire Vec. Preferred during drag interactions.
+    pub fn resize_pane_mut(&mut self, pane_id: PaneId, width: f32, height: f32) {
+        if let Some(p) = self.panes.iter_mut().find(|p| p.pane_id == pane_id) {
+            p.rect.width = width;
+            p.rect.height = height;
+        }
+    }
+
+    /// Resize and move a floating pane in a single pass, in-place.
+    ///
+    /// Used during edge/corner resize drags where both position and size
+    /// change simultaneously (e.g., dragging the top-left corner).
+    pub fn set_pane_rect_mut(&mut self, pane_id: PaneId, rect: Rect) {
+        if let Some(p) = self.panes.iter_mut().find(|p| p.pane_id == pane_id) {
+            p.rect = rect;
+        }
     }
 
     /// Bring a pane to the front (highest z-order). Returns a new layer.

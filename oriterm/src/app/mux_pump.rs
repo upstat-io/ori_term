@@ -59,7 +59,14 @@ impl App {
                 MuxNotification::TabLayoutChanged(_) => {
                     // Layout changed (split/close) — pane positions shifted.
                     self.pane_cache.invalidate_all();
+                    self.cached_dividers = None;
                     self.resize_all_panes();
+                    self.dirty = true;
+                }
+                MuxNotification::FloatingPaneChanged(_) => {
+                    // Floating pane moved/resized — positions shifted but
+                    // PTY dimensions unchanged. Skip resize_all_panes.
+                    self.pane_cache.invalidate_all();
                     self.dirty = true;
                 }
                 MuxNotification::WindowTabsChanged(_) => {

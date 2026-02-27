@@ -223,6 +223,8 @@ pub(crate) enum MuxNotification {
     PaneClosed(PaneId),
     /// A tab's split tree layout changed.
     TabLayoutChanged(TabId),
+    /// A floating pane moved or resized (position-only, no PTY resize needed).
+    FloatingPaneChanged(TabId),
     /// A window's tab list changed.
     WindowTabsChanged(WindowId),
     /// An alert fired in a pane (bell, urgent notification).
@@ -257,6 +259,7 @@ impl fmt::Debug for MuxNotification {
             Self::PaneDirty(id) => write!(f, "PaneDirty({id})"),
             Self::PaneClosed(id) => write!(f, "PaneClosed({id})"),
             Self::TabLayoutChanged(id) => write!(f, "TabLayoutChanged({id})"),
+            Self::FloatingPaneChanged(id) => write!(f, "FloatingPaneChanged({id})"),
             Self::WindowTabsChanged(id) => write!(f, "WindowTabsChanged({id})"),
             Self::WindowClosed(id) => write!(f, "WindowClosed({id})"),
             Self::Alert(id) => write!(f, "Alert({id})"),

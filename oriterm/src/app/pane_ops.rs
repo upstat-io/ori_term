@@ -413,6 +413,7 @@ impl App {
         let was_zoomed = tab.zoomed_pane().is_some();
         if was_zoomed {
             mux.unzoom_silent(tab_id);
+            self.cached_dividers = None;
         }
         was_zoomed
     }

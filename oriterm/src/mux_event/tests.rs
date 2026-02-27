@@ -305,6 +305,10 @@ fn mux_notification_debug_all_variants() {
             "TabLayoutChanged(Tab(2))",
         ),
         (
+            MuxNotification::FloatingPaneChanged(tid),
+            "FloatingPaneChanged(Tab(2))",
+        ),
+        (
             MuxNotification::WindowTabsChanged(wid),
             "WindowTabsChanged(Window(3))",
         ),

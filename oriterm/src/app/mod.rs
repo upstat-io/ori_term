@@ -144,6 +144,8 @@ pub(crate) struct App {
     // Currently hovered URL (set on Ctrl+mouse move, cleared on Ctrl release).
     hovered_url: Option<DetectedUrl>,
 
+    // Cached divider layouts for hit testing (invalidated on layout change).
+    cached_dividers: Option<Vec<DividerLayout>>,
     // Divider currently under the cursor (for hover cursor icon).
     hovering_divider: Option<DividerLayout>,
     // Active divider drag state (ratio tracking during drag).
@@ -209,6 +211,7 @@ impl App {
             pending_paste: None,
             url_cache: UrlDetectCache::default(),
             hovered_url: None,
+            cached_dividers: None,
             hovering_divider: None,
             divider_drag: None,
             floating_drag: None,

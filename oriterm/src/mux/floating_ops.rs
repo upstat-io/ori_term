@@ -37,6 +37,7 @@ impl InProcessMux {
         let (pane_id, pane) = self.spawn_pane(tab_id, config, theme, winit_proxy)?;
 
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            self.pane_registry.unregister(pane_id);
             return Ok((pane_id, pane));
         };
 
@@ -133,17 +134,23 @@ impl InProcessMux {
     }
 
     /// Move a floating pane to a new position.
+    ///
+    /// Uses in-place mutation and emits `FloatingPaneChanged` (lightweight,
+    /// no PTY resize) instead of `TabLayoutChanged`.
     pub(crate) fn move_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId, x: f32, y: f32) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
-        let new_layer = tab.floating().move_pane(pane_id, x, y);
-        tab.set_floating(new_layer);
+        tab.floating_mut().move_pane_mut(pane_id, x, y);
         self.notifications
-            .push(MuxNotification::TabLayoutChanged(tab_id));
+            .push(MuxNotification::FloatingPaneChanged(tab_id));
     }
 
     /// Resize a floating pane to new dimensions.
+    ///
+    /// Uses in-place mutation and emits `FloatingPaneChanged` (lightweight,
+    /// no PTY resize) instead of `TabLayoutChanged`. PTY resize is deferred
+    /// to drag finish.
     pub(crate) fn resize_floating_pane(
         &mut self,
         tab_id: TabId,
@@ -154,10 +161,22 @@ impl InProcessMux {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
-        let new_layer = tab.floating().resize_pane(pane_id, width, height);
-        tab.set_floating(new_layer);
+        tab.floating_mut().resize_pane_mut(pane_id, width, height);
         self.notifications
-            .push(MuxNotification::TabLayoutChanged(tab_id));
+            .push(MuxNotification::FloatingPaneChanged(tab_id));
+    }
+
+    /// Resize and move a floating pane in one call with one notification.
+    ///
+    /// Used during edge/corner resize drags where both position and size
+    /// change. Avoids emitting two separate notifications per mouse move.
+    pub(crate) fn set_floating_pane_rect(&mut self, tab_id: TabId, pane_id: PaneId, rect: Rect) {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return;
+        };
+        tab.floating_mut().set_pane_rect_mut(pane_id, rect);
+        self.notifications
+            .push(MuxNotification::FloatingPaneChanged(tab_id));
     }
 
     /// Bring a floating pane to the front (highest z-order).
@@ -168,6 +187,6 @@ impl InProcessMux {
         let new_layer = tab.floating().raise(pane_id);
         tab.set_floating(new_layer);
         self.notifications
-            .push(MuxNotification::TabLayoutChanged(tab_id));
+            .push(MuxNotification::FloatingPaneChanged(tab_id));
     }
 }

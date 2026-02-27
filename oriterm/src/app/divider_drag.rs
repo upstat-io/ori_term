@@ -69,7 +69,11 @@ impl App {
         let px = position.x as f32;
         let py = position.y as f32;
 
-        let Some((_, dividers)) = self.compute_pane_layouts() else {
+        // Lazily populate divider cache from the current layout.
+        if self.cached_dividers.is_none() {
+            self.cached_dividers = self.compute_pane_layouts().map(|(_, d)| d);
+        }
+        let Some(dividers) = self.cached_dividers.as_ref() else {
             self.clear_divider_hover();
             return false;
         };

@@ -144,12 +144,14 @@ impl App {
         let px = position.x as f32;
         let py = position.y as f32;
 
+        // Resolve tab context first (both IDs are Copy, borrow ends here).
+        let Some((tab_id, _)) = self.active_pane_context() else {
+            return false;
+        };
+
         // Find topmost floating pane under cursor.
         let floating_hit = {
             let Some(mux) = self.mux.as_ref() else {
-                return false;
-            };
-            let Some((tab_id, _)) = self.active_pane_context_from(mux) else {
                 return false;
             };
             let Some(tab) = mux.session().get_tab(tab_id) else {
@@ -190,11 +192,13 @@ impl App {
         let px = pos.x as f32;
         let py = pos.y as f32;
 
+        // Resolve tab context first (both IDs are Copy, borrow ends here).
+        let Some((tab_id, _)) = self.active_pane_context() else {
+            return false;
+        };
+
         let floating_hit = {
             let Some(mux) = self.mux.as_ref() else {
-                return false;
-            };
-            let Some((tab_id, _)) = self.active_pane_context_from(mux) else {
                 return false;
             };
             let Some(tab) = mux.session().get_tab(tab_id) else {
@@ -302,9 +306,10 @@ impl App {
                 let (new_rect, needs_move) = compute_resize(ir, edge, dx, dy);
 
                 let Some(mux) = &mut self.mux else { return };
-                mux.resize_floating_pane(tab_id, pane_id, new_rect.width, new_rect.height);
                 if needs_move {
-                    mux.move_floating_pane(tab_id, pane_id, new_rect.x, new_rect.y);
+                    mux.set_floating_pane_rect(tab_id, pane_id, new_rect);
+                } else {
+                    mux.resize_floating_pane(tab_id, pane_id, new_rect.width, new_rect.height);
                 }
                 self.dirty = true;
             }
@@ -332,20 +337,6 @@ impl App {
         if self.floating_drag.take().is_some() {
             self.resize_all_panes();
         }
-    }
-
-    /// Helper: get `(tab_id, active_pane_id)` from a mux reference.
-    ///
-    /// Same as `active_pane_context()` but takes an explicit mux ref to
-    /// avoid borrowing `self` while also borrowing `self.mux`.
-    fn active_pane_context_from(
-        &self,
-        mux: &crate::mux::InProcessMux,
-    ) -> Option<(oriterm_mux::TabId, PaneId)> {
-        let win_id = self.active_window?;
-        let tab_id = mux.active_tab_id(win_id)?;
-        let tab = mux.session().get_tab(tab_id)?;
-        Some((tab_id, tab.active_pane()))
     }
 }
 

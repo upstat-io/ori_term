@@ -373,6 +373,7 @@ impl App {
             pane.resize_pty(rows as u16, cols as u16);
         }
         self.resize_all_panes();
+        self.cached_dividers = None;
 
         self.update_resize_increments();
     }
