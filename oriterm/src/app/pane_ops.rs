@@ -54,6 +54,7 @@ impl App {
         let Some(mux) = &mut self.mux else { return };
         mux.toggle_zoom(tab_id);
         self.pane_cache.invalidate_all();
+        self.sync_tab_bar_titles();
         self.dirty = true;
     }
 
@@ -124,7 +125,7 @@ impl App {
             return;
         };
 
-        if let Some(target) = oriterm_mux::nav::navigate(&layouts, pane_id, direction) {
+        if let Some(target) = oriterm_mux::nav::navigate_wrap(&layouts, pane_id, direction) {
             self.set_focused_pane(target);
         }
     }
@@ -150,14 +151,22 @@ impl App {
 
     /// Close the focused pane.
     ///
-    /// The mux emits `PaneClosed` and `TabLayoutChanged` notifications
-    /// which handle cleanup and layout recomputation in `pump_mux_events`.
+    /// If this is the last pane in the last tab, takes the same `shutdown()`
+    /// path as `WindowEvent::CloseRequested` (the window close button). A
+    /// future confirmation dialog only needs to gate `shutdown()`.
+    ///
+    /// For non-last panes, the mux emits `PaneClosed` and `TabLayoutChanged`
+    /// notifications which handle cleanup in `pump_mux_events`.
     pub(super) fn close_focused_pane(&mut self) {
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
         let Some(mux) = &mut self.mux else { return };
 
+        // Last pane? Same path as the close button.
+        if mux.is_last_pane(pane_id) {
+            self.shutdown(0);
+        }
         let result = mux.close_pane(pane_id);
         log::info!("close pane {pane_id:?}: {result:?}");
         self.dirty = true;
@@ -481,6 +490,7 @@ impl App {
         if was_zoomed {
             mux.unzoom_silent(tab_id);
             self.cached_dividers = None;
+            self.sync_tab_bar_titles();
         }
         was_zoomed
     }

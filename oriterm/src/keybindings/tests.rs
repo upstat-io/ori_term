@@ -591,17 +591,14 @@ fn focus_pane_arrow_defaults() {
 }
 
 #[test]
-fn cycle_pane_defaults() {
+fn cycle_pane_has_no_default_binding() {
+    // PrevPane/NextPane have no default keybinding — directional arrows
+    // wrap around instead. Users can bind manually if wanted.
     let bindings = default_bindings();
-    let mods = Modifiers::CONTROL | Modifiers::ALT;
-    assert_eq!(
-        find_binding(&bindings, &BindingKey::Character("[".to_owned()), mods),
-        Some(&Action::PrevPane),
-    );
-    assert_eq!(
-        find_binding(&bindings, &BindingKey::Character("]".to_owned()), mods),
-        Some(&Action::NextPane),
-    );
+    let has_prev = bindings.iter().any(|b| b.action == Action::PrevPane);
+    let has_next = bindings.iter().any(|b| b.action == Action::NextPane);
+    assert!(!has_prev, "PrevPane should have no default binding");
+    assert!(!has_next, "NextPane should have no default binding");
 }
 
 #[test]

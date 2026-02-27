@@ -205,6 +205,11 @@ impl InProcessMux {
         }
     }
 
+    /// True when this pane is the only pane in the entire session.
+    pub(crate) fn is_last_pane(&self, pane_id: PaneId) -> bool {
+        self.session.is_last_pane(pane_id)
+    }
+
     /// Look up a pane's metadata entry.
     #[allow(dead_code, reason = "called when tab CRUD is fully wired to App")]
     pub(crate) fn get_pane_entry(&self, pane_id: PaneId) -> Option<&PaneEntry> {

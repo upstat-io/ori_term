@@ -21,6 +21,18 @@ pub enum Direction {
     Right,
 }
 
+impl Direction {
+    /// The opposite direction (for wrap-around navigation).
+    fn opposite(self) -> Self {
+        match self {
+            Self::Up => Self::Down,
+            Self::Down => Self::Up,
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+        }
+    }
+}
+
 impl fmt::Display for Direction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -99,6 +111,70 @@ pub fn navigate(layouts: &[PaneLayout], from: PaneId, direction: Direction) -> O
         if best
             .as_ref()
             .is_none_or(|(_, best_score)| score < *best_score)
+        {
+            best = Some((layout.pane_id, score));
+        }
+    }
+
+    best.map(|(id, _)| id)
+}
+
+/// Navigate with wrap-around: if no pane exists in the given direction,
+/// wrap to the farthest pane on the opposite edge.
+///
+/// For example, pressing Right from the rightmost pane wraps to the
+/// leftmost pane. This makes directional navigation cover all panes
+/// without needing a separate cycle keybinding.
+pub fn navigate_wrap(layouts: &[PaneLayout], from: PaneId, direction: Direction) -> Option<PaneId> {
+    if let Some(id) = navigate(layouts, from, direction) {
+        return Some(id);
+    }
+
+    // No pane in the requested direction — wrap to the opposite edge.
+    // Pick the farthest pane in the opposite direction (same scoring logic).
+    let from_layout = layouts.iter().find(|l| l.pane_id == from)?;
+    let from_center = from_layout.pixel_rect.center();
+    let opposite = direction.opposite();
+
+    let mut best: Option<(PaneId, f32)> = None;
+    for layout in layouts {
+        if layout.pane_id == from {
+            continue;
+        }
+        let c = layout.pixel_rect.center();
+
+        let (primary_dist, perp_dist) = match opposite {
+            Direction::Up => {
+                if c.1 >= from_center.1 {
+                    continue;
+                }
+                (from_center.1 - c.1, (from_center.0 - c.0).abs())
+            }
+            Direction::Down => {
+                if c.1 <= from_center.1 {
+                    continue;
+                }
+                (c.1 - from_center.1, (from_center.0 - c.0).abs())
+            }
+            Direction::Left => {
+                if c.0 >= from_center.0 {
+                    continue;
+                }
+                (from_center.0 - c.0, (from_center.1 - c.1).abs())
+            }
+            Direction::Right => {
+                if c.0 <= from_center.0 {
+                    continue;
+                }
+                (c.0 - from_center.0, (from_center.1 - c.1).abs())
+            }
+        };
+
+        // Pick the farthest pane in the opposite direction (most extreme wrap target).
+        let score = primary_dist + perp_dist * 0.5;
+        if best
+            .as_ref()
+            .is_none_or(|(_, best_score)| score > *best_score)
         {
             best = Some((layout.pane_id, score));
         }

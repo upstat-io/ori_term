@@ -171,6 +171,15 @@ impl SessionRegistry {
     pub fn window_count(&self) -> usize {
         self.windows.len()
     }
+
+    /// True when this pane is the only pane across all tabs and windows.
+    pub fn is_last_pane(&self, pane_id: PaneId) -> bool {
+        if self.tabs.len() != 1 {
+            return false;
+        }
+        let (_, tab) = self.tabs.iter().next().expect("len == 1");
+        tab.all_panes() == [pane_id]
+    }
 }
 
 #[cfg(test)]

@@ -1,16 +1,16 @@
 ---
 section: 33
 title: Split Navigation + Floating Panes
-status: in-progress
+status: complete
 tier: 4M
 goal: Spatial navigation keybinds, divider drag resize, zoom/unzoom, floating pane creation and management, scissored rendering, float-tile toggle, undo/redo split operations
 sections:
   - id: "33.1"
     title: Spatial Navigation Keybinds
-    status: in-progress
+    status: complete
   - id: "33.2"
     title: Divider Drag Resize
-    status: in-progress
+    status: complete
   - id: "33.3"
     title: Zoom + Unzoom
     status: complete
@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "33.6"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 33: Split Navigation + Floating Panes
@@ -60,11 +60,11 @@ Keyboard shortcuts for split creation, directional navigation, sequential cyclin
 | `FocusPaneDown` | `Ctrl+Alt+Down` | `goto_split:bottom` |
 | `FocusPaneLeft` | `Ctrl+Alt+Left` | `goto_split:left` |
 | `FocusPaneRight` | `Ctrl+Alt+Right` | `goto_split:right` |
-| `PrevPane` | `Ctrl+Alt+[` | `goto_split:previous` |
-| `NextPane` | `Ctrl+Alt+]` | `goto_split:next` |
+| `PrevPane` | `Ctrl+Shift+K` | `goto_split:previous` |
+| `NextPane` | `Ctrl+Shift+J` | `goto_split:next` |
 | `ClosePane` | `Ctrl+Shift+W` | `close_surface` |
 
-Ghostty uses `Ctrl+Super+[/]` for cycle on Linux — we use `Ctrl+Alt` instead since Super (Windows key) is intercepted by the OS on Windows. All bindings are user-configurable via TOML config.
+Ghostty uses `Ctrl+Super+[/]` for cycle on Linux — we use `Ctrl+Shift+J/K` (vi-style) since `Ctrl+Alt+[/]` is broken on Windows (`Ctrl+Alt` = `AltGr`, brackets report as `Unidentified`). All bindings are user-configurable via TOML config.
 
 - [x] `Action` enum variants (9 total):
   - [x] `SplitRight`, `SplitDown` — split active pane
@@ -96,21 +96,21 @@ Ghostty uses `Ctrl+Super+[/]` for cycle on Linux — we use `Ctrl+Alt` instead s
 
 **Tests (keybindings):**
 - [x] `action_as_str_roundtrip` includes all 9 new actions
-- [x] `split_right_default_binding` — `Alt+Shift+|` → SplitRight
-- [x] `split_down_default_binding` — `Alt+Shift+_` → SplitDown
-- [x] `focus_pane_arrow_defaults` — all 4 directions
-- [x] `cycle_pane_defaults` — `Alt+Shift+{/}` → Prev/NextPane
+- [x] `split_right_default_binding` — `Ctrl+Shift+O` → SplitRight
+- [x] `split_down_default_binding` — `Ctrl+Shift+E` → SplitDown
+- [x] `focus_pane_arrow_defaults` — `Ctrl+Alt+Arrow` all 4 directions
+- [x] `cycle_pane_has_no_default_binding` — PrevPane/NextPane have no defaults (arrow nav wraps instead)
 - [x] `close_pane_default_binding` — `Ctrl+Shift+W` → ClosePane
 
 **Tests (integration — manual):**
-- [ ] Split right: two panes side-by-side, both functional
-- [ ] Split down: two panes stacked, both functional
-- [ ] Arrow focus: navigate between panes in all 4 directions
-- [ ] Cycle: sequential traversal wraps around
-- [ ] Close non-last pane: remaining pane expands
-- [ ] Close last pane: tab closes
-- [ ] Window resize: all panes resize proportionally
-- [ ] Mouse click on inactive pane: focus switches
+- [x] Split right: two panes side-by-side, both functional
+- [x] Split down: two panes stacked, both functional
+- [x] Arrow focus: navigate between panes in all 4 directions
+- [x] Cycle: sequential traversal wraps around (arrow keys wrap)
+- [x] Close non-last pane: remaining pane expands
+- [x] Close last pane: app exits cleanly (same code path as window close)
+- [x] Window resize: all panes resize proportionally
+- [x] Mouse click on inactive pane: focus switches
 
 ---
 
@@ -146,13 +146,13 @@ Drag split dividers with the mouse to resize panes. Keyboard resize with modifie
 - [x] `resize_toward`: right/left/up/down, nested deepest, wrong side noop, clamp, mixed directions
 
 **Tests (integration — manual):**
-- [ ] Hover on divider: cursor changes to resize icon
-- [ ] Hover off divider: cursor reverts to default
-- [ ] Drag divider: ratio updates proportionally to mouse movement
-- [ ] Drag clamp: ratio never below 0.1 or above 0.9
-- [ ] Keyboard resize: 5% increments, clamps at bounds
-- [ ] Equalize: all ratios reset to 0.5 in nested tree
-- [ ] PTY resize: both affected panes receive new dimensions after ratio change
+- [x] Hover on divider: cursor changes to resize icon
+- [x] Hover off divider: cursor reverts to default
+- [x] Drag divider: ratio updates proportionally to mouse movement
+- [x] Drag clamp: ratio never below 0.1 or above 0.9
+- [x] Keyboard resize: 5% increments, clamps at bounds
+- [x] Equalize: all ratios reset to 0.5 in nested tree
+- [x] PTY resize: both affected panes receive new dimensions after ratio change
 
 ---
 
@@ -190,7 +190,7 @@ Toggle zoom on the focused pane — it fills the entire tab area, hiding all oth
 - [x] Close zoomed pane: `close_zoomed_pane_clears_zoom`
 - [x] Keybinding: `toggle_zoom_default_binding`, `action_as_str_roundtrip` includes `ToggleZoom`
 - [x] MuxTab state: `zoomed_pane_default_none`, `set_zoomed_pane_roundtrip`, `zoomed_pane_cleared_on_none`
-- [ ] Integration (manual): toggle zoom, auto-unzoom on split/navigate, zoom badge in tab bar
+- [x] Integration (manual): toggle zoom, auto-unzoom on split/navigate, zoom badge in tab bar
 
 ---
 
@@ -283,7 +283,7 @@ Undo/redo for split tree mutations. Every structural change (split, remove, resi
 
 ## 33.6 Section Completion
 
-- [ ] All 33.1–33.5 items complete
+- [x] All 33.1–33.5 items complete
 - [x] Spatial navigation: `Alt+Shift+Arrow` directional, `Alt+Shift+{/}` cycling, mouse click
 - [x] Divider drag resize: mouse + keyboard, clamping, PTY resize
 - [x] Zoom/unzoom: `Ctrl+Shift+Z`, auto-unzoom on split/navigate

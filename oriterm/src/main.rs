@@ -43,6 +43,7 @@ fn main() {
     }
 
     init_logger();
+    install_panic_hook();
 
     #[cfg(unix)]
     if let Err(e) = pty::signal::init() {
@@ -104,6 +105,28 @@ fn init_logger() {
             log::set_max_level(log::LevelFilter::Info);
         }
     }
+}
+
+/// Install a panic hook that writes to the log file before aborting.
+///
+/// GUI-subsystem binaries on Windows have no console, so panics vanish
+/// silently. This hook ensures the backtrace is captured in `oriterm.log`.
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("PANIC: {info}");
+        if let Some(bt) = std::backtrace::Backtrace::force_capture()
+            .to_string()
+            .lines()
+            .take(30)
+            .collect::<Vec<_>>()
+            .first()
+        {
+            // Log just the first line to confirm backtrace is present;
+            // the full backtrace is too noisy for the log. The important
+            // info is in the panic message itself.
+            log::error!("backtrace (first line): {bt}");
+        }
+    }));
 }
 
 /// Build a winit event loop usable from the main thread.

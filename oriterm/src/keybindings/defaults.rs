@@ -67,8 +67,6 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         bind(named(NamedKey::ArrowDown), ca, Action::FocusPaneDown),
         bind(named(NamedKey::ArrowLeft), ca, Action::FocusPaneLeft),
         bind(named(NamedKey::ArrowRight), ca, Action::FocusPaneRight),
-        bind(ch("["), ca, Action::PrevPane),
-        bind(ch("]"), ca, Action::NextPane),
         bind(ch("w"), cs, Action::ClosePane),
         // Pane resize (Ctrl+Alt+Shift+Arrow for resize, Ctrl+Shift+= for equalize).
         bind(named(NamedKey::ArrowUp), ca | shift, Action::ResizePaneUp),

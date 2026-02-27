@@ -51,8 +51,12 @@ impl App {
                     self.dirty = true;
                 }
                 MuxNotification::PaneClosed(id) => {
-                    // Remove the pane; Drop runs on a background thread.
-                    self.panes.remove(&id);
+                    // Remove the pane from the map. Drop (PTY kill + reader
+                    // thread join + child reap) runs on a background thread
+                    // to avoid blocking the event loop.
+                    if let Some(pane) = self.panes.remove(&id) {
+                        std::thread::spawn(move || drop(pane));
+                    }
                     self.pane_cache.remove(id);
                     self.dirty = true;
                 }

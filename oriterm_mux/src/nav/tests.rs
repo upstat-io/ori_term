@@ -1,4 +1,4 @@
-use super::{Direction, cycle, navigate, nearest_pane};
+use super::{Direction, cycle, navigate, navigate_wrap, nearest_pane};
 use crate::id::PaneId;
 use crate::layout::compute::PaneLayout;
 use crate::layout::rect::Rect;
@@ -669,4 +669,59 @@ fn nearest_pane_with_only_floating_panes() {
     assert_eq!(nearest_pane(&layouts, 600.0, 600.0), Some(p(11)));
     // Outside all floats.
     assert_eq!(nearest_pane(&layouts, 0.0, 0.0), None);
+}
+
+// ── navigate_wrap: directional with wrap-around ─────────────────
+
+#[test]
+fn navigate_wrap_right_from_rightmost_wraps_to_leftmost() {
+    let layouts = grid_2x2();
+    // p2 is top-right, navigating right wraps to p1 (top-left) or p3 (bottom-left).
+    // p1 center=(250,200), p3 center=(250,600). From p2 center=(750,200):
+    // opposite=Left, farthest left: p1 primary=500 perp=0 → 500, p3 primary=500 perp=400*0.5=200 → 700.
+    // Farthest wins → p3.
+    assert_eq!(navigate_wrap(&layouts, p(2), Direction::Right), Some(p(3)));
+}
+
+#[test]
+fn navigate_wrap_left_from_leftmost_wraps_to_rightmost() {
+    let layouts = grid_2x2();
+    // p1 is top-left, navigating left wraps to the farthest right pane.
+    assert!(navigate_wrap(&layouts, p(1), Direction::Left).is_some());
+}
+
+#[test]
+fn navigate_wrap_up_from_topmost_wraps_to_bottommost() {
+    let layouts = grid_2x2();
+    // p1 is top-left, navigating up wraps to bottom panes.
+    let target = navigate_wrap(&layouts, p(1), Direction::Up);
+    assert!(target == Some(p(3)) || target == Some(p(4)));
+}
+
+#[test]
+fn navigate_wrap_does_not_wrap_when_target_exists() {
+    let layouts = grid_2x2();
+    // p1 → right should find p2 (no wrap needed).
+    assert_eq!(navigate_wrap(&layouts, p(1), Direction::Right), Some(p(2)));
+}
+
+#[test]
+fn navigate_wrap_single_pane_returns_none() {
+    let layouts = vec![tiled(1, 0.0, 0.0, 1000.0, 800.0)];
+    assert_eq!(navigate_wrap(&layouts, p(1), Direction::Right), None);
+    assert_eq!(navigate_wrap(&layouts, p(1), Direction::Left), None);
+    assert_eq!(navigate_wrap(&layouts, p(1), Direction::Up), None);
+    assert_eq!(navigate_wrap(&layouts, p(1), Direction::Down), None);
+}
+
+#[test]
+fn navigate_wrap_two_pane_horizontal_wraps_both_ways() {
+    let layouts = vec![
+        tiled(1, 0.0, 0.0, 500.0, 800.0),
+        tiled(2, 500.0, 0.0, 500.0, 800.0),
+    ];
+    // Right from p2 wraps to p1.
+    assert_eq!(navigate_wrap(&layouts, p(2), Direction::Right), Some(p(1)));
+    // Left from p1 wraps to p2.
+    assert_eq!(navigate_wrap(&layouts, p(1), Direction::Left), Some(p(2)));
 }
