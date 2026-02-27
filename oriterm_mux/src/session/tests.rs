@@ -638,3 +638,183 @@ fn all_panes_includes_floating_panes() {
     assert!(all.contains(&p1));
     assert!(all.contains(&p2));
 }
+
+// --- Undo/redo gap-analysis tests ---
+
+/// Undo stack entries that reference multiple dead panes are all skipped.
+#[test]
+fn undo_skips_entries_with_multiple_dead_panes() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let p4 = PaneId::from_raw(4);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    // Split with p2.
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+
+    // Split with p3.
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+
+    // Split with p4.
+    let tree = tab.tree().split_at(p1, SplitDirection::Horizontal, p4, 0.5);
+    tab.set_tree(tree);
+
+    // Both p2 and p3 are "dead". Undo stack has:
+    //   [0] leaf(p1)
+    //   [1] p1+p2
+    //   [2] p1+p2+p3
+    // Only [0] is valid when live = {p1, p4}.
+    let live: HashSet<PaneId> = [p1, p4].into_iter().collect();
+    assert!(tab.undo_tree(&live));
+    assert_eq!(tab.all_panes(), vec![p1]);
+
+    // No more valid entries.
+    assert!(!tab.undo_tree(&live));
+}
+
+/// Undo across mixed split directions restores correct tree shapes.
+#[test]
+fn undo_across_mixed_split_directions() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    // V-split: [p1 | p2].
+    let tree_v = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree_v);
+
+    // H-split: [[p1 / p3] | p2].
+    let tree_vh = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree_vh);
+
+    let all: HashSet<PaneId> = [p1, p2, p3].into_iter().collect();
+
+    // Undo H-split → [p1 | p2].
+    assert!(tab.undo_tree(&all));
+    assert_eq!(tab.all_panes().len(), 2);
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p2));
+    assert!(!tab.tree().contains(p3));
+
+    // Undo V-split → leaf(p1).
+    assert!(tab.undo_tree(&all));
+    assert_eq!(tab.all_panes(), vec![p1]);
+
+    // Redo V-split → [p1 | p2].
+    assert!(tab.redo_tree(&all));
+    assert_eq!(tab.all_panes().len(), 2);
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p2));
+}
+
+/// Redo entry referencing a dead pane is skipped.
+#[test]
+fn redo_skips_entry_after_pane_death() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    // Split with p2, then split with p3.
+    let tree2 = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree2);
+    let tree3 = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree3);
+
+    // Undo back to single pane (all panes alive).
+    let all: HashSet<PaneId> = [p1, p2, p3].into_iter().collect();
+    assert!(tab.undo_tree(&all));
+    assert!(tab.undo_tree(&all));
+    assert_eq!(tab.all_panes(), vec![p1]);
+
+    // Now p3 "dies". Redo stack has [tree with p1+p2, tree with p1+p2+p3].
+    // The entry with p3 should be skipped; the one with p1+p2 is valid.
+    let live: HashSet<PaneId> = [p1, p2].into_iter().collect();
+    assert!(tab.redo_tree(&live));
+    assert_eq!(tab.all_panes().len(), 2);
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p2));
+
+    // No more valid entries (the p3 entry was skipped).
+    assert!(!tab.redo_tree(&live));
+}
+
+/// Floating layer is unaffected by split tree undo.
+#[test]
+fn floating_layer_unaffected_by_undo() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let fp_id = PaneId::from_raw(10);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    // Add a floating pane.
+    let fp = crate::layout::floating::FloatingPane {
+        pane_id: fp_id,
+        rect: crate::layout::rect::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+        },
+        z_order: 0,
+    };
+    tab.set_floating(tab.floating().add(fp));
+
+    // Split the tiled tree.
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    assert_eq!(tab.all_panes().len(), 3); // p1, p2, fp_id
+
+    // Undo the split.
+    let all: HashSet<PaneId> = [p1, p2, fp_id].into_iter().collect();
+    assert!(tab.undo_tree(&all));
+
+    // Tiled tree should be back to single pane.
+    assert_eq!(tab.tree().panes(), vec![p1]);
+    // Floating layer must be untouched.
+    assert!(tab.floating().contains(fp_id));
+    assert_eq!(tab.floating().panes().len(), 1);
+    // all_panes includes both tiled + floating.
+    assert_eq!(tab.all_panes().len(), 2);
+}
+
+/// When all undo entries reference dead panes, undo returns false.
+#[test]
+fn undo_with_all_panes_dead_returns_false() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+
+    // All panes in undo entries are dead (only p99 is "live").
+    let live: HashSet<PaneId> = [PaneId::from_raw(99)].into_iter().collect();
+    assert!(!tab.undo_tree(&live));
+}
+
+/// When all redo entries reference dead panes, redo returns false.
+#[test]
+fn redo_with_all_panes_dead_returns_false() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+
+    // Undo to populate redo stack (all panes alive).
+    let all: HashSet<PaneId> = [p1, p2].into_iter().collect();
+    assert!(tab.undo_tree(&all));
+
+    // Now both p1 and p2 are "dead". Redo should fail.
+    let empty: HashSet<PaneId> = [PaneId::from_raw(99)].into_iter().collect();
+    assert!(!tab.redo_tree(&empty));
+}

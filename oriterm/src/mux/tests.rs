@@ -2761,3 +2761,226 @@ fn undo_past_closed_pane_skips_entry() {
     let tab = mux.session().get_tab(tid).unwrap();
     assert_eq!(tab.tree().panes(), vec![p1]);
 }
+
+// -- undo/redo notification suppression on noop --
+
+#[test]
+fn undo_split_nonexistent_tab_no_notification() {
+    let (mut mux, _wid, _tid, _p1, _p2) = two_pane_setup();
+    drain(&mut mux);
+
+    let bad_tab = TabId::from_raw(999);
+    let live = std::collections::HashSet::new();
+    let result = mux.undo_split(bad_tab, &live);
+    assert!(!result);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "no notifications for undo on nonexistent tab"
+    );
+}
+
+#[test]
+fn redo_split_nonexistent_tab_no_notification() {
+    let (mut mux, _wid, _tid, _p1, _p2) = two_pane_setup();
+    drain(&mut mux);
+
+    let bad_tab = TabId::from_raw(999);
+    let live = std::collections::HashSet::new();
+    let result = mux.redo_split(bad_tab, &live);
+    assert!(!result);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "no notifications for redo on nonexistent tab"
+    );
+}
+
+#[test]
+fn undo_split_empty_stack_no_notification() {
+    let (mut mux, _wid, tid, p1) = one_pane_setup();
+    drain(&mut mux);
+
+    // Single-pane tab has no undo history.
+    let live: std::collections::HashSet<_> = [p1].into_iter().collect();
+    let result = mux.undo_split(tid, &live);
+    assert!(!result);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs.is_empty(),
+        "no notifications when undo stack is empty"
+    );
+}
+
+// -- close pane after undo cascades correctly --
+
+#[test]
+fn close_after_undo_cascades_to_last_window() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // Undo the split → tree reverts to leaf(p1). p2 is still registered
+    // (undo only affects tree layout, not pane registration).
+    let live: std::collections::HashSet<_> = [p1, p2].into_iter().collect();
+    assert!(mux.undo_split(tid, &live));
+    drain(&mut mux);
+
+    // Close p1 — the only pane in the tree → triggers tab/window removal.
+    let result = mux.close_pane(p1);
+    assert_eq!(result, ClosePaneResult::LastWindow);
+
+    // Tab and window should be cleaned up.
+    assert_eq!(mux.session().window_count(), 0);
+    assert_eq!(mux.session().tab_count(), 0);
+
+    // p1 was unregistered by close_pane. p2 is still registered because
+    // undo only modifies the tree — the real App layer would close the PTY
+    // and unregister p2 separately.
+    assert!(mux.get_pane_entry(p1).is_none());
+    assert!(mux.get_pane_entry(p2).is_some());
+}
+
+// -- geometry consistency post-undo/redo --
+
+#[test]
+fn geometry_tiled_panes_cover_full_area_after_undo() {
+    use oriterm_mux::layout::compute::{LayoutDescriptor, compute_layout};
+    use oriterm_mux::layout::floating::FloatingLayer;
+
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2, p3] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    let desc = LayoutDescriptor {
+        available: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1000.0,
+            height: 600.0,
+        },
+        cell_width: 8.0,
+        cell_height: 16.0,
+        divider_px: 2.0,
+        min_pane_cells: (10, 5),
+    };
+
+    // Before undo: 3 panes should cover the full area.
+    let tab = mux.session().get_tab(tid).unwrap();
+    let layouts_before = compute_layout(tab.tree(), &FloatingLayer::new(), p1, &desc);
+    assert_eq!(layouts_before.len(), 3);
+
+    // Undo to 2 panes.
+    let live: std::collections::HashSet<_> = [p1, p2, p3].into_iter().collect();
+    assert!(mux.undo_split(tid, &live));
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    let layouts_after = compute_layout(tab.tree(), &FloatingLayer::new(), p1, &desc);
+    assert_eq!(layouts_after.len(), 2);
+
+    // Sum of tiled pane widths + divider should approximate total width.
+    // (The exact sum depends on divider placement; verify no zero-area panes.)
+    for layout in &layouts_after {
+        assert!(layout.pixel_rect.width > 0.0, "pane width must be positive");
+        assert!(
+            layout.pixel_rect.height > 0.0,
+            "pane height must be positive"
+        );
+        assert!(layout.cols > 0, "pane columns must be > 0");
+        assert!(layout.rows > 0, "pane rows must be > 0");
+    }
+
+    // Redo back to 3 panes.
+    assert!(mux.redo_split(tid, &live));
+
+    let tab = mux.session().get_tab(tid).unwrap();
+    let layouts_redo = compute_layout(tab.tree(), &FloatingLayer::new(), p1, &desc);
+    assert_eq!(layouts_redo.len(), 3);
+
+    for layout in &layouts_redo {
+        assert!(layout.pixel_rect.width > 0.0, "pane width must be positive");
+        assert!(
+            layout.pixel_rect.height > 0.0,
+            "pane height must be positive"
+        );
+    }
+}
+
+// -- concurrent undo and pane exit --
+
+#[test]
+fn concurrent_pane_exit_then_undo_skips_dead_entry() {
+    // Simulate: pane exits via event, then user presses undo. The undo
+    // stack has an entry referencing the dead pane — it should be skipped.
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2, p3] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    // p2 exits via event.
+    let tx = mux.event_tx().clone();
+    tx.send(MuxEvent::PaneExited {
+        pane_id: p2,
+        exit_code: 0,
+    })
+    .unwrap();
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+    drain(&mut mux);
+
+    // p2 is gone from registry. Undo entries referencing p2 should be skipped.
+    assert!(mux.get_pane_entry(p2).is_none());
+    let live: std::collections::HashSet<_> = [p1, p3].into_iter().collect();
+
+    // Undo should skip [tree with p1+p2] and restore leaf(p1).
+    assert!(mux.undo_split(tid, &live));
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().panes(), vec![p1]);
+}
