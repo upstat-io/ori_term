@@ -5,7 +5,7 @@
 //! with an active tab index. These are the mux layer's own concepts — distinct
 //! from any GUI tab bar or platform window.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use crate::id::{PaneId, TabId, WindowId};
 use crate::layout::floating::FloatingLayer;
@@ -35,6 +35,8 @@ pub struct MuxTab {
     active_pane: PaneId,
     /// Undo stack for split tree mutations.
     undo: VecDeque<SplitTree>,
+    /// Redo stack for undone tree mutations.
+    redo: VecDeque<SplitTree>,
     /// Zoomed pane (fills entire tab area, hiding other panes).
     zoomed_pane: Option<PaneId>,
 }
@@ -52,6 +54,7 @@ impl MuxTab {
             floating: FloatingLayer::new(),
             active_pane: pane_id,
             undo: VecDeque::new(),
+            redo: VecDeque::new(),
             zoomed_pane: None,
         }
     }
@@ -99,25 +102,58 @@ impl MuxTab {
     /// Replace the split tree, pushing the current tree onto the undo stack.
     ///
     /// The undo stack is capped at [`MAX_UNDO_ENTRIES`]; oldest entries are
-    /// discarded when the limit is reached.
+    /// discarded when the limit is reached. The redo stack is cleared on
+    /// every new mutation (standard undo/redo semantics).
     pub fn set_tree(&mut self, tree: SplitTree) {
         if self.undo.len() >= MAX_UNDO_ENTRIES {
             self.undo.pop_front();
         }
         self.undo.push_back(self.tree.clone());
+        self.redo.clear();
         self.tree = tree;
     }
 
     /// Undo the last tree mutation, restoring the previous layout.
     ///
-    /// Returns `true` if the undo was applied, `false` if the stack is empty.
-    pub fn undo_tree(&mut self) -> bool {
-        if let Some(prev) = self.undo.pop_back() {
-            self.tree = prev;
-            true
-        } else {
-            false
+    /// Skips undo entries that reference panes not in `live_panes` (stale
+    /// entries from closed panes). The current tree is pushed onto the redo
+    /// stack before restoring.
+    ///
+    /// Returns `true` if the undo was applied, `false` if no valid entry
+    /// was found.
+    pub fn undo_tree(&mut self, live_panes: &HashSet<PaneId>) -> bool {
+        while let Some(candidate) = self.undo.pop_back() {
+            if candidate.panes().iter().all(|p| live_panes.contains(p)) {
+                if self.redo.len() >= MAX_UNDO_ENTRIES {
+                    self.redo.pop_front();
+                }
+                self.redo.push_back(self.tree.clone());
+                self.tree = candidate;
+                return true;
+            }
         }
+        false
+    }
+
+    /// Redo a previously undone tree mutation.
+    ///
+    /// Skips redo entries that reference panes not in `live_panes`. The
+    /// current tree is pushed onto the undo stack before restoring.
+    ///
+    /// Returns `true` if the redo was applied, `false` if no valid entry
+    /// was found.
+    pub fn redo_tree(&mut self, live_panes: &HashSet<PaneId>) -> bool {
+        while let Some(candidate) = self.redo.pop_back() {
+            if candidate.panes().iter().all(|p| live_panes.contains(p)) {
+                if self.undo.len() >= MAX_UNDO_ENTRIES {
+                    self.undo.pop_front();
+                }
+                self.undo.push_back(self.tree.clone());
+                self.tree = candidate;
+                return true;
+            }
+        }
+        false
     }
 
     /// Collect all pane IDs from both the split tree and floating layer.

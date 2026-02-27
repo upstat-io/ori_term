@@ -10,6 +10,7 @@ use oriterm_mux::{PaneId, SpawnConfig, TabId};
 
 use super::App;
 use crate::keybindings::Action;
+use crate::widgets::terminal_grid::TerminalGridWidget;
 
 /// Per-keypress ratio adjustment for keyboard resize (5%).
 const RESIZE_STEP: f32 = 0.05;
@@ -35,6 +36,8 @@ impl App {
             Action::ToggleZoom => self.toggle_zoom(),
             Action::ToggleFloatingPane => self.toggle_floating_pane(),
             Action::ToggleFloatTile => self.toggle_float_tile(),
+            Action::UndoSplit => self.undo_split(),
+            Action::RedoSplit => self.redo_split(),
             _ => {}
         }
     }
@@ -164,9 +167,12 @@ impl App {
     ///
     /// Called after layout changes (split, close, window resize) to ensure
     /// each pane's terminal grid and PTY match their pixel allocation.
+    /// For single-pane tabs, resizes the active pane to fill the full grid
+    /// area (the layout engine returns `None` for single-pane tabs).
     pub(super) fn resize_all_panes(&self) {
         let Some((layouts, _)) = self.compute_pane_layouts() else {
-            // Single pane — sync_grid_layout handles this case.
+            // Single pane — resize it to fill the full grid area.
+            self.resize_single_pane();
             return;
         };
         for layout in &layouts {
@@ -174,6 +180,30 @@ impl App {
                 pane.resize_grid(layout.rows, layout.cols);
                 pane.resize_pty(layout.rows, layout.cols);
             }
+        }
+    }
+
+    /// Resize the single active pane to fill the full grid area.
+    ///
+    /// Computes rows/cols from the grid bounds and cell metrics, matching
+    /// the same calculation `sync_grid_layout` uses during window resize.
+    fn resize_single_pane(&self) {
+        let Some(bounds) = self
+            .terminal_grid
+            .as_ref()
+            .and_then(TerminalGridWidget::bounds)
+        else {
+            return;
+        };
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
+        let cell = renderer.cell_metrics();
+        let cols = cell.columns(bounds.width() as u32).max(1) as u16;
+        let rows = cell.rows(bounds.height() as u32).max(1) as u16;
+        if let Some(pane) = self.active_pane() {
+            pane.resize_grid(rows, cols);
+            pane.resize_pty(rows, cols);
         }
     }
 
@@ -339,6 +369,32 @@ impl App {
         self.dirty = true;
     }
 
+    /// Undo the last split tree mutation.
+    pub(super) fn undo_split(&mut self) {
+        let Some((tab_id, _)) = self.active_pane_context() else {
+            return;
+        };
+        let live_panes = self.live_pane_ids(tab_id);
+        let Some(mux) = &mut self.mux else { return };
+        if mux.undo_split(tab_id, &live_panes) {
+            self.pane_cache.invalidate_all();
+            self.dirty = true;
+        }
+    }
+
+    /// Redo the last undone split tree mutation.
+    pub(super) fn redo_split(&mut self) {
+        let Some((tab_id, _)) = self.active_pane_context() else {
+            return;
+        };
+        let live_panes = self.live_pane_ids(tab_id);
+        let Some(mux) = &mut self.mux else { return };
+        if mux.redo_split(tab_id, &live_panes) {
+            self.pane_cache.invalidate_all();
+            self.dirty = true;
+        }
+    }
+
     /// Raise a floating pane when it receives focus via click.
     pub(super) fn raise_if_floating(&mut self, pane_id: PaneId) {
         let Some((tab_id, _)) = self.active_pane_context() else {
@@ -391,6 +447,17 @@ impl App {
     /// Compute pane layouts for the current tab (flat list for navigation).
     fn current_pane_layouts(&self) -> Option<Vec<oriterm_mux::layout::PaneLayout>> {
         self.compute_pane_layouts().map(|(layouts, _)| layouts)
+    }
+
+    /// Collect all live pane IDs for a given tab.
+    fn live_pane_ids(&self, tab_id: TabId) -> std::collections::HashSet<PaneId> {
+        let Some(mux) = self.mux.as_ref() else {
+            return std::collections::HashSet::new();
+        };
+        let Some(tab) = mux.session().get_tab(tab_id) else {
+            return std::collections::HashSet::new();
+        };
+        tab.all_panes().into_iter().collect()
     }
 
     /// Clear zoom on the active tab if currently zoomed.

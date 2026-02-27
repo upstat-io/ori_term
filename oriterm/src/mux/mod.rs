@@ -419,6 +419,46 @@ impl InProcessMux {
             .push(MuxNotification::TabLayoutChanged(tab_id));
     }
 
+    /// Undo the last split tree mutation on the given tab.
+    ///
+    /// Returns `true` if an undo was applied.
+    pub(crate) fn undo_split(
+        &mut self,
+        tab_id: TabId,
+        live_panes: &std::collections::HashSet<PaneId>,
+    ) -> bool {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return false;
+        };
+        if tab.undo_tree(live_panes) {
+            self.notifications
+                .push(MuxNotification::TabLayoutChanged(tab_id));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Redo the last undone split tree mutation on the given tab.
+    ///
+    /// Returns `true` if a redo was applied.
+    pub(crate) fn redo_split(
+        &mut self,
+        tab_id: TabId,
+        live_panes: &std::collections::HashSet<PaneId>,
+    ) -> bool {
+        let Some(tab) = self.session.get_tab_mut(tab_id) else {
+            return false;
+        };
+        if tab.redo_tree(live_panes) {
+            self.notifications
+                .push(MuxNotification::TabLayoutChanged(tab_id));
+            true
+        } else {
+            false
+        }
+    }
+
     /// Handle the window after a tab has been removed from it.
     ///
     /// Removes the tab from the window. If the window is now empty, removes

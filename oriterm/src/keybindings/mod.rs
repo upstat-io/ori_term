@@ -89,6 +89,10 @@ pub(crate) enum Action {
     ToggleFloatingPane,
     /// Move the focused pane between floating and tiled.
     ToggleFloatTile,
+    /// Undo the last split tree mutation.
+    UndoSplit,
+    /// Redo the last undone split tree mutation.
+    RedoSplit,
     /// Send literal bytes to the PTY.
     SendText(String),
     /// Explicitly unbinds a default binding.
@@ -143,6 +147,8 @@ impl Action {
             Self::ToggleZoom => "ToggleZoom",
             Self::ToggleFloatingPane => "ToggleFloatingPane",
             Self::ToggleFloatTile => "ToggleFloatTile",
+            Self::UndoSplit => "UndoSplit",
+            Self::RedoSplit => "RedoSplit",
             Self::SendText(_) => "SendText",
             Self::None => "None",
         }

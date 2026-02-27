@@ -94,6 +94,9 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
         bind(ch("p"), cs, Action::ToggleFloatingPane),
         // Move focused pane between floating and tiled.
         bind(ch("g"), cs, Action::ToggleFloatTile),
+        // Undo/redo split tree mutations.
+        bind(ch("u"), cs, Action::UndoSplit),
+        bind(ch("y"), cs, Action::RedoSplit),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),

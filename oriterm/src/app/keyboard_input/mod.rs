@@ -308,7 +308,9 @@ impl App {
             | Action::EqualizePanes
             | Action::ToggleZoom
             | Action::ToggleFloatingPane
-            | Action::ToggleFloatTile => {
+            | Action::ToggleFloatTile
+            | Action::UndoSplit
+            | Action::RedoSplit => {
                 self.execute_pane_action(action);
                 true
             }

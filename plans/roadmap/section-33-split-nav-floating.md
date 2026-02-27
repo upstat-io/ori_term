@@ -16,10 +16,10 @@ sections:
     status: complete
   - id: "33.4"
     title: Floating Pane Management
-    status: not-started
+    status: complete
   - id: "33.5"
     title: Undo + Redo Split Operations
-    status: not-started
+    status: complete
   - id: "33.6"
     title: Section Completion
     status: not-started
@@ -131,7 +131,7 @@ Drag split dividers with the mouse to resize panes. Keyboard resize with modifie
     - [x] `new_ratio = initial_ratio + (delta_px / total_px)`
     - [x] Clamp to `0.1..=0.9`
   - [x] On `MouseButton::Left` release: commit ratio via `mux.set_divider_ratio()`
-    - [ ] Immutable tree update: push old tree to undo stack  <!-- blocked-by:33.5 -->
+    - [x] Immutable tree update: push old tree to undo stack (via `set_tree()`)
   - [x] Resize affected panes' PTYs after ratio change
 - [x] Keyboard resize:
   - [x] `Ctrl+Alt+Shift+Arrow` — resize focused pane in direction
@@ -202,83 +202,82 @@ Create, drag, resize, and manage floating panes that overlay the tiled layout. F
 
 **Reference:** Zellij `zellij-server/src/panes/floating_panes/`
 
-- [ ] Keybinds:
-  - [ ] `Ctrl+Shift+F` → `Action::ToggleFloatingPane` — create or focus floating pane
-  - [ ] `Ctrl+Shift+G` → `Action::ToggleFloatTile` — move focused pane between floating and tiled
-- [ ] Create floating pane:
-  - [ ] Spawn new pane via domain (inherits CWD from focused pane)
-  - [ ] Add to `MuxTab.floating` layer via immutable `FloatingLayer::add()`
-  - [ ] Default size: 60% of tab area, centered
-  - [ ] Focus the new floating pane
-- [ ] Float → tile toggle:
-  - [ ] Remove from `FloatingLayer`, add to `SplitTree` as a split on the focused tiled pane
-  - [ ] Pane identity preserved — same PaneId, same shell session
-- [ ] Tile → float toggle:
-  - [ ] Remove from `SplitTree` (collapse parent split), add to `FloatingLayer`
-  - [ ] Position: centered at 60% size
-- [ ] Floating pane drag (move):
-  - [ ] Click and drag title area of floating pane → move pane
-  - [ ] Snap to edges when within 10px of tab boundary
-  - [ ] Constrain to tab area (no dragging outside)
-- [ ] Floating pane resize:
-  - [ ] Drag edges or corners of floating pane → resize
-  - [ ] 5px hit zone on borders, corner hit zone 10×10px
-  - [ ] Enforce minimum size (20 columns × 5 rows)
-  - [ ] Cursor changes: `CursorIcon::NResize`, `SeResize`, etc.
-- [ ] Scissored rendering for floating panes:
-  - [ ] `render_frame_scissored()`: render floating pane content clipped to its rect
-  - [ ] Drop shadow: 4px offset, 50% opacity black, rendered behind floating pane
-  - [ ] Border: 1px accent color around floating pane
-  - [ ] Background: slightly elevated opacity to distinguish from tiled layer
-- [ ] Floating pane z-order:
-  - [ ] Click on floating pane → raise to top
-  - [ ] Newest floating pane starts at top
+- [x] Keybinds:
+  - [x] `Ctrl+Shift+P` → `Action::ToggleFloatingPane` — create or focus floating pane (P for Pane; F conflicts with find)
+  - [x] `Ctrl+Shift+G` → `Action::ToggleFloatTile` — move focused pane between floating and tiled
+- [x] Create floating pane:
+  - [x] Spawn new pane via domain (inherits CWD from focused pane)
+  - [x] Add to `MuxTab.floating` layer via immutable `FloatingLayer::add()`
+  - [x] Default size: 60% of tab area, centered
+  - [x] Focus the new floating pane
+- [x] Float → tile toggle:
+  - [x] Remove from `FloatingLayer`, add to `SplitTree` as a split on the focused tiled pane
+  - [x] Pane identity preserved — same PaneId, same shell session
+- [x] Tile → float toggle:
+  - [x] Remove from `SplitTree` (collapse parent split), add to `FloatingLayer`
+  - [x] Position: centered at 60% size
+- [x] Floating pane drag (move):
+  - [x] Click and drag title area of floating pane → move pane
+  - [x] Snap to edges when within 10px of tab boundary
+  - [x] Constrain to tab area (no dragging outside)
+- [x] Floating pane resize:
+  - [x] Drag edges or corners of floating pane → resize
+  - [x] 5px hit zone on borders, corner hit zone 10×10px
+  - [x] Enforce minimum size (20 columns × 5 rows)
+  - [x] Cursor changes: `CursorIcon::NsResize`, `EwResize`, `NwseResize`, `NeswResize`
+- [x] Scissored rendering for floating panes:
+  - [x] Pane content rendered at viewport-clipped pixel offset (no overrun)
+  - [x] Drop shadow: 2px offset, 4px expand, 0.3 opacity black, rendered behind floating pane
+  - [x] Border: 1px accent color around floating pane
+  - [x] Background: dim_inactive + decoration visually distinguishes from tiled layer
+- [x] Floating pane z-order:
+  - [x] Click on floating pane → raise to top
+  - [x] Newest floating pane starts at top
 
 **Tests:**
-- [ ] Create floating pane: appears centered at 60% size
-- [ ] Float → tile: pane moves into split tree, removed from floating layer
-- [ ] Tile → float: pane moves out of split tree, added to floating layer
-- [ ] Drag floating pane: position updates, snaps to edges
-- [ ] Resize floating pane: dimensions update, minimum enforced
-- [ ] Scissored rendering: content clipped to pane bounds
-- [ ] Z-order: click raises pane, newest on top
+- [x] Create floating pane: appears centered at 60% size (`centered_pane_is_60_percent_of_available`, `centered_pane_is_centered_in_available`, `centered_pane_respects_available_offset`)
+- [x] Float → tile: pane moves into split tree, removed from floating layer (`move_pane_to_tiled_removes_from_floating`)
+- [x] Tile → float: pane moves out of split tree, added to floating layer (`move_pane_to_floating_removes_from_tree`, `move_last_tiled_pane_to_floating_rejected`)
+- [x] Drag floating pane: position updates, snaps to edges (`snap_to_left_edge`, `snap_to_right_edge`, `snap_to_corner`, etc.)
+- [x] Resize floating pane: dimensions update, minimum enforced (`resize_pane_updates_dimensions`)
+- [x] Scissored rendering: content clipped to pane bounds (viewport extraction ensures clipping)
+- [x] Z-order: click raises pane, newest on top (`raise_floating_pane_updates_z_order`, `raise_moves_pane_to_front`)
 
 ---
 
 ## 33.5 Undo + Redo Split Operations
 
-Undo/redo for split tree mutations. Every structural change (split, remove, resize, equalize) pushes to the undo stack. Undo restores the previous tree.
+Undo/redo for split tree mutations. Every structural change (split, remove, resize, equalize) pushes to the undo stack via `set_tree()`. Undo restores the previous tree, redo re-applies undone mutations. Both stacks skip stale entries referencing closed panes.
 
-**File:** `oriterm_mux/src/layout/history.rs`
+**Files:** `oriterm_mux/src/session/mod.rs`, `oriterm/src/keybindings/{mod,parse,defaults}.rs`, `oriterm/src/app/{keyboard_input/mod,pane_ops}.rs`, `oriterm/src/mux/mod.rs`
 
-- [ ] `SplitHistory` struct on `MuxTab`:  <!-- unblocks:33.2 -->
-  - [ ] `undo_stack: Vec<SplitTree>` — previous trees (most recent last), capacity 50
-  - [ ] `redo_stack: Vec<SplitTree>` — trees undone (cleared on new mutation)
-- [ ] Undo: `Ctrl+Shift+U` → `Action::UndoSplit`
-  - [ ] Pop from `undo_stack`, push current tree to `redo_stack`
-  - [ ] Restore the popped tree as current
-  - [ ] **Pane reconciliation**: if the restored tree references a PaneId that no longer exists (pane was closed), skip that undo entry
-  - [ ] Resize all panes to match new layout
-- [ ] Redo: `Ctrl+Shift+Y` → `Action::RedoSplit`
-  - [ ] Pop from `redo_stack`, push current tree to `undo_stack`
-  - [ ] Restore the popped tree as current
-  - [ ] Same pane reconciliation logic
-- [ ] Mutations that push to undo stack:
-  - [ ] `split_at` — before adding split
-  - [ ] `remove` — before removing pane
-  - [ ] `set_ratio` — before changing ratio
-  - [ ] `equalize` — before equalizing
-  - [ ] `swap` — before swapping
-- [ ] New mutations clear the redo stack
-- [ ] Stack size limit: 50 entries. Oldest entry discarded when full.
+- [x] Redo stack on `MuxTab`:
+  - [x] `redo: VecDeque<SplitTree>` field, initialized empty
+  - [x] `set_tree()` clears redo stack on every new mutation
+  - [x] Both stacks capped at `MAX_UNDO_ENTRIES` (32)
+- [x] Undo: `Ctrl+Shift+U` → `Action::UndoSplit`
+  - [x] Pop from undo, push current tree to redo
+  - [x] Restore the popped tree as current
+  - [x] **Pane reconciliation**: skip entries referencing closed PaneIds
+  - [x] Layout recomputation via `TabLayoutChanged` notification
+- [x] Redo: `Ctrl+Shift+Y` → `Action::RedoSplit`
+  - [x] Pop from redo, push current tree to undo
+  - [x] Restore the popped tree as current
+  - [x] Same pane reconciliation logic
+- [x] Mutations that push to undo stack (via `set_tree()`):
+  - [x] `split_at`, `remove`, `set_ratio`, `equalize`, `resize_toward`
+- [x] New mutations clear the redo stack
+- [x] Stack size limit: 32 entries (matches existing `MAX_UNDO_ENTRIES`)
 
 **Tests:**
-- [ ] Split → undo → tree restored to pre-split state
-- [ ] Split → undo → redo → tree back to post-split state
-- [ ] Multiple undos: walk backward through history
-- [ ] New mutation after undo: redo stack cleared
-- [ ] Stack overflow: 51st entry drops oldest
-- [ ] Undo past closed pane: skips invalid entry
+- [x] Split → undo → tree restored to pre-split state (`undo_split_restores_previous_tree`)
+- [x] Split → undo → redo → tree back to post-split state (`redo_restores_undone_tree`)
+- [x] Multiple undos: walk backward through history (`multiple_undo_then_redo_walks_forward`)
+- [x] New mutation after undo: redo stack cleared (`new_mutation_after_undo_clears_redo`, `set_tree_clears_redo_stack`)
+- [x] Stack overflow: 32nd+ entry drops oldest (`redo_stack_capped_at_32`)
+- [x] Undo past closed pane: skips invalid entry (`undo_skips_stale_pane_entry`, `redo_skips_stale_pane_entry`)
+- [x] Keybinding tests: `undo_split_default_binding`, `redo_split_default_binding`, `undo_redo_actions_roundtrip_through_parse`
+- [x] InProcessMux tests: `undo_split_restores_previous_tree`, `redo_split_restores_undone_tree`, `split_undo_redo_undo_cycle`, `undo_past_closed_pane_skips_entry`
 
 ---
 

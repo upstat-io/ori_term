@@ -531,6 +531,8 @@ fn action_as_str_roundtrip() {
         Action::ToggleZoom,
         Action::ToggleFloatingPane,
         Action::ToggleFloatTile,
+        Action::UndoSplit,
+        Action::RedoSplit,
         Action::None,
     ];
     for action in &actions {
@@ -721,6 +723,42 @@ fn toggle_float_tile_default_binding() {
 #[test]
 fn floating_actions_roundtrip_through_parse() {
     let actions = [Action::ToggleFloatingPane, Action::ToggleFloatTile];
+    for action in &actions {
+        let s = action.as_str();
+        let parsed = parse_action(s);
+        assert_eq!(parsed.as_ref(), Some(action), "roundtrip failed for {s:?}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Undo/redo split default binding tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn undo_split_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("u".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::UndoSplit),
+    );
+}
+
+#[test]
+fn redo_split_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("y".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::RedoSplit),
+    );
+}
+
+#[test]
+fn undo_redo_actions_roundtrip_through_parse() {
+    let actions = [Action::UndoSplit, Action::RedoSplit];
     for action in &actions {
         let s = action.as_str();
         let parsed = parse_action(s);

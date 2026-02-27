@@ -173,6 +173,8 @@ pub(crate) fn parse_action(s: &str) -> Option<Action> {
         "ToggleZoom" => Action::ToggleZoom,
         "ToggleFloatingPane" => Action::ToggleFloatingPane,
         "ToggleFloatTile" => Action::ToggleFloatTile,
+        "UndoSplit" => Action::UndoSplit,
+        "RedoSplit" => Action::RedoSplit,
         "None" => Action::None,
         _ => return None,
     })

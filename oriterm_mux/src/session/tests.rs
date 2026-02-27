@@ -1,7 +1,14 @@
+use std::collections::HashSet;
+
 use crate::id::{PaneId, TabId, WindowId};
 use crate::layout::SplitDirection;
 
 use super::{MuxTab, MuxWindow};
+
+/// Build a `HashSet` of live pane IDs from a tab's current state.
+fn live(tab: &MuxTab) -> HashSet<PaneId> {
+    tab.all_panes().into_iter().collect()
+}
 
 // --- MuxTab tests ---
 
@@ -37,14 +44,16 @@ fn undo_restores_previous_tree() {
     tab.set_tree(new_tree);
     assert_eq!(tab.all_panes().len(), 2);
 
-    assert!(tab.undo_tree());
+    let live_panes = live(&tab);
+    assert!(tab.undo_tree(&live_panes));
     assert_eq!(tab.all_panes(), vec![p1]);
 }
 
 #[test]
 fn undo_empty_stack_returns_false() {
     let mut tab = MuxTab::new(TabId::from_raw(1), PaneId::from_raw(1));
-    assert!(!tab.undo_tree());
+    let live_panes = live(&tab);
+    assert!(!tab.undo_tree(&live_panes));
 }
 
 #[test]
@@ -59,9 +68,11 @@ fn undo_stack_capped_at_32() {
         tab.set_tree(new_tree);
     }
 
-    // Undo stack should be capped at 32.
+    // Undo stack should be capped at 32. All panes referenced in undo
+    // entries are still live (p1 is always present), so use a broad set.
+    let all: HashSet<PaneId> = (1..42u64).map(PaneId::from_raw).collect();
     let mut count = 0;
-    while tab.undo_tree() {
+    while tab.undo_tree(&all) {
         count += 1;
     }
     assert_eq!(count, 32);
@@ -205,10 +216,11 @@ fn multiple_undo_then_re_split() {
     tab.set_tree(tree3);
     assert_eq!(tab.all_panes().len(), 3);
 
-    // Undo both.
-    assert!(tab.undo_tree()); // back to 2 panes
+    // Undo both. All referenced panes must be in the live set.
+    let all: HashSet<PaneId> = [p1, p2, p3].into_iter().collect();
+    assert!(tab.undo_tree(&all)); // back to 2 panes
     assert_eq!(tab.all_panes().len(), 2);
-    assert!(tab.undo_tree()); // back to 1 pane
+    assert!(tab.undo_tree(&all)); // back to 1 pane
     assert_eq!(tab.all_panes(), vec![p1]);
 
     // Re-split: new tree on a clean undo stack should work fine.
@@ -400,6 +412,204 @@ fn mux_tab_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<MuxTab>();
     assert_send_sync::<MuxWindow>();
+}
+
+// --- Redo stack tests ---
+
+#[test]
+fn redo_stack_initialized_empty() {
+    let p1 = PaneId::from_raw(1);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+    let live_panes = live(&tab);
+    assert!(!tab.redo_tree(&live_panes));
+}
+
+#[test]
+fn set_tree_clears_redo_stack() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    // Split, then undo to populate redo stack.
+    let tree2 = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree2);
+    let all: HashSet<PaneId> = [p1, p2].into_iter().collect();
+    assert!(tab.undo_tree(&all));
+
+    // Now set_tree should clear redo.
+    let tree3 = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree3);
+    let all2: HashSet<PaneId> = [p1, p2, p3].into_iter().collect();
+    assert!(!tab.redo_tree(&all2));
+}
+
+#[test]
+fn undo_pushes_to_redo() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    let tree2 = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree2);
+    let all: HashSet<PaneId> = [p1, p2].into_iter().collect();
+    assert!(tab.undo_tree(&all));
+
+    // Redo stack should now have the post-split tree.
+    assert!(tab.redo_tree(&all));
+    assert_eq!(tab.all_panes().len(), 2);
+}
+
+#[test]
+fn redo_restores_undone_tree() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    let tree2 = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    let tree2_clone = tree2.clone();
+    tab.set_tree(tree2);
+    let all: HashSet<PaneId> = [p1, p2].into_iter().collect();
+
+    assert!(tab.undo_tree(&all));
+    assert_eq!(tab.all_panes(), vec![p1]);
+
+    assert!(tab.redo_tree(&all));
+    assert_eq!(*tab.tree(), tree2_clone);
+}
+
+#[test]
+fn multiple_undo_then_redo_walks_forward() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    let tree2 = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree2);
+    let tree3 = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree3);
+    let all: HashSet<PaneId> = [p1, p2, p3].into_iter().collect();
+
+    // Undo twice → single pane.
+    assert!(tab.undo_tree(&all));
+    assert!(tab.undo_tree(&all));
+    assert_eq!(tab.all_panes(), vec![p1]);
+
+    // Redo twice → back to 3 panes.
+    assert!(tab.redo_tree(&all));
+    assert_eq!(tab.all_panes().len(), 2);
+    assert!(tab.redo_tree(&all));
+    assert_eq!(tab.all_panes().len(), 3);
+}
+
+#[test]
+fn new_mutation_after_undo_clears_redo() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    let tree2 = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree2);
+    let all: HashSet<PaneId> = [p1, p2].into_iter().collect();
+    assert!(tab.undo_tree(&all));
+
+    // New mutation clears redo.
+    let tree3 = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree3);
+    let all2: HashSet<PaneId> = [p1, p2, p3].into_iter().collect();
+    assert!(!tab.redo_tree(&all2));
+}
+
+#[test]
+fn redo_empty_stack_returns_false() {
+    let mut tab = MuxTab::new(TabId::from_raw(1), PaneId::from_raw(1));
+    let live_panes = live(&tab);
+    assert!(!tab.redo_tree(&live_panes));
+}
+
+#[test]
+fn redo_stack_capped_at_32() {
+    let p1 = PaneId::from_raw(1);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    // Push 40 mutations.
+    for i in 2..42u64 {
+        let p = PaneId::from_raw(i);
+        let new_tree = tab.tree().split_at(p1, SplitDirection::Horizontal, p, 0.5);
+        tab.set_tree(new_tree);
+    }
+
+    // Undo all 32 (capped) to fill the redo stack.
+    let all: HashSet<PaneId> = (1..42u64).map(PaneId::from_raw).collect();
+    let mut undo_count = 0;
+    while tab.undo_tree(&all) {
+        undo_count += 1;
+    }
+    assert_eq!(undo_count, 32);
+
+    // Redo should also be capped at 32.
+    let mut redo_count = 0;
+    while tab.redo_tree(&all) {
+        redo_count += 1;
+    }
+    assert_eq!(redo_count, 32);
+}
+
+#[test]
+fn undo_skips_stale_pane_entry() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    // Split with p2.
+    let tree2 = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree2);
+
+    // Split with p3.
+    let tree3 = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree3);
+
+    // p2 was "closed" — not in live set.
+    let live_panes: HashSet<PaneId> = [p1, p3].into_iter().collect();
+
+    // First undo entry (tree with p1+p2) references stale p2, should be skipped.
+    // Should fall through to the original tree (just p1), which is valid.
+    assert!(tab.undo_tree(&live_panes));
+    assert_eq!(tab.all_panes(), vec![p1]);
+}
+
+#[test]
+fn redo_skips_stale_pane_entry() {
+    let p1 = PaneId::from_raw(1);
+    let p2 = PaneId::from_raw(2);
+    let p3 = PaneId::from_raw(3);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+
+    // Two splits.
+    let tree2 = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree2);
+    let tree3 = tab.tree().split_at(p1, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree3);
+
+    // Undo twice with all panes live.
+    let all: HashSet<PaneId> = [p1, p2, p3].into_iter().collect();
+    assert!(tab.undo_tree(&all));
+    assert!(tab.undo_tree(&all));
+
+    // Now p3 is "closed" — not in live set.
+    // The redo stack has [tree with p1+p2, tree with p1+p2+p3].
+    // The tree with p3 should be skipped, but tree with p1+p2 is valid.
+    let live_panes: HashSet<PaneId> = [p1, p2].into_iter().collect();
+    assert!(tab.redo_tree(&live_panes));
+    assert_eq!(tab.all_panes().len(), 2);
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p2));
+
+    // No more valid redo entries.
+    assert!(!tab.redo_tree(&live_panes));
 }
 
 /// `all_panes()` includes both tree and floating panes.
