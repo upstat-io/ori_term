@@ -5,6 +5,8 @@
 //! with an active tab index. These are the mux layer's own concepts — distinct
 //! from any GUI tab bar or platform window.
 
+use std::collections::VecDeque;
+
 use crate::id::{PaneId, TabId, WindowId};
 use crate::layout::floating::FloatingLayer;
 use crate::layout::split_tree::SplitTree;
@@ -32,7 +34,9 @@ pub struct MuxTab {
     /// Currently focused pane.
     active_pane: PaneId,
     /// Undo stack for split tree mutations.
-    undo: Vec<SplitTree>,
+    undo: VecDeque<SplitTree>,
+    /// Zoomed pane (fills entire tab area, hiding other panes).
+    zoomed_pane: Option<PaneId>,
 }
 
 #[allow(
@@ -47,7 +51,8 @@ impl MuxTab {
             tree: SplitTree::leaf(pane_id),
             floating: FloatingLayer::new(),
             active_pane: pane_id,
-            undo: Vec::new(),
+            undo: VecDeque::new(),
+            zoomed_pane: None,
         }
     }
 
@@ -81,15 +86,25 @@ impl MuxTab {
         self.active_pane = pane_id;
     }
 
+    /// The pane currently zoomed to fill the entire tab area, if any.
+    pub fn zoomed_pane(&self) -> Option<PaneId> {
+        self.zoomed_pane
+    }
+
+    /// Set or clear the zoomed pane.
+    pub fn set_zoomed_pane(&mut self, pane: Option<PaneId>) {
+        self.zoomed_pane = pane;
+    }
+
     /// Replace the split tree, pushing the current tree onto the undo stack.
     ///
     /// The undo stack is capped at [`MAX_UNDO_ENTRIES`]; oldest entries are
     /// discarded when the limit is reached.
     pub fn set_tree(&mut self, tree: SplitTree) {
         if self.undo.len() >= MAX_UNDO_ENTRIES {
-            self.undo.remove(0);
+            self.undo.pop_front();
         }
-        self.undo.push(self.tree.clone());
+        self.undo.push_back(self.tree.clone());
         self.tree = tree;
     }
 
@@ -97,7 +112,7 @@ impl MuxTab {
     ///
     /// Returns `true` if the undo was applied, `false` if the stack is empty.
     pub fn undo_tree(&mut self) -> bool {
-        if let Some(prev) = self.undo.pop() {
+        if let Some(prev) = self.undo.pop_back() {
             self.tree = prev;
             true
         } else {

@@ -88,6 +88,8 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
             Action::ResizePaneRight,
         ),
         bind(ch("="), cs, Action::EqualizePanes),
+        // Pane zoom toggle.
+        bind(ch("z"), cs, Action::ToggleZoom),
         // Smart copy/paste (Ctrl+C/V without Shift) — must come AFTER
         // Ctrl+Shift variants so those match first.
         bind(ch("c"), ctrl, Action::SmartCopy),

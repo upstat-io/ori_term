@@ -2097,3 +2097,89 @@ fn pane_closed_notification_carries_correct_id() {
         "PaneClosed should carry the exact pane ID"
     );
 }
+
+// --- Zoom tests ---
+
+#[test]
+fn toggle_zoom_sets_zoomed_pane() {
+    let (mut mux, _wid, tid, pid) = one_pane_setup();
+
+    mux.toggle_zoom(tid);
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(tab.zoomed_pane(), Some(pid));
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid)),
+        "should emit TabLayoutChanged",
+    );
+}
+
+#[test]
+fn toggle_zoom_twice_unzooms() {
+    let (mut mux, _wid, tid, _pid) = one_pane_setup();
+
+    mux.toggle_zoom(tid);
+    mux.toggle_zoom(tid);
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(tab.zoomed_pane(), None);
+}
+
+#[test]
+fn unzoom_clears_zoom_and_emits_notification() {
+    let (mut mux, _wid, tid, _pid) = one_pane_setup();
+
+    mux.toggle_zoom(tid);
+    drain(&mut mux);
+
+    mux.unzoom(tid);
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(tab.zoomed_pane(), None);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid)),
+        "should emit TabLayoutChanged",
+    );
+}
+
+#[test]
+fn unzoom_noop_when_not_zoomed() {
+    let (mut mux, _wid, tid, _pid) = one_pane_setup();
+
+    mux.unzoom(tid);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        !notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == tid)),
+        "unzoom on non-zoomed tab should not emit notifications",
+    );
+}
+
+#[test]
+fn close_zoomed_pane_clears_zoom() {
+    let (mut mux, _wid, tid, p1, p2) = two_pane_setup();
+    drain(&mut mux);
+
+    // Zoom p1.
+    let tab = mux.session.get_tab_mut(tid).unwrap();
+    tab.set_zoomed_pane(Some(p1));
+
+    // Close the zoomed pane.
+    mux.close_pane(p1);
+
+    let tab = mux.session.get_tab(tid).unwrap();
+    assert_eq!(
+        tab.zoomed_pane(),
+        None,
+        "zoom should be cleared when zoomed pane is closed"
+    );
+    assert_eq!(tab.active_pane(), p2);
+}

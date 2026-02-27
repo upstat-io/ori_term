@@ -249,6 +249,31 @@ fn set_active_tab_idx_on_empty_window() {
     assert!(w.active_tab().is_none());
 }
 
+// --- Zoom state tests ---
+
+#[test]
+fn zoomed_pane_default_none() {
+    let tab = MuxTab::new(TabId::from_raw(1), PaneId::from_raw(1));
+    assert_eq!(tab.zoomed_pane(), None);
+}
+
+#[test]
+fn set_zoomed_pane_roundtrip() {
+    let p1 = PaneId::from_raw(1);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+    tab.set_zoomed_pane(Some(p1));
+    assert_eq!(tab.zoomed_pane(), Some(p1));
+}
+
+#[test]
+fn zoomed_pane_cleared_on_none() {
+    let p1 = PaneId::from_raw(1);
+    let mut tab = MuxTab::new(TabId::from_raw(1), p1);
+    tab.set_zoomed_pane(Some(p1));
+    tab.set_zoomed_pane(None);
+    assert_eq!(tab.zoomed_pane(), None);
+}
+
 /// Floating layer is accessible via MuxTab.
 #[test]
 fn floating_layer_accessible() {

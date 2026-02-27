@@ -83,6 +83,8 @@ pub(crate) enum Action {
     ResizePaneRight,
     /// Reset all split ratios to equal (0.5).
     EqualizePanes,
+    /// Toggle zoom on the focused pane.
+    ToggleZoom,
     /// Send literal bytes to the PTY.
     SendText(String),
     /// Explicitly unbinds a default binding.
@@ -134,6 +136,7 @@ impl Action {
             Self::ResizePaneLeft => "ResizePaneLeft",
             Self::ResizePaneRight => "ResizePaneRight",
             Self::EqualizePanes => "EqualizePanes",
+            Self::ToggleZoom => "ToggleZoom",
             Self::SendText(_) => "SendText",
             Self::None => "None",
         }

@@ -731,7 +731,7 @@ handle_resize, handle_scale_factor_changed, resize ALL panes
 ---
 
 ### Section 33: Split Navigation + Floating Panes
-**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** Not Started
+**File:** `section-33-split-nav-floating.md` | **Tier:** 4M | **Status:** In Progress
 
 ```
 spatial navigation, Alt+Arrow, focus pane direction, cycle pane

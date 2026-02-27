@@ -13,7 +13,7 @@ sections:
     status: in-progress
   - id: "33.3"
     title: Zoom + Unzoom
-    status: not-started
+    status: complete
   - id: "33.4"
     title: Floating Pane Management
     status: not-started
@@ -164,33 +164,33 @@ Toggle zoom on the focused pane — it fills the entire tab area, hiding all oth
 
 **Reference:** WezTerm zoom/unzoom, Zellij fullscreen pane
 
-- [ ] Keybind: `Ctrl+Shift+Z` → `Action::ToggleZoom`
-- [ ] `MuxTab.zoomed_pane: Option<PaneId>`:
-  - [ ] `Some(id)`: render only this pane at full tab dimensions
-  - [ ] `None`: render full split tree layout
-- [ ] Zoom in:
-  - [ ] Set `MuxTab.zoomed_pane = Some(active_pane)`
-  - [ ] Resize zoomed pane's PTY to full tab dimensions
-  - [ ] Emit `TabLayoutChanged` notification
-- [ ] Zoom out:
-  - [ ] Set `MuxTab.zoomed_pane = None`
-  - [ ] Recompute full layout, resize all panes
-  - [ ] Emit `TabLayoutChanged` notification
-- [ ] Auto-unzoom triggers:
-  - [ ] Any split action (`SplitHorizontal`, `SplitVertical`) unzooms first
-  - [ ] Any navigate action (`FocusPaneDirection`, `CyclePane`) unzooms first
-  - [ ] Close zoomed pane: unzoom then close
-- [ ] Visual indicator:
-  - [ ] Tab bar shows `[Z]` badge or zoom icon when a pane is zoomed
+- [x] Keybind: `Ctrl+Shift+Z` → `Action::ToggleZoom`
+- [x] `MuxTab.zoomed_pane: Option<PaneId>`:
+  - [x] `Some(id)`: render only this pane at full tab dimensions
+  - [x] `None`: render full split tree layout
+- [x] Zoom in:
+  - [x] Set `MuxTab.zoomed_pane = Some(active_pane)`
+  - [x] Resize zoomed pane's PTY to full tab dimensions
+  - [x] Emit `TabLayoutChanged` notification
+- [x] Zoom out:
+  - [x] Set `MuxTab.zoomed_pane = None`
+  - [x] Recompute full layout, resize all panes
+  - [x] Emit `TabLayoutChanged` notification
+- [x] Auto-unzoom triggers:
+  - [x] Any split action (`SplitHorizontal`, `SplitVertical`) unzooms first
+  - [x] Any navigate action (`FocusPaneDirection`, `CyclePane`) unzooms first
+  - [x] Close zoomed pane: unzoom then close
+- [x] Visual indicator:
+  - [x] Tab bar shows `[Z]` badge when a pane is zoomed
   - [ ] Status bar (future) shows "ZOOM" indicator
 
 **Tests:**
-- [ ] Toggle zoom: pane fills entire tab area
-- [ ] Toggle again: restores full split layout
-- [ ] Split while zoomed: unzooms first, then splits
-- [ ] Navigate while zoomed: unzooms first, then navigates
-- [ ] Close zoomed pane: unzooms, removes pane, layout updates
-- [ ] Zoom badge: appears in tab bar when zoomed
+- [x] Toggle zoom: `toggle_zoom_sets_zoomed_pane`, `toggle_zoom_twice_unzooms`
+- [x] Unzoom: `unzoom_clears_zoom_and_emits_notification`, `unzoom_noop_when_not_zoomed`
+- [x] Close zoomed pane: `close_zoomed_pane_clears_zoom`
+- [x] Keybinding: `toggle_zoom_default_binding`, `action_as_str_roundtrip` includes `ToggleZoom`
+- [x] MuxTab state: `zoomed_pane_default_none`, `set_zoomed_pane_roundtrip`, `zoomed_pane_cleared_on_none`
+- [ ] Integration (manual): toggle zoom, auto-unzoom on split/navigate, zoom badge in tab bar
 
 ---
 

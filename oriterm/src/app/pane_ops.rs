@@ -32,8 +32,24 @@ impl App {
             Action::ResizePaneLeft => self.resize_pane_toward(Direction::Left),
             Action::ResizePaneRight => self.resize_pane_toward(Direction::Right),
             Action::EqualizePanes => self.equalize_panes(),
+            Action::ToggleZoom => self.toggle_zoom(),
             _ => {}
         }
+    }
+
+    /// Toggle zoom on the focused pane.
+    ///
+    /// When zoomed, the focused pane fills the entire tab area and all
+    /// other panes and dividers are hidden. Pressing again restores the
+    /// full split layout.
+    pub(super) fn toggle_zoom(&mut self) {
+        let Some((tab_id, _)) = self.active_pane_context() else {
+            return;
+        };
+        let Some(mux) = &mut self.mux else { return };
+        mux.toggle_zoom(tab_id);
+        self.pane_cache.invalidate_all();
+        self.dirty = true;
     }
 
     /// Split the focused pane in the given direction.
@@ -42,6 +58,7 @@ impl App {
     /// Layout recomputation and pane resize happen on the next
     /// `TabLayoutChanged` notification (emitted by the mux).
     pub(super) fn split_pane(&mut self, direction: SplitDirection) {
+        self.unzoom_if_needed();
         let (tab_id, source_pane_id) = match self.active_pane_context() {
             Some(ctx) => ctx,
             None => return,
@@ -90,6 +107,7 @@ impl App {
 
     /// Move focus to a pane in the given direction.
     pub(super) fn focus_pane_direction(&mut self, direction: Direction) {
+        self.unzoom_if_needed();
         let layouts = match self.current_pane_layouts() {
             Some(l) => l,
             None => return,
@@ -105,6 +123,7 @@ impl App {
 
     /// Cycle to the next or previous pane.
     pub(super) fn cycle_pane(&mut self, forward: bool) {
+        self.unzoom_if_needed();
         let layouts = match self.current_pane_layouts() {
             Some(l) => l,
             None => return,
@@ -182,6 +201,7 @@ impl App {
     /// - Down: push horizontal border down (pane in first, +step)
     /// - Up: push horizontal border up (pane in second, −step)
     pub(super) fn resize_pane_toward(&mut self, direction: Direction) {
+        self.unzoom_if_needed();
         let Some((tab_id, pane_id)) = self.active_pane_context() else {
             return;
         };
@@ -198,6 +218,7 @@ impl App {
 
     /// Reset all split ratios in the active tab to 0.5.
     pub(super) fn equalize_panes(&mut self) {
+        self.unzoom_if_needed();
         let Some((tab_id, _)) = self.active_pane_context() else {
             return;
         };
@@ -240,6 +261,18 @@ impl App {
     /// Compute pane layouts for the current tab (flat list for navigation).
     fn current_pane_layouts(&self) -> Option<Vec<oriterm_mux::layout::PaneLayout>> {
         self.compute_pane_layouts().map(|(layouts, _)| layouts)
+    }
+
+    /// Clear zoom on the active tab if currently zoomed.
+    ///
+    /// Called at the top of operations that should auto-unzoom (split,
+    /// navigate, cycle, resize, equalize).
+    fn unzoom_if_needed(&mut self) {
+        let Some((tab_id, _)) = self.active_pane_context() else {
+            return;
+        };
+        let Some(mux) = &mut self.mux else { return };
+        mux.unzoom(tab_id);
     }
 
     /// Set the focused pane in the mux and mark dirty.

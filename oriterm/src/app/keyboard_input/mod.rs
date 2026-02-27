@@ -305,7 +305,8 @@ impl App {
             | Action::ResizePaneDown
             | Action::ResizePaneLeft
             | Action::ResizePaneRight
-            | Action::EqualizePanes => {
+            | Action::EqualizePanes
+            | Action::ToggleZoom => {
                 self.execute_pane_action(action);
                 true
             }

@@ -528,6 +528,7 @@ fn action_as_str_roundtrip() {
         Action::NextPane,
         Action::PrevPane,
         Action::ClosePane,
+        Action::ToggleZoom,
         Action::None,
     ];
     for action in &actions {
@@ -640,6 +641,17 @@ fn equalize_panes_default_binding() {
     assert_eq!(
         find_binding(&bindings, &key, mods),
         Some(&Action::EqualizePanes),
+    );
+}
+
+#[test]
+fn toggle_zoom_default_binding() {
+    let bindings = default_bindings();
+    let key = BindingKey::Character("z".to_owned());
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    assert_eq!(
+        find_binding(&bindings, &key, mods),
+        Some(&Action::ToggleZoom),
     );
 }
 

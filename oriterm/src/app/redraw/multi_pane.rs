@@ -6,7 +6,7 @@
 //! `PreparedFrame` for a single GPU submission.
 
 use oriterm_core::{Column, CursorShape, TermMode};
-use oriterm_mux::layout::{DividerLayout, LayoutDescriptor, PaneLayout, compute_all};
+use oriterm_mux::layout::{DividerLayout, LayoutDescriptor, PaneLayout, Rect, compute_all};
 
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 
@@ -31,7 +31,9 @@ impl App {
         let tab_id = win.active_tab()?;
         let tab = mux.session().get_tab(tab_id)?;
 
-        if tab.tree().pane_count() <= 1 && tab.floating().is_empty() {
+        let is_zoomed = tab.zoomed_pane().is_some();
+
+        if !is_zoomed && tab.tree().pane_count() <= 1 && tab.floating().is_empty() {
             return None;
         }
 
@@ -40,8 +42,38 @@ impl App {
         let renderer = self.renderer.as_ref()?;
         let cell = renderer.cell_metrics();
 
+        // Zoomed: single pane fills the entire available area.
+        if let Some(zoomed_id) = tab.zoomed_pane() {
+            let avail = Rect {
+                x: bounds.x(),
+                y: bounds.y(),
+                width: bounds.width(),
+                height: bounds.height(),
+            };
+            let cols = (avail.width / cell.width).floor() as u16;
+            let rows = (avail.height / cell.height).floor() as u16;
+            let snapped_w = cols as f32 * cell.width;
+            let snapped_h = rows as f32 * cell.height;
+            return Some((
+                vec![PaneLayout {
+                    pane_id: zoomed_id,
+                    pixel_rect: Rect {
+                        x: avail.x,
+                        y: avail.y,
+                        width: snapped_w,
+                        height: snapped_h,
+                    },
+                    cols: cols.max(1),
+                    rows: rows.max(1),
+                    is_focused: true,
+                    is_floating: false,
+                }],
+                vec![],
+            ));
+        }
+
         let desc = LayoutDescriptor {
-            available: oriterm_mux::layout::Rect {
+            available: Rect {
                 x: bounds.x(),
                 y: bounds.y(),
                 width: bounds.width(),
@@ -71,9 +103,9 @@ impl App {
         &mut self,
         layouts: &[PaneLayout],
         dividers: &[DividerLayout],
-        url_segments: &[crate::url_detect::UrlSegment],
+        mut url_segments: Vec<crate::url_detect::UrlSegment>,
     ) {
-        let render_result = {
+        let (render_result, blinking_now) = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw multi: no gpu");
                 return;
@@ -110,6 +142,7 @@ impl App {
 
             let mut focused_rect = None;
             let mut focused_base = 0u64;
+            let mut blinking_now = self.blinking_active;
 
             for layout in layouts {
                 let pane_id = layout.pane_id;
@@ -179,7 +212,7 @@ impl App {
                                 mouse_selection::pixel_to_cell(self.mouse.cursor_pos(), &ctx)
                                     .map(|(col, line)| (line, col));
                         }
-                        frame.hovered_url_segments = url_segments.to_vec();
+                        frame.hovered_url_segments = std::mem::take(&mut url_segments);
                     } else {
                         frame.hovered_cell = None;
                         frame.hovered_url_segments.clear();
@@ -189,12 +222,9 @@ impl App {
                         // Save stable row base for search bar restoration after the loop.
                         focused_base = frame.content.stable_row_base;
 
-                        // Cache blinking mode from focused pane.
-                        let blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
-                        if blinking_now && !self.blinking_active {
-                            self.cursor_blink.reset();
-                        }
-                        self.blinking_active = blinking_now;
+                        // Capture blinking mode for post-render update. Timer
+                        // reset deferred to after GPU submission.
+                        blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
                     }
 
                     frame.fg_dim = if layout.is_focused || !dim_inactive {
@@ -318,6 +348,7 @@ impl App {
                         search,
                         renderer,
                         &mut self.chrome_draw_list,
+                        &mut self.search_bar_buf,
                         logical_w as f32,
                         chrome_h,
                         scale,
@@ -326,10 +357,18 @@ impl App {
                 }
             }
 
-            renderer.render_to_surface(gpu, window.surface())
+            let result = renderer.render_to_surface(gpu, window.surface());
+            (result, blinking_now)
         };
 
         self.handle_render_result(render_result);
+
+        // Update blink state after rendering (no state mutation during render).
+        if blinking_now && !self.blinking_active {
+            self.cursor_blink.reset();
+        }
+        self.blinking_active = blinking_now;
+
         self.update_ime_cursor_area();
     }
 }

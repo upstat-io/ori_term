@@ -170,6 +170,7 @@ pub(crate) fn parse_action(s: &str) -> Option<Action> {
         "ResizePaneLeft" => Action::ResizePaneLeft,
         "ResizePaneRight" => Action::ResizePaneRight,
         "EqualizePanes" => Action::EqualizePanes,
+        "ToggleZoom" => Action::ToggleZoom,
         "None" => Action::None,
         _ => return None,
     })
