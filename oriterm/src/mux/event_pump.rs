@@ -157,6 +157,74 @@ impl InProcessMux {
         win.reorder_tab(from, to)
     }
 
+    // -- Cross-window operations --
+
+    /// Move a tab from its current window to a different window.
+    ///
+    /// The tab's panes, split tree, and floating layer are preserved — only
+    /// window ownership changes. The tab becomes the active tab in the
+    /// destination window.
+    ///
+    /// If the source window becomes empty after the move, it is removed and
+    /// a `WindowClosed` (or `LastWindowClosed`) notification is emitted.
+    ///
+    /// Returns `true` if the move was performed.
+    pub(crate) fn move_tab_to_window(&mut self, tab_id: TabId, dest_window_id: WindowId) -> bool {
+        // Find source window.
+        let Some(source_window_id) = self.session.window_for_tab(tab_id) else {
+            return false;
+        };
+
+        // No-op if source == dest.
+        if source_window_id == dest_window_id {
+            return false;
+        }
+
+        // Verify destination window exists.
+        if self.session.get_window(dest_window_id).is_none() {
+            return false;
+        }
+
+        // Remove from source window.
+        let Some(source) = self.session.get_window_mut(source_window_id) else {
+            return false;
+        };
+        source.remove_tab(tab_id);
+        let source_empty = source.tabs().is_empty();
+
+        // Add to destination window and make it active.
+        let Some(dest) = self.session.get_window_mut(dest_window_id) else {
+            return false;
+        };
+        dest.add_tab(tab_id);
+        let dest_idx = dest.tabs().len() - 1;
+        dest.set_active_tab_idx(dest_idx);
+
+        // Emit notifications for both windows.
+        self.notifications
+            .push(MuxNotification::WindowTabsChanged(dest_window_id));
+
+        // Handle empty source window.
+        if source_empty {
+            self.session.remove_window(source_window_id);
+            if self.session.window_count() == 0 {
+                self.notifications.push(MuxNotification::LastWindowClosed);
+            } else {
+                self.notifications
+                    .push(MuxNotification::WindowClosed(source_window_id));
+            }
+        } else {
+            self.notifications
+                .push(MuxNotification::WindowTabsChanged(source_window_id));
+        }
+
+        // Trigger layout recomputation for the moved tab in its new window.
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+
+        true
+    }
+
     /// Immutable access to the pane registry.
     #[allow(dead_code, reason = "used when pane registry queries are wired to App")]
     pub(crate) fn pane_registry(&self) -> &oriterm_mux::registry::PaneRegistry {

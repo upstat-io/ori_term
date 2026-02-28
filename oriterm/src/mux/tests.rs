@@ -4083,3 +4083,372 @@ fn set_active_pane_nonexistent_tab_returns_false() {
     let stale = TabId::from_raw(999);
     assert!(!mux.set_active_pane(stale, PaneId::from_raw(1)));
 }
+
+// -- Cross-window tab movement (Section 32.4) --
+
+/// Two windows: w1 has two tabs (t1, t2), w2 has one tab (t3).
+fn two_window_setup() -> (InProcessMux, WindowId, WindowId, TabId, TabId, TabId) {
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+
+    let w1 = WindowId::from_raw(100);
+    let w2 = WindowId::from_raw(200);
+    let t1 = TabId::from_raw(100);
+    let t2 = TabId::from_raw(101);
+    let t3 = TabId::from_raw(200);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(200);
+
+    // Window 1 with two tabs.
+    mux.session.add_window(MuxWindow::new(w1));
+    mux.session.get_window_mut(w1).unwrap().add_tab(t1);
+    mux.session.get_window_mut(w1).unwrap().add_tab(t2);
+    mux.session.add_tab(MuxTab::new(t1, p1));
+    mux.session.add_tab(MuxTab::new(t2, p2));
+    mux.pane_registry.register(PaneEntry {
+        pane: p1,
+        tab: t1,
+        domain: did,
+    });
+    mux.pane_registry.register(PaneEntry {
+        pane: p2,
+        tab: t2,
+        domain: did,
+    });
+
+    // Window 2 with one tab.
+    mux.session.add_window(MuxWindow::new(w2));
+    mux.session.get_window_mut(w2).unwrap().add_tab(t3);
+    mux.session.add_tab(MuxTab::new(t3, p3));
+    mux.pane_registry.register(PaneEntry {
+        pane: p3,
+        tab: t3,
+        domain: did,
+    });
+
+    drain(&mut mux);
+
+    (mux, w1, w2, t1, t2, t3)
+}
+
+#[test]
+fn move_tab_to_window_transfers_ownership() {
+    let (mut mux, w1, w2, t1, _t2, _t3) = two_window_setup();
+
+    assert!(mux.move_tab_to_window(t1, w2));
+
+    // t1 should be in w2 now.
+    let w2_win = mux.session().get_window(w2).unwrap();
+    assert!(w2_win.tabs().contains(&t1));
+    assert_eq!(w2_win.tabs().len(), 2); // t3 + t1
+
+    // t1 should be removed from w1.
+    let w1_win = mux.session().get_window(w1).unwrap();
+    assert!(!w1_win.tabs().contains(&t1));
+    assert_eq!(w1_win.tabs().len(), 1); // only t2
+}
+
+#[test]
+fn move_tab_becomes_active_in_destination() {
+    let (mut mux, _w1, w2, t1, _t2, _t3) = two_window_setup();
+
+    mux.move_tab_to_window(t1, w2);
+
+    let w2_win = mux.session().get_window(w2).unwrap();
+    assert_eq!(w2_win.active_tab(), Some(t1));
+}
+
+#[test]
+fn move_tab_panes_resized_notification() {
+    let (mut mux, _w1, w2, t1, _t2, _t3) = two_window_setup();
+
+    mux.move_tab_to_window(t1, w2);
+
+    let notifs = drain(&mut mux);
+
+    // Must emit TabLayoutChanged for the moved tab (triggers resize).
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == t1))
+    );
+}
+
+#[test]
+fn move_tab_emits_tabs_changed_for_both_windows() {
+    let (mut mux, w1, w2, t1, _t2, _t3) = two_window_setup();
+
+    mux.move_tab_to_window(t1, w2);
+
+    let notifs = drain(&mut mux);
+
+    // Both windows should get WindowTabsChanged.
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::WindowTabsChanged(id) if *id == w1))
+    );
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::WindowTabsChanged(id) if *id == w2))
+    );
+}
+
+#[test]
+fn move_last_tab_closes_source_window() {
+    let (mut mux, w1, w2, _t1, _t2, t3) = two_window_setup();
+
+    // w2 has only t3. Move t3 to w1 → w2 should close.
+    assert!(mux.move_tab_to_window(t3, w1));
+
+    assert!(mux.session().get_window(w2).is_none());
+    assert_eq!(mux.session().window_count(), 1);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::WindowClosed(id) if *id == w2))
+    );
+}
+
+#[test]
+fn move_tab_to_same_window_is_noop() {
+    let (mut mux, w1, _w2, t1, _t2, _t3) = two_window_setup();
+
+    assert!(!mux.move_tab_to_window(t1, w1));
+
+    // No notifications emitted.
+    let notifs = drain(&mut mux);
+    assert!(notifs.is_empty());
+}
+
+#[test]
+fn move_nonexistent_tab_returns_false() {
+    let (mut mux, _w1, w2, _t1, _t2, _t3) = two_window_setup();
+
+    let stale = TabId::from_raw(999);
+    assert!(!mux.move_tab_to_window(stale, w2));
+}
+
+#[test]
+fn move_to_nonexistent_window_returns_false() {
+    let (mut mux, _w1, _w2, t1, _t2, _t3) = two_window_setup();
+
+    let stale = WindowId::from_raw(999);
+    assert!(!mux.move_tab_to_window(t1, stale));
+}
+
+#[test]
+fn move_multi_pane_tab_preserves_split_layout() {
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+
+    let w1 = WindowId::from_raw(100);
+    let w2 = WindowId::from_raw(200);
+    let tid = TabId::from_raw(100);
+    let t2 = TabId::from_raw(200);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(200);
+
+    // w1: one tab with two split panes.
+    mux.session.add_window(MuxWindow::new(w1));
+    mux.session.get_window_mut(w1).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+
+    // w2: one tab, one pane.
+    mux.session.add_window(MuxWindow::new(w2));
+    mux.session.get_window_mut(w2).unwrap().add_tab(t2);
+    mux.session.add_tab(MuxTab::new(t2, p3));
+    mux.pane_registry.register(PaneEntry {
+        pane: p3,
+        tab: t2,
+        domain: did,
+    });
+
+    drain(&mut mux);
+
+    // Move the split tab from w1 to w2.
+    assert!(mux.move_tab_to_window(tid, w2));
+
+    // Split tree should be preserved in the moved tab.
+    let tab = mux.session().get_tab(tid).unwrap();
+    assert_eq!(tab.tree().pane_count(), 2);
+    assert!(tab.tree().contains(p1));
+    assert!(tab.tree().contains(p2));
+
+    // w1 should be closed (it was the only tab).
+    assert!(mux.session().get_window(w1).is_none());
+}
+
+// -- Section 32.5: Integration tests --
+
+#[test]
+fn tab_lifecycle_create_close_cycle() {
+    // Create 5 tabs, close 3, cycle remaining, verify state.
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+    let wid = WindowId::from_raw(100);
+    mux.session.add_window(MuxWindow::new(wid));
+
+    // Create 5 tabs with one pane each.
+    let mut tabs = Vec::new();
+    let mut panes = Vec::new();
+    for i in 0..5 {
+        let tid = TabId::from_raw(200 + i);
+        let pid = PaneId::from_raw(200 + i);
+        mux.session.add_tab(MuxTab::new(tid, pid));
+        mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+        tabs.push(tid);
+        panes.push(pid);
+    }
+    drain(&mut mux);
+
+    assert_eq!(mux.session().get_window(wid).unwrap().tabs().len(), 5);
+
+    // Close tabs at indices 1, 3, 4 (t2, t4, t5). Remove in reverse to avoid
+    // index shifting issues.
+    for &tid in &[tabs[4], tabs[3], tabs[1]] {
+        mux.close_tab(tid);
+    }
+    drain(&mut mux);
+
+    // 2 tabs remain: t1 and t3.
+    let win = mux.session().get_window(wid).unwrap();
+    assert_eq!(win.tabs().len(), 2);
+    assert!(win.tabs().contains(&tabs[0]));
+    assert!(win.tabs().contains(&tabs[2]));
+
+    // Cycle through remaining tabs.
+    mux.switch_active_tab(wid, tabs[0]);
+    assert_eq!(mux.active_tab_id(wid), Some(tabs[0]));
+
+    assert_eq!(mux.cycle_active_tab(wid, 1), Some(tabs[2]));
+    assert_eq!(mux.active_tab_id(wid), Some(tabs[2]));
+
+    // Wrap back to first.
+    assert_eq!(mux.cycle_active_tab(wid, 1), Some(tabs[0]));
+    assert_eq!(mux.active_tab_id(wid), Some(tabs[0]));
+
+    // Closed panes should be unregistered.
+    assert!(mux.get_pane_entry(panes[1]).is_none());
+    assert!(mux.get_pane_entry(panes[3]).is_none());
+    assert!(mux.get_pane_entry(panes[4]).is_none());
+
+    // Remaining panes should still be registered.
+    assert!(mux.get_pane_entry(panes[0]).is_some());
+    assert!(mux.get_pane_entry(panes[2]).is_some());
+}
+
+#[test]
+fn multi_window_move_tab_and_close_window() {
+    // 2 windows, move tab between them, close one window.
+    let (mut mux, w1, w2, t1, t2, t3) = two_window_setup();
+
+    // w1 has [t1, t2], w2 has [t3].
+    assert_eq!(mux.session().get_window(w1).unwrap().tabs().len(), 2);
+    assert_eq!(mux.session().get_window(w2).unwrap().tabs().len(), 1);
+
+    // Move t2 from w1 to w2.
+    assert!(mux.move_tab_to_window(t2, w2));
+    drain(&mut mux);
+
+    assert_eq!(mux.session().get_window(w1).unwrap().tabs(), &[t1]);
+    assert_eq!(mux.session().get_window(w2).unwrap().tabs(), &[t3, t2]);
+
+    // Close w1 — should not affect w2.
+    let closed_panes = mux.close_window(w1);
+    assert_eq!(closed_panes.len(), 1); // only t1's pane
+    drain(&mut mux);
+
+    assert!(mux.session().get_window(w1).is_none());
+    assert_eq!(mux.session().window_count(), 1);
+
+    // w2 still intact with both tabs.
+    let w2_win = mux.session().get_window(w2).unwrap();
+    assert_eq!(w2_win.tabs().len(), 2);
+    assert!(w2_win.tabs().contains(&t2));
+    assert!(w2_win.tabs().contains(&t3));
+}
+
+#[test]
+fn rapid_create_close_no_orphans() {
+    // Rapidly create and close tabs — verify no orphaned panes or stale state.
+    let mut mux = InProcessMux::new();
+    let did = mux.default_domain();
+    let wid = WindowId::from_raw(100);
+    mux.session.add_window(MuxWindow::new(wid));
+
+    // Seed with one tab so the window never goes empty.
+    let seed_tid = TabId::from_raw(1);
+    let seed_pid = PaneId::from_raw(1);
+    mux.session.add_tab(MuxTab::new(seed_tid, seed_pid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(seed_tid);
+    mux.pane_registry.register(PaneEntry {
+        pane: seed_pid,
+        tab: seed_tid,
+        domain: did,
+    });
+    drain(&mut mux);
+
+    // Rapidly create 20 tabs, then close them all.
+    let mut created = Vec::new();
+    for i in 0..20 {
+        let tid = TabId::from_raw(100 + i);
+        let pid = PaneId::from_raw(100 + i);
+        mux.session.add_tab(MuxTab::new(tid, pid));
+        mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+        created.push((tid, pid));
+    }
+    drain(&mut mux);
+
+    assert_eq!(
+        mux.session().get_window(wid).unwrap().tabs().len(),
+        21 // seed + 20
+    );
+
+    // Close all 20 in random-ish order (reverse).
+    for &(tid, _pid) in created.iter().rev() {
+        mux.close_tab(tid);
+    }
+    drain(&mut mux);
+
+    // Only seed tab remains.
+    let win = mux.session().get_window(wid).unwrap();
+    assert_eq!(win.tabs().len(), 1);
+    assert_eq!(win.tabs()[0], seed_tid);
+
+    // Only seed pane is registered.
+    assert_eq!(mux.pane_registry().len(), 1);
+    assert!(mux.get_pane_entry(seed_pid).is_some());
+
+    // All created panes should be gone.
+    for &(_tid, pid) in &created {
+        assert!(mux.get_pane_entry(pid).is_none());
+    }
+}

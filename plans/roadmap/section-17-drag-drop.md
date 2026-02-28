@@ -89,7 +89,7 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
 
 **Reference:** `_old/src/app/tab_drag.rs`
 
-- [ ] `tear_off_tab(&mut self, tab_id: TabId, source_wid: WindowId, event_loop: &ActiveEventLoop) -> Option<(WindowId, (i32, i32))>`
+- [ ] `tear_off_tab(&mut self, tab_id: TabId, source_wid: WindowId, event_loop: &ActiveEventLoop) -> Option<(WindowId, (i32, i32))>`  <!-- unblocks:32.4 -->
   - [ ] Remove tab from source window's tab list
   - [ ] Compute grab offset: where cursor appears in the new window's client area
     - [ ] Account for `TAB_LEFT_MARGIN` — the tab doesn't start at x=0

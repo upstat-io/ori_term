@@ -13,13 +13,13 @@ sections:
     status: complete
   - id: "32.3"
     title: Window Lifecycle
-    status: in-progress
+    status: complete
   - id: "32.4"
     title: Cross-Window Operations
-    status: not-started
+    status: in-progress
   - id: "32.5"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 32: Tab & Window Management (Mux-Aware)
@@ -133,14 +133,14 @@ Window creation, resize, DPI changes, and destruction. All operations coordinate
 - [x] `create_window(&mut self, event_loop: &ActiveEventLoop) -> Option<WindowId>`
   - [x] Calculate window size from font metrics + grid dimensions + `TAB_BAR_HEIGHT`
   - [x] Request transparency if opacity < 1.0
-  - [ ] Enable `WS_EX_NOREDIRECTIONBITMAP` on Windows
+  - [x] Enable `WS_EX_NOREDIRECTIONBITMAP` on Windows
   - [x] Create winit window
   - [x] Capture initial DPI scale factor
   - [x] **First window only**: initialize `GpuState` and `GpuRenderer` (via `try_init`)
   - [x] Create wgpu `Surface` for this window
-  - [ ] **Render clear frame BEFORE showing** (prevent gray/white flash)
-  - [ ] Apply compositor effects (Mica/acrylic on Windows, vibrancy on macOS)
-  - [ ] Enable Aero Snap on Windows (WndProc subclass for `WM_NCHITTEST`)
+  - [x] **Render clear frame BEFORE showing** (prevent gray/white flash)
+  - [x] Apply compositor effects (Mica/acrylic on Windows, vibrancy on macOS)
+  - [x] Enable Aero Snap on Windows (WndProc subclass for `WM_NCHITTEST`)
   - [x] Register mux window: `mux.create_window()` → `WindowId`
   - [x] Map winit `WindowId` ↔ mux `WindowId`
   - [x] Show window
@@ -171,8 +171,8 @@ Window creation, resize, DPI changes, and destruction. All operations coordinate
   - [x] Mark all grid lines dirty for re-extraction
 
 **Tests:**
-- [ ] No-flash: window opens with themed background, no gray/white flash (visual/manual)
-- [ ] DPI change: fonts reload, grids reflow, no artifacts (visual/manual)
+- [x] No-flash: window opens with themed background, no gray/white flash (visual/manual)
+- [x] DPI change: fonts reload, grids reflow, no artifacts (visual/manual)
 - [x] Multi-window: `NewWindow` keybinding creates new window, close removes it
 - [x] Exit ordering: last window → `exit_app()` before dropping panes (ConPTY-safe)
 - [x] Resize: per-window resize via parameterized `handle_resize(winit_id, size)`
@@ -185,43 +185,43 @@ Move tabs between windows. Tab identity (TabId) preserved — same panes, same l
 
 **File:** `oriterm/src/app/window_management.rs`
 
-- [ ] `move_tab_to_window(&mut self, tab_id: TabId, target_window: WindowId)`
-  - [ ] Remove tab from source `MuxWindow.tabs`
-  - [ ] Add to target `MuxWindow.tabs`
-  - [ ] If source window now empty: close it (unless it's the last)
-  - [ ] Resize all panes in moved tab to target window dimensions
-  - [ ] Mark both windows dirty
-- [ ] `move_tab_to_new_window(&mut self, tab_id: TabId, event_loop: &ActiveEventLoop)`
-  - [ ] Refuse if it's the last tab in the last window
-  - [ ] Create new window via `create_window()`
-  - [ ] Move tab to new window
-- [ ] Tab tear-off integration (built on Section 17 drag infrastructure):
+- [x] `move_tab_to_window(&mut self, tab_id: TabId, target_window: WindowId)`
+  - [x] Remove tab from source `MuxWindow.tabs`
+  - [x] Add to target `MuxWindow.tabs`
+  - [x] If source window now empty: close it (unless it's the last)
+  - [x] Resize all panes in moved tab to target window dimensions
+  - [x] Mark both windows dirty
+- [x] `move_tab_to_new_window(&mut self, tab_id: TabId, event_loop: &ActiveEventLoop)`
+  - [x] Refuse if it's the last tab in the last window
+  - [x] Create new window via `create_window()`
+  - [x] Move tab to new window
+- [ ] Tab tear-off integration (built on Section 17 drag infrastructure):  <!-- blocked-by:17 -->
   - [ ] Drag tab beyond `TEAR_OFF_THRESHOLD` → `move_tab_to_new_window`
   - [ ] Drag tab to another window → `move_tab_to_window`
   - [ ] Multi-pane tabs move as a unit (entire SplitTree preserved)
 
 **Tests:**
-- [ ] Move tab from window A to window B: tab appears in B, removed from A
-- [ ] Move tab: panes resized to target window dimensions
-- [ ] Move last tab: source window closes (not the app, if other windows exist)
-- [ ] Tear-off: creates new window with the dragged tab
-- [ ] Multi-pane tab: split layout preserved after cross-window move
+- [x] Move tab from window A to window B: tab appears in B, removed from A
+- [x] Move tab: panes resized to target window dimensions
+- [x] Move last tab: source window closes (not the app, if other windows exist)
+- [ ] Tear-off: creates new window with the dragged tab  <!-- blocked-by:17 -->
+- [x] Multi-pane tab: split layout preserved after cross-window move
 
 ---
 
 ## 32.5 Section Completion
 
-- [ ] All 32.1–32.4 items complete
-- [ ] Tab management: create, close, duplicate, cycle, reorder — all through mux
-- [ ] Multi-window: shared GPU, font collection, config. Correct lifecycle.
-- [ ] No-flash window startup, DPI handling, Aero Snap
-- [ ] ConPTY-safe shutdown: exit_app before drop, background thread cleanup
-- [ ] Cross-window tab movement preserves pane state and layout tree
-- [ ] `cargo build --target x86_64-pc-windows-gnu` — compiles
-- [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
-- [ ] `cargo test` — all tests pass
-- [ ] **Tab lifecycle test**: create 5 tabs, close 3, cycle remaining, verify state
-- [ ] **Multi-window test**: 2 windows, move tab between, close one window
-- [ ] **Stress test**: rapidly create/close tabs — no freeze, no orphaned PTYs
+- [ ] All 32.1–32.4 items complete  <!-- blocked-by:17 -->
+- [x] Tab management: create, close, duplicate, cycle, reorder — all through mux
+- [x] Multi-window: shared GPU, font collection, config. Correct lifecycle.
+- [x] No-flash window startup, DPI handling, Aero Snap
+- [x] ConPTY-safe shutdown: exit_app before drop, background thread cleanup
+- [x] Cross-window tab movement preserves pane state and layout tree
+- [x] `cargo build --target x86_64-pc-windows-gnu` — compiles
+- [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+- [x] `cargo test` — all tests pass
+- [x] **Tab lifecycle test**: create 5 tabs, close 3, cycle remaining, verify state
+- [x] **Multi-window test**: 2 windows, move tab between, close one window
+- [x] **Stress test**: rapidly create/close tabs — no freeze, no orphaned PTYs
 
 **Exit Criteria:** Complete tab and window management through the mux layer. All patterns from superseded Sections 15 and 18 are implemented: ConPTY safety, no-flash startup, DPI handling, CWD inheritance, background thread drops, exit-before-drop ordering. Cross-window tab movement works with multi-pane tabs.

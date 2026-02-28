@@ -143,6 +143,57 @@ impl GpuState {
         surface.configure(&self.device, config);
     }
 
+    /// Render a single clear frame to a surface.
+    ///
+    /// Fills the framebuffer with `bg` (sRGB bytes) premultiplied by `opacity`,
+    /// then presents. Used before `window.set_visible(true)` to prevent a
+    /// white/gray flash on startup.
+    pub fn clear_surface(&self, surface: &wgpu::Surface<'_>, bg: oriterm_core::Rgb, opacity: f32) {
+        let frame = match surface.get_current_texture() {
+            Ok(f) => f,
+            Err(e) => {
+                log::warn!("clear_surface: failed to acquire texture: {e}");
+                return;
+            }
+        };
+        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.render_format),
+            ..Default::default()
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("clear_surface"),
+            });
+        {
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clear_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: f64::from(bg.r) / 255.0 * f64::from(opacity),
+                            g: f64::from(bg.g) / 255.0 * f64::from(opacity),
+                            b: f64::from(bg.b) / 255.0 * f64::from(opacity),
+                            a: f64::from(opacity),
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            });
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+        frame.present();
+
+        // Flush the GPU so the clear frame is visible before the window shows.
+        if let Err(e) = self.device.poll(wgpu::PollType::wait_indefinitely()) {
+            log::warn!("clear_surface: GPU poll failed: {e}");
+        }
+    }
+
     /// Save the pipeline cache to disk on a background thread.
     ///
     /// Extracts the cache data synchronously (fast), then spawns a

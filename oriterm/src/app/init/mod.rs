@@ -131,8 +131,18 @@ impl App {
             self.config.font.size,
         );
 
-        // Show window before storing — winit won't deliver RedrawRequested
-        // to an invisible window, so we must be visible first.
+        // Render a clear frame with the theme's background color before
+        // showing the window. This prevents the white/gray flash that occurs
+        // when the compositor displays an uninitialized framebuffer.
+        let theme = self
+            .config
+            .colors
+            .resolve_theme(crate::platform::theme::system_theme);
+        let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
+        gpu.clear_surface(window.surface(), palette.background(), opacity);
+
+        // Show window — winit won't deliver RedrawRequested to an invisible
+        // window, so we must be visible before storing state.
         window.set_visible(true);
 
         let winit_id = window.window_id();

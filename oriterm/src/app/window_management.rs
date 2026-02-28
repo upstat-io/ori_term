@@ -110,6 +110,14 @@ impl App {
             }
         }
 
+        // Render a clear frame with the theme's background color before
+        // showing. Prevents white/gray flash from uninitialized framebuffer.
+        let palette =
+            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
+        if let Some(gpu) = self.gpu.as_ref() {
+            gpu.clear_surface(window.surface(), palette.background(), opacity);
+        }
+
         // Show window.
         window.set_visible(true);
 

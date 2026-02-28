@@ -182,6 +182,87 @@ impl App {
         self.switch_to_tab(tab_id);
     }
 
+    /// Move a tab to a different window.
+    ///
+    /// Preserves the tab's panes and split layout. If the source window
+    /// becomes empty, it is closed. Panes in the moved tab are resized to
+    /// fit the destination window dimensions.
+    #[allow(dead_code, reason = "wired to tab tear-off in Section 17")]
+    pub(super) fn move_tab_to_window(&mut self, tab_id: TabId, dest_window: MuxWindowId) {
+        let Some(mux) = &mut self.mux else { return };
+        if !mux.move_tab_to_window(tab_id, dest_window) {
+            return;
+        }
+
+        // Mux notifications (WindowTabsChanged, WindowClosed, TabLayoutChanged)
+        // are processed in the normal pump_mux_events cycle. Sync both windows'
+        // tab bars immediately so the UI doesn't lag.
+        self.release_tab_width_lock();
+        self.sync_tab_bar_from_mux();
+
+        // Resize panes in the moved tab to fit the destination window.
+        self.resize_all_panes();
+
+        // Mark the destination window dirty.
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.pane_cache.invalidate_all();
+            ctx.cached_dividers = None;
+            ctx.dirty = true;
+        }
+    }
+
+    /// Move a tab to a new window.
+    ///
+    /// Creates a new window, then moves the tab there. Refuses if the tab
+    /// is the last tab in the last window (would leave zero windows).
+    #[allow(dead_code, reason = "wired to tab tear-off in Section 17")]
+    pub(super) fn move_tab_to_new_window(
+        &mut self,
+        tab_id: TabId,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) {
+        // Refuse if this is the last tab in the entire session.
+        let is_last = self
+            .mux
+            .as_ref()
+            .is_some_and(|m| m.session().tab_count() <= 1);
+        if is_last {
+            log::warn!("move_tab_to_new_window: refused — last tab in session");
+            return;
+        }
+
+        // Create new window (GPU, surface, chrome, initial tab).
+        let Some(new_winit_id) = self.create_window(event_loop) else {
+            return;
+        };
+
+        // The new window got a fresh initial tab. Find the mux window ID,
+        // then close that initial tab and move the requested tab there.
+        let Some(ctx) = self.windows.get(&new_winit_id) else {
+            return;
+        };
+        let new_mux_id = ctx.window.mux_window_id();
+
+        // Close the initial (empty) tab that `create_window` spawned.
+        if let Some(mux) = &mut self.mux {
+            if let Some(initial_tab) = mux.active_tab_id(new_mux_id) {
+                let pane_ids = mux.close_tab(initial_tab);
+                for pid in pane_ids {
+                    if let Some(pane) = self.panes.remove(&pid) {
+                        std::thread::spawn(move || drop(pane));
+                    }
+                }
+            }
+        }
+
+        // Move the requested tab to the new window.
+        self.move_tab_to_window(tab_id, new_mux_id);
+
+        // Focus the new window.
+        self.focused_window_id = Some(new_winit_id);
+        self.active_window = Some(new_mux_id);
+    }
+
     /// Reorder a tab within the active window.
     #[allow(dead_code, reason = "wired to drag-and-drop reorder in Section 17")]
     pub(super) fn move_tab(&mut self, from: usize, to: usize) {
