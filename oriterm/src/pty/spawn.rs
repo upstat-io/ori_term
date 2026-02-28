@@ -242,14 +242,30 @@ pub(crate) fn build_command(config: &PtyConfig) -> CommandBuilder {
 
 /// Build the `WSLENV` value that propagates env vars across the Win32/WSL boundary.
 ///
-/// Follows the Windows Terminal pattern: parse existing WSLENV to avoid duplicates,
-/// add our terminal variables plus any user-provided overrides, and explicitly
-/// exclude `PATH` (Windows PATH breaks WSL's computed PATH).
+/// Reads the current `WSLENV` from the process environment, computes the new
+/// value via [`compute_wslenv`], and sets it on the command if anything changed.
 #[cfg(windows)]
 fn build_wslenv(cmd: &mut CommandBuilder, config: &PtyConfig) {
-    use std::collections::HashSet;
-
     let existing = std::env::var("WSLENV").unwrap_or_default();
+    let user_keys: Vec<&str> = config.env.iter().map(|(k, _)| k.as_str()).collect();
+
+    if let Some(wslenv) = compute_wslenv(&existing, &user_keys) {
+        cmd.env("WSLENV", wslenv);
+    }
+}
+
+/// Compute the new `WSLENV` value by merging builtin terminal variables and
+/// user-provided keys into the existing value.
+///
+/// Follows the Windows Terminal pattern: parse existing WSLENV to avoid
+/// duplicates (case-insensitive), add our terminal variables plus any
+/// user-provided overrides, and explicitly exclude `PATH` (Windows PATH
+/// breaks WSL's computed PATH).
+///
+/// Returns `None` if all keys are already present (nothing to add).
+#[cfg(any(windows, test))]
+pub(crate) fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<String> {
+    use std::collections::HashSet;
 
     // Collect keys already present in WSLENV. Each entry is `KEY` or `KEY/flags`.
     let mut seen: HashSet<String> = existing
@@ -269,10 +285,9 @@ fn build_wslenv(cmd: &mut CommandBuilder, config: &PtyConfig) {
 
     // Variables we want to propagate.
     let builtin = ["TERM", "COLORTERM", "TERM_PROGRAM"];
-    let user_keys: Vec<&str> = config.env.iter().map(|(k, _)| k.as_str()).collect();
 
     let mut additions = String::new();
-    for key in builtin.iter().copied().chain(user_keys) {
+    for key in builtin.iter().copied().chain(user_keys.iter().copied()) {
         if seen.insert(key.to_uppercase()) {
             if !additions.is_empty() {
                 additions.push(':');
@@ -283,15 +298,14 @@ fn build_wslenv(cmd: &mut CommandBuilder, config: &PtyConfig) {
 
     if additions.is_empty() {
         // Everything was already in WSLENV — nothing to add.
-        return;
+        return None;
     }
 
-    let wslenv = if existing.is_empty() {
-        additions
+    if existing.is_empty() {
+        Some(additions)
     } else {
-        format!("{existing}:{additions}")
-    };
-    cmd.env("WSLENV", wslenv);
+        Some(format!("{existing}:{additions}"))
+    }
 }
 
 /// Returns the default shell for the current platform.
