@@ -268,3 +268,273 @@ fn close_slide_mid_animation_offset_decreasing() {
         );
     }
 }
+
+// --- Gap analysis: high priority ---
+
+#[test]
+fn zero_offset_slide_creates_identity_layers() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    // Close with tab_width=0.0 — offset is zero, so transforms start at identity.
+    state.start_close_slide(0, 0.0, 3, &mut cx);
+
+    // Layers should be created (indices 0, 1, 2) even with zero offset.
+    assert_eq!(state.active.len(), 3);
+
+    // Each layer's initial transform should be translate(0, 0) == identity.
+    for &layer_id in state.active.values() {
+        let tx = tree
+            .get(layer_id)
+            .unwrap()
+            .properties()
+            .transform
+            .translation_x();
+        assert!(
+            tx.abs() < f32::EPSILON,
+            "zero-offset slide should have zero translation, got {tx}"
+        );
+    }
+}
+
+#[test]
+fn reorder_across_full_range() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    // Move first tab to last position: from=0, to=4 (5 tabs total).
+    // Displaced range: 0..4, all get +tab_width.
+    state.start_reorder_slide(0, 4, 200.0, &mut cx);
+
+    assert!(state.has_active());
+    assert_eq!(
+        state.active.len(),
+        4,
+        "should displace 4 tabs (indices 0..4)"
+    );
+
+    // All displaced tabs should have positive initial offset.
+    for &layer_id in state.active.values() {
+        let tx = tree
+            .get(layer_id)
+            .unwrap()
+            .properties()
+            .transform
+            .translation_x();
+        assert!(
+            tx > 0.0,
+            "from < to: displaced tabs should have positive offset, got {tx}"
+        );
+    }
+}
+
+#[test]
+fn animation_completes_to_identity() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    state.start_close_slide(0, 200.0, 3, &mut cx);
+
+    // Tick well past the animation duration (150ms default + margin).
+    let after = now + Duration::from_millis(300);
+    animator.tick(&mut tree, after);
+
+    // All layers should have converged to identity transform.
+    for &layer_id in state.active.values() {
+        let props = tree.get(layer_id).unwrap().properties();
+        assert!(
+            props.transform.is_identity(),
+            "completed animation should yield identity, got {:?}",
+            props.transform
+        );
+    }
+}
+
+#[test]
+fn close_first_tab_shifts_all_remaining() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    // Close tab 0 out of 5 remaining → indices 0..5 should all slide.
+    state.start_close_slide(0, 200.0, 5, &mut cx);
+
+    assert_eq!(state.active.len(), 5, "all 5 tabs should animate");
+
+    // Every layer should have a positive initial X offset.
+    for (&idx, &layer_id) in &state.active {
+        let tx = tree
+            .get(layer_id)
+            .unwrap()
+            .properties()
+            .transform
+            .translation_x();
+        assert!(
+            tx > 0.0,
+            "tab {idx} should have positive offset after closing tab 0, got {tx}"
+        );
+    }
+}
+
+// --- Gap analysis: medium priority ---
+
+#[test]
+fn cleanup_mid_animation_retains_active() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    // Start a close slide with 2 displaced tabs.
+    state.start_close_slide(0, 200.0, 2, &mut cx);
+    assert_eq!(state.active.len(), 2);
+
+    // Tick to mid-animation (< 150ms duration).
+    let mid = now + Duration::from_millis(50);
+    animator.tick(&mut tree, mid);
+
+    // Cleanup mid-animation: nothing should be removed since both are still animating.
+    state.cleanup(&mut tree, &animator);
+    assert_eq!(
+        state.active.len(),
+        2,
+        "mid-animation cleanup should retain all active layers"
+    );
+
+    // Now tick past completion.
+    let after = now + Duration::from_millis(300);
+    animator.tick(&mut tree, after);
+
+    // Cleanup after completion: both should be removed.
+    state.cleanup(&mut tree, &animator);
+    assert!(
+        !state.has_active(),
+        "post-completion cleanup should remove all"
+    );
+}
+
+#[test]
+fn sync_with_smaller_tab_count_skips_out_of_range() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut widget = TabBarWidget::new(1200.0);
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    // Start with 4 tabs, close creates layers for indices 0..4.
+    state.start_close_slide(0, 200.0, 4, &mut cx);
+    assert_eq!(state.active.len(), 4);
+
+    // Sync with only 2 tabs (simulates rapid close reducing count).
+    state.sync_to_widget(2, &tree, &mut widget);
+
+    let mut readback = Vec::new();
+    widget.swap_anim_offsets(&mut readback);
+    assert_eq!(readback.len(), 2, "should produce exactly 2 offsets");
+    // Both should be valid (no panic from out-of-range).
+    assert!(readback[0].is_finite());
+    assert!(readback[1].is_finite());
+}
+
+#[test]
+fn double_cancel_is_safe() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    state.start_close_slide(0, 200.0, 3, &mut cx);
+    assert!(state.has_active());
+
+    // First cancel.
+    state.cancel_all(&mut tree, &mut animator);
+    assert!(!state.has_active());
+
+    // Second cancel — should be a no-op, no panic.
+    state.cancel_all(&mut tree, &mut animator);
+    assert!(!state.has_active());
+    assert!(!animator.is_any_animating());
+}
+
+#[test]
+fn reorder_adjacent_tabs_creates_single_layer() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    // Move tab 2 → tab 3 (adjacent): displaced range is 2..3, exactly 1 tab.
+    state.start_reorder_slide(2, 3, 200.0, &mut cx);
+
+    assert!(state.has_active());
+    assert_eq!(
+        state.active.len(),
+        1,
+        "adjacent reorder should displace exactly 1 tab"
+    );
+}
+
+// --- Gap analysis: low priority ---
+
+#[test]
+fn large_tab_count_slide() {
+    let mut state = TabSlideState::new();
+    let (mut tree, mut animator) = make_test_env();
+    let now = Instant::now();
+    let mut cx = SlideContext {
+        tree: &mut tree,
+        animator: &mut animator,
+        now,
+    };
+
+    // Close tab 0 with 50 remaining tabs.
+    state.start_close_slide(0, 100.0, 50, &mut cx);
+    assert_eq!(state.active.len(), 50);
+
+    // Tick to completion.
+    let after = now + Duration::from_millis(300);
+    animator.tick(&mut tree, after);
+
+    // Cleanup should remove all 50.
+    state.cleanup(&mut tree, &animator);
+    assert!(!state.has_active());
+}

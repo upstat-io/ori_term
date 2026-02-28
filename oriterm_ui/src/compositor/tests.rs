@@ -414,6 +414,21 @@ fn lerp_between_identity_and_translate() {
     assert_point_near(p, Point::new(25.0, 50.0), 1e-5);
 }
 
+#[test]
+fn lerp_complex_transform_exact_endpoints() {
+    // Compound transform: scale + translate.
+    let a = Transform2D::scale(2.0, 3.0).pre_translate(10.0, 20.0);
+    let b = Transform2D::scale(0.5, 0.5).pre_translate(-5.0, -10.0);
+
+    // t=0 must return exactly `a` (bitwise).
+    let at_zero = Transform2D::lerp(a, b, 0.0);
+    assert_eq!(at_zero, a, "lerp at t=0 should be bitwise-exact start");
+
+    // t=1 must return exactly `b` (bitwise).
+    let at_one = Transform2D::lerp(a, b, 1.0);
+    assert_eq!(at_one, b, "lerp at t=1 should be bitwise-exact end");
+}
+
 // Debug
 
 #[test]
