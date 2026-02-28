@@ -1952,3 +1952,202 @@ fn modal_focus_order_traverses_containers() {
     assert!(ids.contains(&btn2_id), "should find second button");
     assert_eq!(ids.len(), 2);
 }
+
+// --- Compositor integration: fade lifecycle ---
+
+#[test]
+fn dismiss_during_fade_in_starts_fade_out() {
+    // Rapid open-then-close: push an overlay, then immediately dismiss it
+    // before the fade-in completes. The overlay should move to dismissing.
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let id = mgr.push_overlay(
+        label_widget("Quick"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+
+    // Don't tick — the fade-in has not started yet.
+    // Immediately dismiss.
+    assert!(mgr.begin_dismiss(id, &tree, &mut animator, now));
+    assert_eq!(mgr.count(), 0, "active count drops immediately");
+
+    // Draw count includes dismissing overlay.
+    assert_eq!(mgr.draw_count(), 1, "dismissing overlay still drawn");
+
+    // Not fully empty until animation completes.
+    assert!(!mgr.is_empty(), "still has dismissing overlay");
+
+    // Advance past all animations and clean up.
+    complete_animations(&mut mgr, &mut tree, &mut animator);
+    assert!(mgr.is_empty(), "fully cleaned up");
+    assert_eq!(mgr.draw_count(), 0);
+}
+
+#[test]
+fn double_dismiss_is_noop() {
+    // Dismissing an already-dismissed overlay should return false.
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    let id = mgr.push_overlay(
+        label_widget("A"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+
+    assert!(mgr.begin_dismiss(id, &tree, &mut animator, now));
+    // Second dismiss: overlay is in dismissing vec, not active.
+    assert!(
+        !mgr.begin_dismiss(id, &tree, &mut animator, now),
+        "second dismiss should be no-op"
+    );
+}
+
+#[test]
+fn draw_overlay_at_returns_opacity_from_layer_tree() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    mgr.push_overlay(
+        label_widget("Fade"),
+        anchor(),
+        Placement::Below,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    // At t=0 (before tick), opacity is still 0.0 (the initial value).
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let anim_flag = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now,
+        animations_running: &anim_flag,
+        theme: &TEST_THEME,
+    };
+
+    let opacity_before = mgr.draw_overlay_at(0, &mut ctx, &tree);
+    assert!(
+        opacity_before < 1.0,
+        "opacity at t=0 should be < 1.0 (initial = 0.0), got {opacity_before}",
+    );
+
+    // Tick past the animation duration.
+    let future = now + Duration::from_secs(1);
+    animator.tick(&mut tree, future);
+
+    draw_list = DrawList::new();
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now: future,
+        animations_running: &anim_flag,
+        theme: &TEST_THEME,
+    };
+
+    let opacity_after = mgr.draw_overlay_at(0, &mut ctx, &tree);
+    assert!(
+        (opacity_after - 1.0).abs() < f32::EPSILON,
+        "opacity after fade-in = {opacity_after}",
+    );
+}
+
+#[test]
+fn modal_dim_rect_opacity_tracks_dim_layer() {
+    let mut mgr = OverlayManager::new(viewport());
+    let mut tree = test_tree();
+    let mut animator = LayerAnimator::new();
+    let now = Instant::now();
+
+    mgr.push_modal(
+        label_widget("Modal"),
+        anchor(),
+        Placement::Center,
+        &mut tree,
+        &mut animator,
+        now,
+    );
+    mgr.layout_overlays(&MockMeasurer::STANDARD, &TEST_THEME);
+
+    // Before tick: dim layer opacity is 0.0, so dim rect alpha should be 0.
+    let measurer = MockMeasurer::STANDARD;
+    let mut draw_list = DrawList::new();
+    let anim_flag = Cell::new(false);
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now,
+        animations_running: &anim_flag,
+        theme: &TEST_THEME,
+    };
+
+    mgr.draw_overlay_at(0, &mut ctx, &tree);
+
+    // Dim rect is the first command.
+    let dim_cmd = &draw_list.commands()[0];
+    match dim_cmd {
+        DrawCommand::Rect { style, .. } => {
+            let fill = style.fill.expect("dim rect has fill");
+            assert!(
+                fill.a < f32::EPSILON,
+                "dim alpha at t=0 should be ~0, got {}",
+                fill.a,
+            );
+        }
+        other => panic!("expected dim Rect, got {other:?}"),
+    }
+
+    // Tick past animation.
+    let future = now + Duration::from_secs(1);
+    animator.tick(&mut tree, future);
+
+    draw_list = DrawList::new();
+    let mut ctx = DrawCtx {
+        measurer: &measurer,
+        draw_list: &mut draw_list,
+        bounds: Rect::default(),
+        focused_widget: None,
+        now: future,
+        animations_running: &anim_flag,
+        theme: &TEST_THEME,
+    };
+
+    mgr.draw_overlay_at(0, &mut ctx, &tree);
+
+    let dim_cmd = &draw_list.commands()[0];
+    match dim_cmd {
+        DrawCommand::Rect { style, .. } => {
+            let fill = style.fill.expect("dim rect has fill");
+            assert!(
+                fill.a > 0.4,
+                "dim alpha after fade-in should be ~0.5, got {}",
+                fill.a,
+            );
+        }
+        other => panic!("expected dim Rect, got {other:?}"),
+    }
+}

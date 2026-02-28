@@ -1371,3 +1371,269 @@ fn text_without_layer_has_no_bg_hint() {
         _ => panic!("expected Text command"),
     }
 }
+
+// --- Opacity parameter ---
+
+#[test]
+fn opacity_half_halves_rect_fill_alpha() {
+    let mut dl = DrawList::new();
+    dl.push_rect(
+        Rect::new(10.0, 20.0, 100.0, 50.0),
+        RectStyle::filled(Color::WHITE),
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, 1.0, 0.5);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    // Fill RGB stays linearized white (1.0), alpha = 1.0 * 0.5 = 0.5.
+    assert_eq!(read_f32(rec, 48), 1.0);
+    assert_eq!(read_f32(rec, 52), 1.0);
+    assert_eq!(read_f32(rec, 56), 1.0);
+    assert!((read_f32(rec, 60) - 0.5).abs() < f32::EPSILON, "fill alpha");
+}
+
+#[test]
+fn opacity_half_halves_border_alpha() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::BLACK)
+        .with_border(2.0, Color::WHITE)
+        .with_radius(4.0);
+    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, 1.0, 0.5);
+
+    let rec = writer.as_bytes();
+    // Border alpha = 1.0 * 0.5 = 0.5.
+    assert!(
+        (read_f32(rec, 44) - 0.5).abs() < f32::EPSILON,
+        "border alpha = {}",
+        read_f32(rec, 44),
+    );
+    // Fill alpha also halved.
+    assert!(
+        (read_f32(rec, 60) - 0.5).abs() < f32::EPSILON,
+        "fill alpha = {}",
+        read_f32(rec, 60),
+    );
+}
+
+#[test]
+fn opacity_composes_with_semi_transparent_source() {
+    let mut dl = DrawList::new();
+    // Source color has alpha = 0.5.
+    dl.push_rect(
+        Rect::new(0.0, 0.0, 50.0, 50.0),
+        RectStyle::filled(Color::rgba(1.0, 1.0, 1.0, 0.5)),
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, 1.0, 0.5);
+
+    let rec = writer.as_bytes();
+    // Fill alpha = 0.5 * 0.5 = 0.25.
+    assert!(
+        (read_f32(rec, 60) - 0.25).abs() < f32::EPSILON,
+        "composed alpha = {}",
+        read_f32(rec, 60),
+    );
+}
+
+#[test]
+fn opacity_zero_produces_fully_transparent_output() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::WHITE)
+        .with_border(2.0, Color::WHITE)
+        .with_radius(4.0);
+    dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, 1.0, 0.0);
+
+    let rec = writer.as_bytes();
+    // Fill alpha = 0.
+    assert_eq!(read_f32(rec, 60), 0.0, "fill alpha should be 0");
+    // Border alpha = 0.
+    assert_eq!(read_f32(rec, 44), 0.0, "border alpha should be 0");
+}
+
+#[test]
+fn opacity_applies_to_shadow() {
+    let mut dl = DrawList::new();
+    let style = RectStyle::filled(Color::WHITE).with_shadow(Shadow {
+        offset_x: 0.0,
+        offset_y: 4.0,
+        blur_radius: 8.0,
+        spread: 2.0,
+        color: Color::rgba(0.0, 0.0, 0.0, 0.5),
+    });
+    dl.push_rect(Rect::new(100.0, 100.0, 200.0, 150.0), style);
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, 1.0, 0.5);
+
+    assert_eq!(writer.len(), 2);
+    let bytes = writer.as_bytes();
+
+    // Shadow fill alpha = shadow_color.a(0.5) * opacity(0.5) = 0.25.
+    let shadow_alpha = read_f32(bytes, 60);
+    assert!(
+        (shadow_alpha - 0.25).abs() < f32::EPSILON,
+        "shadow alpha = {shadow_alpha}",
+    );
+
+    // Main rect fill alpha = WHITE.a(1.0) * opacity(0.5) = 0.5.
+    let main_alpha = read_f32(&bytes[INSTANCE_SIZE..], 60);
+    assert!(
+        (main_alpha - 0.5).abs() < f32::EPSILON,
+        "main rect alpha = {main_alpha}",
+    );
+}
+
+#[test]
+fn opacity_applies_to_text_glyph_alpha() {
+    let atlas = text_atlas_with(&[42]);
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 0.5);
+
+    assert_eq!(mono.len(), 1);
+    // Glyph fg_color alpha = color.a(1.0) * opacity(0.5) = 0.5.
+    let rec = mono.as_bytes();
+    let glyph_alpha = read_f32(rec, 44);
+    assert!(
+        (glyph_alpha - 0.5).abs() < f32::EPSILON,
+        "glyph alpha = {glyph_alpha}",
+    );
+}
+
+#[test]
+fn scale_and_opacity_are_independent() {
+    let mut dl = DrawList::new();
+    dl.push_rect(
+        Rect::new(100.0, 200.0, 300.0, 150.0),
+        RectStyle::filled(Color::WHITE),
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, 2.0, 0.5);
+
+    let rec = writer.as_bytes();
+    // Position and size scaled by 2.0.
+    assert_eq!(read_f32(rec, 0), 200.0);
+    assert_eq!(read_f32(rec, 4), 400.0);
+    assert_eq!(read_f32(rec, 8), 600.0);
+    assert_eq!(read_f32(rec, 12), 300.0);
+    // Alpha set by opacity (not affected by scale).
+    assert!(
+        (read_f32(rec, 60) - 0.5).abs() < f32::EPSILON,
+        "opacity independent of scale",
+    );
+}
+
+#[test]
+fn opacity_applies_to_line() {
+    let mut dl = DrawList::new();
+    dl.push_line(
+        Point::new(10.0, 50.0),
+        Point::new(110.0, 50.0),
+        2.0,
+        Color::WHITE,
+    );
+
+    let mut writer = InstanceWriter::new();
+    convert_draw_list(&dl, &mut writer, None, 1.0, 0.5);
+
+    assert_eq!(writer.len(), 1);
+    let rec = writer.as_bytes();
+    // Line fill alpha = 1.0 * 0.5 = 0.5.
+    let alpha = read_f32(rec, 60);
+    assert!(
+        (alpha - 0.5).abs() < f32::EPSILON,
+        "line fill alpha = {alpha}",
+    );
+}
+
+#[test]
+fn opacity_applies_to_text_with_bg_hint() {
+    // Create a subpixel atlas entry.
+    let mut map = HashMap::new();
+    let key = RasterKey {
+        glyph_id: 42,
+        face_idx: FaceIdx::REGULAR,
+        size_q6: TEST_SIZE_Q6,
+        synthetic: SyntheticFlags::NONE,
+        hinted: true,
+        subpx_x: 0,
+        font_realm: FontRealm::Ui,
+    };
+    map.insert(
+        key,
+        AtlasEntry {
+            kind: AtlasKind::Subpixel,
+            ..text_entry(42)
+        },
+    );
+    let atlas = KeyTestAtlas(map);
+
+    let mut mono = InstanceWriter::new();
+    let mut subpx = InstanceWriter::new();
+    let mut color_w = InstanceWriter::new();
+
+    let st = shaped_text(vec![ShapedGlyph {
+        glyph_id: 42,
+        face_index: 0,
+        x_advance: 7.0,
+        x_offset: 0.0,
+        y_offset: 0.0,
+    }]);
+
+    let mut dl = DrawList::new();
+    dl.push_layer(Color::rgba(0.2, 0.2, 0.2, 1.0));
+    dl.push_text(Point::new(0.0, 0.0), st, Color::WHITE);
+    dl.pop_layer();
+
+    let mut ui = InstanceWriter::new();
+    let mut ctx = TextContext {
+        atlas: &atlas,
+        mono_writer: &mut mono,
+        subpixel_writer: &mut subpx,
+        color_writer: &mut color_w,
+        size_q6: TEST_SIZE_Q6,
+        hinted: true,
+    };
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 0.5);
+
+    assert_eq!(subpx.len(), 1, "should route to subpixel writer");
+    // Glyph fg alpha = 1.0 * 0.5 = 0.5.
+    let rec = subpx.as_bytes();
+    let alpha = read_f32(rec, 44);
+    assert!(
+        (alpha - 0.5).abs() < f32::EPSILON,
+        "subpixel text alpha with bg_hint = {alpha}",
+    );
+}
