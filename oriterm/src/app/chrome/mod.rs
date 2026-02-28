@@ -7,6 +7,7 @@
 
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
+use winit::window::WindowId;
 
 use oriterm_ui::widgets::{Widget, WidgetAction};
 
@@ -41,7 +42,7 @@ impl App {
     pub(super) fn handle_chrome_action(
         &mut self,
         action: &WidgetAction,
-        _event_loop: &ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
     ) -> bool {
         match action {
             WidgetAction::WindowMinimize => {
@@ -55,7 +56,10 @@ impl App {
                 true
             }
             WidgetAction::WindowClose => {
-                self.shutdown(0);
+                if let Some(wid) = self.focused_window_id {
+                    self.close_window(wid, event_loop);
+                }
+                true
             }
             _ => false,
         }
@@ -341,11 +345,11 @@ impl App {
     ///
     /// Called after any change that affects cell dimensions (font size,
     /// DPI, font family) so the window snaps to cell boundaries.
-    pub(super) fn update_resize_increments(&self) {
+    pub(super) fn update_resize_increments(&self, winit_id: WindowId) {
         if !self.config.window.resize_increments {
             return;
         }
-        let (Some(renderer), Some(ctx)) = (&self.renderer, self.focused_ctx()) else {
+        let (Some(renderer), Some(ctx)) = (&self.renderer, self.windows.get(&winit_id)) else {
             return;
         };
         let cell = renderer.cell_metrics();
@@ -360,11 +364,19 @@ impl App {
     /// from widgets, and updates the terminal grid widget, tab grid, PTY
     /// dimensions, and resize increments. Called after any change to font,
     /// DPI, or window size.
-    pub(super) fn sync_grid_layout(&mut self, viewport_w: u32, viewport_h: u32) {
+    ///
+    /// `winit_id` identifies which window to recompute. Widget updates and
+    /// cache invalidation target only this window.
+    pub(super) fn sync_grid_layout(
+        &mut self,
+        winit_id: WindowId,
+        viewport_w: u32,
+        viewport_h: u32,
+    ) {
         let Some(renderer) = &self.renderer else {
             return;
         };
-        let Some(ctx) = self.focused_ctx() else {
+        let Some(ctx) = self.windows.get(&winit_id) else {
             return;
         };
         let cell = renderer.cell_metrics();
@@ -380,7 +392,7 @@ impl App {
         let rows = cell.rows(grid_h).max(1);
 
         // Reborrow mutably now that immutable reads are done.
-        let ctx = self.focused_ctx_mut().expect("checked above");
+        let ctx = self.windows.get_mut(&winit_id).expect("checked above");
         ctx.terminal_grid.set_cell_metrics(cell.width, cell.height);
         ctx.terminal_grid.set_grid_size(cols, rows);
         ctx.terminal_grid
@@ -391,24 +403,31 @@ impl App {
                 rows as f32 * cell.height,
             ));
 
-        // Single-pane: resize the active pane to fill the grid area.
-        // Multi-pane: resize_all_panes() recomputes layouts and resizes each
-        // pane individually (no-op for single-pane tabs).
-        if let Some(pane) = self.active_pane() {
+        // Resize the active pane in this specific window (not the globally
+        // focused one). Multi-pane layouts are recomputed by resize_all_panes.
+        if let Some(pane) = self.active_pane_for_window(winit_id) {
             pane.resize_grid(rows as u16, cols as u16);
             pane.resize_pty(rows as u16, cols as u16);
         }
         self.resize_all_panes();
-        if let Some(ctx) = self.focused_ctx_mut() {
+        if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.cached_dividers = None;
         }
 
-        self.update_resize_increments();
+        self.update_resize_increments(winit_id);
     }
 
     /// Handle window resize: reconfigure surface, update chrome layout,
     /// resize grid and PTY.
-    pub(super) fn handle_resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+    ///
+    /// `winit_id` identifies which window was resized. All operations
+    /// (surface reconfigure, widget layout, grid recomputation) target
+    /// only this window.
+    pub(super) fn handle_resize(
+        &mut self,
+        winit_id: WindowId,
+        size: winit::dpi::PhysicalSize<u32>,
+    ) {
         // Window size changed — cached tab width is invalid.
         self.release_tab_width_lock();
 
@@ -418,20 +437,21 @@ impl App {
         // only reliable place to detect the change.
         #[cfg(target_os = "windows")]
         {
-            let dpi_changed = self.focused_ctx_mut().and_then(|ctx| {
+            let dpi_changed = self.windows.get_mut(&winit_id).and_then(|ctx| {
                 let new_scale = oriterm_ui::platform_windows::get_current_dpi(ctx.window.window())?;
                 ctx.window
                     .update_scale_factor(new_scale)
                     .then_some(new_scale)
             });
             if let Some(new_scale) = dpi_changed {
-                self.handle_dpi_change(new_scale);
+                self.handle_dpi_change(winit_id, new_scale);
                 // Update SnapData chrome metrics for the new physical DPI.
                 let s = new_scale as f32;
                 let caption_h = self
-                    .focused_ctx()
+                    .windows
+                    .get(&winit_id)
                     .map_or(0.0, |ctx| ctx.chrome.caption_height());
-                if let Some(ctx) = self.focused_ctx() {
+                if let Some(ctx) = self.windows.get(&winit_id) {
                     oriterm_ui::platform_windows::set_chrome_metrics(
                         ctx.window.window(),
                         oriterm_ui::widgets::window_chrome::constants::RESIZE_BORDER_WIDTH * s,
@@ -444,17 +464,14 @@ impl App {
         // Resize GPU surface (scoped to release borrows before sync_grid_layout).
         {
             let Some(gpu) = &self.gpu else { return };
-            let Some(ctx) = self
-                .focused_window_id
-                .and_then(|id| self.windows.get_mut(&id))
-            else {
+            let Some(ctx) = self.windows.get_mut(&winit_id) else {
                 return;
             };
             ctx.window.resize_surface(size.width, size.height, gpu);
         }
 
         // Update chrome and tab bar layout for new window width.
-        if let Some(ctx) = self.focused_ctx_mut() {
+        if let Some(ctx) = self.windows.get_mut(&winit_id) {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             ctx.chrome.set_window_width(logical_w);
@@ -462,7 +479,7 @@ impl App {
         }
 
         // Update overlay manager viewport for dialog placement.
-        if let Some(ctx) = self.focused_ctx_mut() {
+        if let Some(ctx) = self.windows.get_mut(&winit_id) {
             let scale = ctx.window.scale_factor().factor() as f32;
             let logical_w = size.width as f32 / scale;
             let logical_h = size.height as f32 / scale;
@@ -472,11 +489,11 @@ impl App {
         }
 
         // Recompute grid dimensions, resize terminal + PTY + increments.
-        self.sync_grid_layout(size.width, size.height);
+        self.sync_grid_layout(winit_id, size.width, size.height);
 
         // Update platform hit test rects on Windows.
         #[cfg(target_os = "windows")]
-        if let Some(ctx) = self.focused_ctx() {
+        if let Some(ctx) = self.windows.get(&winit_id) {
             let scale = ctx.window.scale_factor().factor() as f32;
             oriterm_ui::platform_windows::set_client_rects(
                 ctx.window.window(),
@@ -488,7 +505,7 @@ impl App {
             );
         }
 
-        if let Some(ctx) = self.focused_ctx_mut() {
+        if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.url_cache.invalidate();
             ctx.hovered_url = None; // Segments contain stale absolute rows.
             ctx.dirty = true;

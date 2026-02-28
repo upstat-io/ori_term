@@ -147,7 +147,10 @@ impl App {
 
         // Grid dimensions, terminal widget, PTY, and resize increments all
         // depend on cell metrics — sync_grid_layout handles them together.
-        self.sync_grid_layout(w, h);
+        let Some(winit_id) = self.focused_window_id else {
+            return;
+        };
+        self.sync_grid_layout(winit_id, w, h);
     }
 
     /// Detect and apply color config changes.

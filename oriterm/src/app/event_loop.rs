@@ -98,11 +98,11 @@ impl ApplicationHandler<TermEvent> for App {
     ) {
         match event {
             WindowEvent::CloseRequested => {
-                self.shutdown(0);
+                self.close_window(window_id, event_loop);
             }
 
             WindowEvent::Resized(size) => {
-                self.handle_resize(size);
+                self.handle_resize(window_id, size);
             }
 
             WindowEvent::RedrawRequested => self.handle_redraw(),
@@ -123,10 +123,10 @@ impl ApplicationHandler<TermEvent> for App {
             WindowEvent::Ime(ime) => self.handle_ime_event(ime),
 
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                if let Some(ctx) = self.focused_ctx_mut() {
+                if let Some(ctx) = self.windows.get_mut(&window_id) {
                     if ctx.window.update_scale_factor(scale_factor) {
-                        self.handle_dpi_change(scale_factor);
-                        self.update_resize_increments();
+                        self.handle_dpi_change(window_id, scale_factor);
+                        self.update_resize_increments(window_id);
                     }
                 }
             }
@@ -264,9 +264,16 @@ impl ApplicationHandler<TermEvent> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Process deferred window creation (keybinding actions lack
+        // ActiveEventLoop access; the flag is set in execute_action).
+        if self.pending_new_window {
+            self.pending_new_window = false;
+            self.create_window(event_loop);
+        }
+
         // Pump mux events: drain PTY reader thread messages and process
         // resulting notifications before rendering.
-        self.pump_mux_events(event_loop);
+        self.pump_mux_events();
 
         // Drive cursor blink timer only when blinking is active.
         if self.blinking_active && self.cursor_blink.update() {

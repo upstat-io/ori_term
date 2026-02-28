@@ -69,7 +69,7 @@ impl App {
 
         if is_last {
             log::info!("last tab closed, shutting down");
-            self.shutdown(0);
+            self.exit_app();
         }
 
         self.release_tab_width_lock();

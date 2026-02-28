@@ -49,6 +49,8 @@ pub(crate) enum Action {
     NextPrompt,
     /// Duplicate the current tab (spawn new tab with same CWD).
     DuplicateTab,
+    /// Open a new window with a fresh tab.
+    NewWindow,
     /// Move the current tab into a new window.
     MoveTabToNewWindow,
     /// Toggle fullscreen mode.
@@ -127,6 +129,7 @@ impl Action {
             Self::PreviousPrompt => "PreviousPrompt",
             Self::NextPrompt => "NextPrompt",
             Self::DuplicateTab => "DuplicateTab",
+            Self::NewWindow => "NewWindow",
             Self::MoveTabToNewWindow => "MoveTabToNewWindow",
             Self::ToggleFullscreen => "ToggleFullscreen",
             Self::EnterMarkMode => "EnterMarkMode",

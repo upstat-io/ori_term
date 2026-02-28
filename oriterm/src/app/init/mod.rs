@@ -198,7 +198,7 @@ impl App {
     /// Create chrome and tab bar widgets, and apply platform window effects.
     ///
     /// Returns `(chrome_widget, tab_bar_widget, caption_height)`.
-    fn create_chrome_widgets(
+    pub(super) fn create_chrome_widgets(
         &self,
         window: &TermWindow,
     ) -> (
@@ -243,7 +243,7 @@ impl App {
     ///
     /// The mux and window must already be created. The pane is stored in
     /// `self.panes`. Setup notifications are drained and discarded.
-    fn create_initial_tab(
+    pub(super) fn create_initial_tab(
         &mut self,
         mux: &mut InProcessMux,
         window_id: oriterm_mux::WindowId,

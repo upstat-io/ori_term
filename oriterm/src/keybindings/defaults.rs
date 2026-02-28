@@ -112,6 +112,7 @@ pub(crate) fn default_bindings() -> Vec<KeyBinding> {
             bind(ch("t"), cmd, Action::NewTab),
             bind(ch("w"), cmd, Action::CloseTab),
             bind(ch("n"), cmd, Action::MoveTabToNewWindow),
+            bind(ch("n"), cmd_shift, Action::NewWindow),
             bind(ch("="), cmd, Action::ZoomIn),
             bind(ch("+"), cmd, Action::ZoomIn),
             bind(ch("-"), cmd, Action::ZoomOut),

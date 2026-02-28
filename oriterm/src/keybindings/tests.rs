@@ -516,6 +516,7 @@ fn action_as_str_roundtrip() {
         Action::PreviousPrompt,
         Action::NextPrompt,
         Action::DuplicateTab,
+        Action::NewWindow,
         Action::MoveTabToNewWindow,
         Action::ToggleFullscreen,
         Action::EnterMarkMode,

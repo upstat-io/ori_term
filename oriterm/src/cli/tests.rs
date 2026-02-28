@@ -298,6 +298,7 @@ fn format_action_all_variants() {
         (Action::PreviousPrompt, "PreviousPrompt"),
         (Action::NextPrompt, "NextPrompt"),
         (Action::DuplicateTab, "DuplicateTab"),
+        (Action::NewWindow, "NewWindow"),
         (Action::MoveTabToNewWindow, "MoveTabToNewWindow"),
         (Action::ToggleFullscreen, "ToggleFullscreen"),
         (Action::EnterMarkMode, "EnterMarkMode"),

@@ -1,0 +1,166 @@
+//! Keybinding action dispatch table.
+//!
+//! Maps [`Action`] variants to application state mutations. Extracted from
+//! `keyboard_input/mod.rs` to keep the parent under the 500-line limit.
+
+use crate::keybindings::Action;
+
+use super::super::App;
+
+impl App {
+    /// Execute a keybinding action. Returns `true` if the event was consumed.
+    ///
+    /// `SmartCopy` returns `false` when no selection exists (fall through to PTY
+    /// so Ctrl+C sends SIGINT). Other actions always consume the event.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "action dispatch table — inherently one arm per variant"
+    )]
+    pub(in crate::app) fn execute_action(&mut self, action: &Action) -> bool {
+        match action {
+            Action::Copy => {
+                self.copy_selection();
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::Paste | Action::SmartPaste => {
+                self.paste_from_clipboard();
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::SmartCopy => {
+                let has_sel = self.active_pane().is_some_and(|p| p.selection().is_some());
+                if has_sel {
+                    self.copy_selection();
+                    if let Some(ctx) = self.focused_ctx_mut() {
+                        ctx.dirty = true;
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            Action::ScrollPageUp => self.execute_scroll(true),
+            Action::ScrollPageDown => self.execute_scroll(false),
+            Action::ScrollToTop => {
+                if let Some(pane) = self.active_pane() {
+                    pane.scroll_display(isize::MAX);
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::ScrollToBottom => {
+                if let Some(pane) = self.active_pane() {
+                    pane.scroll_to_bottom();
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::ReloadConfig => {
+                self.apply_config_reload();
+                true
+            }
+            Action::ToggleFullscreen => {
+                if let Some(ctx) = self.focused_ctx() {
+                    let is_fs = ctx.window.is_fullscreen();
+                    ctx.window.set_fullscreen(!is_fs);
+                }
+                true
+            }
+            Action::EnterMarkMode => {
+                if let Some(pane) = self.active_pane_mut() {
+                    pane.enter_mark_mode();
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::SendText(text) => {
+                if let Some(pane) = self.active_pane() {
+                    pane.scroll_to_bottom();
+                    pane.write_input(text.as_bytes());
+                    self.cursor_blink.reset();
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+                true
+            }
+            Action::OpenSearch => {
+                self.open_search();
+                true
+            }
+            // Pane splitting and navigation (delegated to pane_ops).
+            Action::SplitRight
+            | Action::SplitDown
+            | Action::FocusPaneUp
+            | Action::FocusPaneDown
+            | Action::FocusPaneLeft
+            | Action::FocusPaneRight
+            | Action::NextPane
+            | Action::PrevPane
+            | Action::ClosePane
+            | Action::ResizePaneUp
+            | Action::ResizePaneDown
+            | Action::ResizePaneLeft
+            | Action::ResizePaneRight
+            | Action::EqualizePanes
+            | Action::ToggleZoom
+            | Action::ToggleFloatingPane
+            | Action::ToggleFloatTile
+            | Action::UndoSplit
+            | Action::RedoSplit => {
+                self.execute_pane_action(action);
+                true
+            }
+            // Tab management (Section 32.1).
+            Action::NewTab => {
+                if let Some(win_id) = self.active_window {
+                    self.new_tab_in_window(win_id);
+                }
+                true
+            }
+            Action::CloseTab => {
+                self.close_active_tab();
+                true
+            }
+            Action::NextTab => {
+                self.cycle_tab(1);
+                true
+            }
+            Action::PrevTab => {
+                self.cycle_tab(-1);
+                true
+            }
+            Action::DuplicateTab => {
+                self.duplicate_active_tab();
+                true
+            }
+            Action::NewWindow => {
+                // Deferred: needs `ActiveEventLoop`, processed in `about_to_wait`.
+                self.pending_new_window = true;
+                true
+            }
+            // Actions for future sections — consume the event but log a stub.
+            Action::ZoomIn
+            | Action::ZoomOut
+            | Action::ZoomReset
+            | Action::PreviousPrompt
+            | Action::NextPrompt
+            | Action::MoveTabToNewWindow => {
+                log::debug!("keybinding action not yet implemented: {action:?}");
+                true
+            }
+            Action::None => true,
+        }
+    }
+}

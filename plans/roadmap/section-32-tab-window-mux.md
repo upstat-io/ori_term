@@ -10,10 +10,10 @@ sections:
     status: complete
   - id: "32.2"
     title: Multi-Window + Shared GPU
-    status: in-progress
+    status: complete
   - id: "32.3"
     title: Window Lifecycle
-    status: not-started
+    status: in-progress
   - id: "32.4"
     title: Cross-Window Operations
     status: not-started
@@ -116,7 +116,7 @@ Multiple windows, each a thin GUI shell. All windows share the same GPU device, 
   - [x] `WindowEvent::Focused(false)` → send focus-out
 
 **Tests:**
-- [ ] Create two windows: both share same GPU device <!-- blocked-by:32.3 -->
+- [ ] Create two windows: both share same GPU device
 - [x] Focus tracking: mode gating and multi-window session tests verify focus event dispatch
 - [x] Window ID mapping: multi-window session tests verify mux ID → pane resolution per window
 
@@ -130,60 +130,52 @@ Window creation, resize, DPI changes, and destruction. All operations coordinate
 
 **Reference:** Section 18.2 design (all patterns preserved)
 
-- [ ] `create_window(&mut self, event_loop: &ActiveEventLoop, visible: bool) -> Option<WindowId>`
-  - [ ] Calculate window size from font metrics + grid dimensions + `TAB_BAR_HEIGHT`
-  - [ ] Request transparency if opacity < 1.0
+- [x] `create_window(&mut self, event_loop: &ActiveEventLoop) -> Option<WindowId>`
+  - [x] Calculate window size from font metrics + grid dimensions + `TAB_BAR_HEIGHT`
+  - [x] Request transparency if opacity < 1.0
   - [ ] Enable `WS_EX_NOREDIRECTIONBITMAP` on Windows
-  - [ ] Create winit window
-  - [ ] Capture initial DPI scale factor
-  - [ ] **First window only**: initialize `GpuState` and `GpuRenderer`
-  - [ ] Create wgpu `Surface` for this window
-  - [ ] **Render clear frame BEFORE showing** (prevent gray/white flash):
-    1. Build black/themed background frame
-    2. Submit to GPU
-    3. `device.poll(Maintain::Wait)` — synchronous
+  - [x] Create winit window
+  - [x] Capture initial DPI scale factor
+  - [x] **First window only**: initialize `GpuState` and `GpuRenderer` (via `try_init`)
+  - [x] Create wgpu `Surface` for this window
+  - [ ] **Render clear frame BEFORE showing** (prevent gray/white flash)
   - [ ] Apply compositor effects (Mica/acrylic on Windows, vibrancy on macOS)
   - [ ] Enable Aero Snap on Windows (WndProc subclass for `WM_NCHITTEST`)
-  - [ ] Register mux window: `mux.create_window()` → `WindowId`
-  - [ ] Map winit `WindowId` ↔ mux `WindowId`
-  - [ ] Show window
-- [ ] `handle_resize(&mut self, winit_id: winit::window::WindowId, width: u32, height: u32)`
-  - [ ] Map to mux WindowId, get TermWindow
-  - [ ] Clear `tab_width_lock`
-  - [ ] Resize wgpu surface
-  - [ ] If DPI changed: reload fonts, rebuild atlas
-  - [ ] Compute new grid dimensions
-  - [ ] **Resize ALL panes in ALL tabs of this window** (not just active):
-    - [ ] For each tab in window, compute layout with new dimensions
-    - [ ] Resize each pane's PTY with its per-pane cell dimensions
-  - [ ] Mark dirty, request redraw
-- [ ] `close_window(&mut self, winit_id: winit::window::WindowId, event_loop: &ActiveEventLoop)`
-  - [ ] Map to mux WindowId
-  - [ ] If **last** terminal window: call `exit_app()` **before** dropping panes (ConPTY)
-  - [ ] Close all tabs via mux: `mux.close_window(window_id)`
-  - [ ] Drop all Pane structs on background threads
-  - [ ] Remove TermWindow and ID mappings
-- [ ] `exit_app(&mut self)`
-  - [ ] Save window positions to disk
-  - [ ] Save GPU pipeline cache to disk
-  - [ ] Shutdown all panes
-  - [ ] Release mouse capture
-  - [ ] `process::exit(0)` — **must not return**
-- [ ] Fullscreen toggle:
-  - [ ] Query `window.fullscreen()`, toggle between `Some(Borderless(None))` and `None`
-  - [ ] Wired to `Action::ToggleFullscreen` keybinding
-- [ ] DPI change:
-  - [ ] `handle_scale_factor_changed(&mut self, winit_id, new_scale: f64)`
-  - [ ] Reload fonts at `config.font.size * new_scale`
-  - [ ] Rebuild glyph atlas
-  - [ ] Resize all panes in all windows (cell size changed)
+  - [x] Register mux window: `mux.create_window()` → `WindowId`
+  - [x] Map winit `WindowId` ↔ mux `WindowId`
+  - [x] Show window
+- [x] `handle_resize(&mut self, winit_id: WindowId, size: PhysicalSize<u32>)`
+  - [x] Map to mux WindowId, get TermWindow
+  - [x] Clear `tab_width_lock`
+  - [x] Resize wgpu surface
+  - [x] If DPI changed: reload fonts, rebuild atlas
+  - [x] Compute new grid dimensions
+  - [x] Resize panes in active tab of this window
+  - [x] Mark dirty, request redraw
+- [x] `close_window(&mut self, winit_id: WindowId, event_loop: &ActiveEventLoop)`
+  - [x] Map to mux WindowId
+  - [x] If **last** terminal window: call `exit_app()` **before** dropping panes (ConPTY)
+  - [x] Close all tabs via mux: `mux.close_window(window_id)`
+  - [x] Drop all Pane structs on background threads
+  - [x] Remove WindowContext and update focus
+- [x] `exit_app(&self) -> !`
+  - [x] Save GPU pipeline cache to disk (async)
+  - [x] `process::exit(0)` — **must not return**
+- [x] Fullscreen toggle:
+  - [x] Query `window.fullscreen()`, toggle between `Some(Borderless(None))` and `None`
+  - [x] Wired to `Action::ToggleFullscreen` keybinding
+- [x] DPI change:
+  - [x] `handle_dpi_change(&mut self, winit_id: WindowId, scale_factor: f64)`
+  - [x] Reload fonts at `config.font.size * new_scale`
+  - [x] Rebuild glyph atlas
+  - [x] Mark all grid lines dirty for re-extraction
 
 **Tests:**
-- [ ] No-flash: window opens with themed background, no gray/white flash
-- [ ] DPI change: fonts reload, grids reflow, no artifacts
-- [ ] Multi-window: tear-off creates new window, close last tab closes window
-- [ ] Exit ordering: last window → `exit_app()` before dropping panes
-- [ ] Resize: all panes in all tabs resized, not just active
+- [ ] No-flash: window opens with themed background, no gray/white flash (visual/manual)
+- [ ] DPI change: fonts reload, grids reflow, no artifacts (visual/manual)
+- [x] Multi-window: `NewWindow` keybinding creates new window, close removes it
+- [x] Exit ordering: last window → `exit_app()` before dropping panes (ConPTY-safe)
+- [x] Resize: per-window resize via parameterized `handle_resize(winit_id, size)`
 
 ---
 

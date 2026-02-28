@@ -26,6 +26,7 @@ mod search_ui;
 mod tab_bar_input;
 mod tab_management;
 pub(crate) mod window_context;
+mod window_management;
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -119,6 +120,11 @@ pub(crate) struct App {
     // contexts use a single source of truth. When dynamic theming arrives,
     // only this field and the theme-change handler need updating.
     ui_theme: UiTheme,
+
+    // Deferred window creation request. Set by keybinding actions that
+    // need `ActiveEventLoop` (which keyboard input handlers lack).
+    // Processed in `about_to_wait` where the event loop is available.
+    pending_new_window: bool,
 }
 
 impl App {
@@ -158,6 +164,7 @@ impl App {
             _config_monitor: monitor,
             ime: ImeState::new(),
             ui_theme,
+            pending_new_window: false,
         }
     }
 
@@ -179,7 +186,11 @@ impl App {
     /// Called when the window moves between monitors with different scale
     /// factors. Recalculates font size at physical DPI, updates hinting
     /// and subpixel mode, and clears/recaches glyph atlases.
-    fn handle_dpi_change(&mut self, scale_factor: f64) {
+    ///
+    /// `winit_id` identifies the window whose DPI changed. Font
+    /// re-rasterization affects the shared renderer (all windows share one),
+    /// but cache invalidation and dirty marking target only this window.
+    fn handle_dpi_change(&mut self, winit_id: WindowId, scale_factor: f64) {
         let (Some(renderer), Some(gpu)) = (&mut self.renderer, &self.gpu) else {
             return;
         };
@@ -199,12 +210,12 @@ impl App {
         // Mark all grid lines dirty so the frame extraction re-reads every
         // cell with the new cell metrics. Without this, the terminal content
         // appears stale until PTY output marks individual lines dirty.
-        if let Some(pane) = self.active_pane() {
+        if let Some(pane) = self.active_pane_for_window(winit_id) {
             pane.terminal().lock().grid_mut().dirty_mut().mark_all();
         }
 
         // Invalidate pane render cache (atlas + cell metrics changed).
-        if let Some(ctx) = self.focused_ctx_mut() {
+        if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.pane_cache.invalidate_all();
             ctx.dirty = true;
         }
@@ -238,19 +249,6 @@ impl App {
         }
     }
 
-    /// Save pipeline cache and exit the process.
-    ///
-    /// Centralizes shutdown to avoid duplicating cleanup logic across
-    /// `ChildExit`, `CloseRequested`, and `WindowClose`. wgpu
-    /// `Device::drop()` calls `vkDeviceWaitIdle()` which blocks for
-    /// seconds — the OS reclaims all GPU resources on process exit anyway.
-    fn shutdown(&self, code: i32) -> ! {
-        if let Some(gpu) = &self.gpu {
-            gpu.save_pipeline_cache_async();
-        }
-        std::process::exit(code)
-    }
-
     /// Apply the color palette from the current config to a pane's terminal.
     ///
     /// Builds the palette from the config's color scheme and user overrides,
@@ -270,6 +268,23 @@ impl App {
     }
 
     // -- Mux pane accessors --
+
+    /// The active pane for a specific winit window.
+    ///
+    /// Resolves the mux window from the winit window context, then walks
+    /// the session model (window → active tab → active pane) to find the
+    /// pane. Used by window-specific operations (resize, DPI change) that
+    /// cannot rely on `active_pane()` which uses the globally focused window.
+    fn active_pane_for_window(&self, winit_id: WindowId) -> Option<&Pane> {
+        let ctx = self.windows.get(&winit_id)?;
+        let mux_wid = ctx.window.mux_window_id();
+        let mux = self.mux.as_ref()?;
+        let win = mux.session().get_window(mux_wid)?;
+        let tab_id = win.active_tab()?;
+        let tab = mux.session().get_tab(tab_id)?;
+        let pane_id = tab.active_pane();
+        self.panes.get(&pane_id)
+    }
 
     /// The active pane's ID, derived from the mux session model.
     fn active_pane_id(&self) -> Option<PaneId> {

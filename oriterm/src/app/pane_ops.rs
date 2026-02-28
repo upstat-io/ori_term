@@ -166,7 +166,7 @@ impl App {
 
         // Last pane? Same path as the close button.
         if mux.is_last_pane(pane_id) {
-            self.shutdown(0);
+            self.exit_app();
         }
         let result = mux.close_pane(pane_id);
         log::info!("close pane {pane_id:?}: {result:?}");
