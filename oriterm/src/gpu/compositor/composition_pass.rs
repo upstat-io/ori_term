@@ -100,6 +100,8 @@ pub struct CompositionPass {
     layer_uniform_bind_group: BindGroup,
     /// Aligned size of one layer uniform slot in the dynamic buffer.
     uniform_alignment: u32,
+    /// Reusable byte buffer for per-frame uniform data upload.
+    scratch_uniform_data: Vec<u8>,
 }
 
 impl CompositionPass {
@@ -162,6 +164,7 @@ impl CompositionPass {
             layer_uniform_buffer,
             layer_uniform_bind_group,
             uniform_alignment,
+            scratch_uniform_data: Vec::new(),
         }
     }
 
@@ -183,7 +186,7 @@ impl CompositionPass {
     /// here. Layers are drawn in the order provided (caller ensures
     /// back-to-front).
     pub fn draw_layers<'a>(
-        &'a self,
+        &'a mut self,
         queue: &Queue,
         pass: &mut RenderPass<'a>,
         screen_uniform_bg: &'a BindGroup,
@@ -199,16 +202,18 @@ impl CompositionPass {
             return;
         }
 
-        // Write all layer uniforms into the dynamic buffer.
+        // Write all layer uniforms into the reusable scratch buffer.
         let aligned = self.uniform_alignment as usize;
-        let mut uniform_data = vec![0u8; layers.len() * aligned];
+        let required = layers.len() * aligned;
+        self.scratch_uniform_data.clear();
+        self.scratch_uniform_data.resize(required, 0);
 
         for (i, layer) in layers.iter().enumerate() {
             let offset = i * aligned;
-            write_layer_uniform(&mut uniform_data[offset..], layer);
+            write_layer_uniform(&mut self.scratch_uniform_data[offset..], layer);
         }
 
-        queue.write_buffer(&self.layer_uniform_buffer, 0, &uniform_data);
+        queue.write_buffer(&self.layer_uniform_buffer, 0, &self.scratch_uniform_data);
 
         // Record draw commands.
         pass.set_pipeline(&self.pipeline);

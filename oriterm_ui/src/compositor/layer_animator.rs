@@ -98,6 +98,10 @@ pub struct LayerAnimator {
     delegate: Option<Box<dyn AnimationDelegate>>,
     /// How to handle preemption.
     preemption: PreemptionStrategy,
+    /// Reusable buffer for transition keys during tick.
+    scratch_keys: Vec<(LayerId, AnimatableProperty)>,
+    /// Reusable buffer for ended transitions during tick.
+    scratch_ended: Vec<(LayerId, AnimatableProperty)>,
 }
 
 impl LayerAnimator {
@@ -110,6 +114,8 @@ impl LayerAnimator {
             queue: Vec::new(),
             delegate: None,
             preemption: PreemptionStrategy::default(),
+            scratch_keys: Vec::new(),
+            scratch_ended: Vec::new(),
         }
     }
 
@@ -224,10 +230,11 @@ impl LayerAnimator {
     /// Returns `true` if any animations are still running (caller
     /// should request another frame).
     pub fn tick(&mut self, tree: &mut LayerTree, now: Instant) -> bool {
-        let keys: Vec<_> = self.transitions.keys().copied().collect();
-        let mut ended = Vec::new();
+        self.scratch_keys.clear();
+        self.scratch_keys.extend(self.transitions.keys().copied());
+        self.scratch_ended.clear();
 
-        for key in &keys {
+        for key in &self.scratch_keys {
             let (layer_id, _) = *key;
             let transition = self.transitions[key];
             let t = transition.easing.apply(transition.progress(now));
@@ -245,13 +252,14 @@ impl LayerAnimator {
             }
 
             if transition.is_finished(now) {
-                ended.push(*key);
+                self.scratch_ended.push(*key);
             }
         }
 
         // Remove finished and fire callbacks.
-        for key in &ended {
-            self.transitions.remove(key);
+        for i in 0..self.scratch_ended.len() {
+            let key = self.scratch_ended[i];
+            self.transitions.remove(&key);
             if let Some(delegate) = &mut self.delegate {
                 delegate.animation_ended(key.0, key.1);
             }

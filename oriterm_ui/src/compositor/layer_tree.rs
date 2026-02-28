@@ -245,8 +245,17 @@ impl LayerTree {
     /// node is visited after all its descendants.
     pub fn iter_back_to_front(&self) -> Vec<LayerId> {
         let mut result = Vec::with_capacity(self.layers.len());
-        self.visit_back_to_front(self.root, &mut result);
+        self.iter_back_to_front_into(&mut result);
         result
+    }
+
+    /// Fills `out` with all layer IDs in depth-first back-to-front order.
+    ///
+    /// Clears `out` before filling. Callers can reuse the same `Vec` across
+    /// frames to avoid per-frame allocation.
+    pub fn iter_back_to_front_into(&self, out: &mut Vec<LayerId>) {
+        out.clear();
+        self.visit_back_to_front(self.root, out);
     }
 
     /// Computes the accumulated opacity from root to `id`.
@@ -269,20 +278,17 @@ impl LayerTree {
     /// Computes the accumulated transform from root to `id`.
     ///
     /// Concatenates transforms along the ancestor chain (root first).
+    /// Walks child→root, prepending each ancestor's transform to produce
+    /// the same root-first composition without allocating.
     pub fn accumulated_transform(&self, id: LayerId) -> Transform2D {
-        // Collect ancestor chain root-to-leaf.
-        let mut chain = Vec::new();
+        let mut result = Transform2D::identity();
         let mut current = Some(id);
         while let Some(cid) = current {
-            chain.push(cid);
-            current = self.layers.get(&cid).and_then(Layer::parent);
-        }
-        chain.reverse();
-
-        let mut result = Transform2D::identity();
-        for cid in chain {
             if let Some(layer) = self.layers.get(&cid) {
-                result = result.concat(&layer.properties().transform);
+                result = layer.properties().transform.concat(&result);
+                current = layer.parent();
+            } else {
+                break;
             }
         }
         result
@@ -292,20 +298,44 @@ impl LayerTree {
 
     /// Returns all layer IDs that need their content re-painted.
     pub fn layers_needing_paint(&self) -> Vec<LayerId> {
-        self.layers
-            .values()
-            .filter(|l| l.needs_paint())
-            .map(Layer::id)
-            .collect()
+        let mut out = Vec::new();
+        self.layers_needing_paint_into(&mut out);
+        out
+    }
+
+    /// Fills `out` with layer IDs that need their content re-painted.
+    ///
+    /// Clears `out` before filling. Callers can reuse the same `Vec` across
+    /// frames to avoid per-frame allocation.
+    pub fn layers_needing_paint_into(&self, out: &mut Vec<LayerId>) {
+        out.clear();
+        out.extend(
+            self.layers
+                .values()
+                .filter(|l| l.needs_paint())
+                .map(Layer::id),
+        );
     }
 
     /// Returns all layer IDs that need re-compositing.
     pub fn layers_needing_composite(&self) -> Vec<LayerId> {
-        self.layers
-            .values()
-            .filter(|l| l.needs_composite())
-            .map(Layer::id)
-            .collect()
+        let mut out = Vec::new();
+        self.layers_needing_composite_into(&mut out);
+        out
+    }
+
+    /// Fills `out` with layer IDs that need re-compositing.
+    ///
+    /// Clears `out` before filling. Callers can reuse the same `Vec` across
+    /// frames to avoid per-frame allocation.
+    pub fn layers_needing_composite_into(&self, out: &mut Vec<LayerId>) {
+        out.clear();
+        out.extend(
+            self.layers
+                .values()
+                .filter(|l| l.needs_composite())
+                .map(Layer::id),
+        );
     }
 
     /// Clears all dirty flags on all layers. Call after each frame.

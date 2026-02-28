@@ -108,7 +108,7 @@ impl GpuCompositor {
     ///
     /// `screen_uniform_bg` is the bind group for group 0 (`screen_size` uniform).
     pub fn compose<'a>(
-        &'a self,
+        &'a mut self,
         queue: &wgpu::Queue,
         pass: &mut wgpu::RenderPass<'a>,
         screen_uniform_bg: &'a BindGroup,
@@ -119,6 +119,8 @@ impl GpuCompositor {
         }
 
         // Build CompositeLayerDesc from layer info + texture assignments.
+        // This Vec holds references into `self.pool` and `self.layer_textures`,
+        // so it cannot be stored as a reusable field (self-referential borrow).
         let mut descs = Vec::with_capacity(layer_descs.len());
 
         for info in layer_descs {
@@ -147,9 +149,24 @@ impl GpuCompositor {
         }
     }
 
-    /// Reclaims all unused pool textures.
+    /// Reclaims all pool textures, freeing GPU memory.
+    ///
+    /// All layer targets must be released first via [`release_layer_target`]
+    /// or [`clear_layer_targets`]. Calling with active targets will panic in
+    /// debug builds.
     pub fn trim_pool(&mut self) {
         self.pool.trim();
+    }
+
+    /// Releases all layer texture assignments and their pool targets.
+    ///
+    /// Call before [`trim_pool`] to ensure no stale `PooledTargetId` handles
+    /// remain (e.g., on resize when all layers will be re-acquired).
+    pub fn clear_layer_targets(&mut self) {
+        for assignment in self.layer_textures.values() {
+            self.pool.release(assignment.target_id);
+        }
+        self.layer_textures.clear();
     }
 
     /// Returns whether a layer has a direct-render fast path available.

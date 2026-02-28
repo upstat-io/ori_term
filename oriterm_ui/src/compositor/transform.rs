@@ -85,6 +85,16 @@ impl Transform2D {
         self.matrix
     }
 
+    /// Returns a column-major 3x3 matrix for GPU compositor uniforms.
+    ///
+    /// Converts the internal `[a, b, c, d, tx, ty]` representation to
+    /// `[[a, b, 0], [c, d, 0], [tx, ty, 1]]` as required by the WGSL
+    /// `mat3x3<f32>` layout.
+    pub fn to_column_major_3x3(self) -> [[f32; 3]; 3] {
+        let [a, b, c, d, tx, ty] = self.matrix;
+        [[a, b, 0.0], [c, d, 0.0], [tx, ty, 1.0]]
+    }
+
     // --- Predicates ---
 
     /// Returns `true` if this is the identity transform.

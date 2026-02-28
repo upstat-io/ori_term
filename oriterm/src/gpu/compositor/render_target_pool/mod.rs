@@ -107,9 +107,16 @@ impl RenderTargetPool {
 
     /// Reclaims all unused textures, freeing GPU memory.
     ///
-    /// Call periodically (e.g. on resize) to release textures that are no
-    /// longer needed.
+    /// Must only be called when all targets have been released (i.e., after
+    /// clearing `layer_textures` in the compositor). Calling while targets
+    /// are in use would invalidate stored `PooledTargetId` indices because
+    /// `retain` compacts the `Vec`.
     pub fn trim(&mut self) {
+        debug_assert!(
+            self.entries.iter().all(|e| !e.in_use),
+            "trim() called with {} targets still in use — release all targets first",
+            self.active_count()
+        );
         self.entries.retain(|e| e.in_use);
     }
 

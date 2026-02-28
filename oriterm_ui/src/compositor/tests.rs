@@ -62,6 +62,33 @@ fn identity_matrix_values() {
 }
 
 #[test]
+fn identity_column_major_3x3() {
+    let id = Transform2D::identity();
+    assert_eq!(
+        id.to_column_major_3x3(),
+        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    );
+}
+
+#[test]
+fn translate_column_major_3x3() {
+    let t = Transform2D::translate(50.0, 30.0);
+    assert_eq!(
+        t.to_column_major_3x3(),
+        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [50.0, 30.0, 1.0]]
+    );
+}
+
+#[test]
+fn scale_column_major_3x3() {
+    let t = Transform2D::scale(2.0, 3.0);
+    assert_eq!(
+        t.to_column_major_3x3(),
+        [[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]]
+    );
+}
+
+#[test]
 fn default_is_identity() {
     assert_eq!(Transform2D::default(), Transform2D::identity());
 }
