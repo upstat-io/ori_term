@@ -589,6 +589,35 @@ live thumbnails, GPU thumbnails, pane switching, cross-window
 
 ---
 
+### Section 43: Compositor Layer System + Animation Architecture
+**File:** `section-43-compositor-layers.md` | **Tier:** 5 | **Status:** Not Started
+
+```
+compositor, layer, LayerId, LayerType, LayerProperties, LayerTree
+layer tree, parent-child, z-order, root layer, Group layer
+render-to-texture, offscreen render, intermediate texture, composition pass
+GpuCompositor, RenderTargetPool, texture pool, power-of-two buckets
+composition shader, composite.wgsl, textured quad, premultiplied alpha
+LayerAnimator, PropertyTransition, AnimatableProperty, property animation
+Opacity, Transform, Bounds, animate_opacity, animate_transform, animate_bounds
+Transform2D, affine transform, translate, scale, rotate, concat, inverse
+LayerDelegate, paint_layer, content provider, DrawCtx
+AnimationDelegate, animation_ended, animation_canceled, lifecycle callbacks
+AnimationSequence, AnimationStep, chain, delay, sequential animation
+AnimationGroup, parallel animation, simultaneous transitions
+AnimationBuilder, fluent API, builder pattern
+PreemptionStrategy, ReplaceCurrent, Enqueue, animation interruption
+Lerp, Rect lerp, Point lerp, Size lerp, Transform2D lerp
+overlay fade, fade-in, fade-out, opacity animation, modal dim
+tab sliding, tab reorder animation, transform animation
+smooth scrolling, kinetic scroll, pixel offset, friction, deceleration
+needs_paint, needs_composite, dirty flags, damage tracking
+accumulated_opacity, accumulated_transform, tree traversal
+performance escape hatch, default properties, zero overhead
+```
+
+---
+
 ### Section 24: Visual Polish
 **File:** `section-24-visual-polish.md` | **Tier:** 6 | **Status:** Not Started
 
@@ -888,6 +917,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 36 | Remote Attach + Network Transport | `section-36-remote-attach.md` | 7A | Not Started |
 | 37 | TUI Client | `section-37-tui-client.md` | 7A | Not Started |
 | 42 | Expose / Overview Mode | `section-42-expose-overview.md` | 5 | Not Started |
+| 43 | Compositor Layer System + Animation Architecture | `section-43-compositor-layers.md` | 5 | Not Started |
 
 ## Tier Summary
 
@@ -899,7 +929,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
-| 5 | 22-23, 38-39, 42 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview) |
+| 5 | 22-23, 38-39, 42-43 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers) |
 | 6 | 24-25 | Polish (visual refinements, themes) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |
@@ -938,6 +968,11 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
  └─────────────┬───────────────────┘    |
                |                        |
           22-23 Hardening               |
+               |                        |
+          43 Compositor Layers          |
+               |  (depends on 05, 07)   |
+               |  (consumed by 24, 27,  |
+               |   33.4, 39, 42)        |
                |                        |
           38 Protocol Extensions        |
                |  (depends on 02, 06,   |

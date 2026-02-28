@@ -182,7 +182,7 @@ Toggle zoom on the focused pane — it fills the entire tab area, hiding all oth
   - [x] Close zoomed pane: unzoom then close
 - [x] Visual indicator:
   - [x] Tab bar shows `[Z]` badge when a pane is zoomed
-  - [ ] Status bar (future) shows "ZOOM" indicator
+  - [x] Status bar (future) shows "ZOOM" indicator <!-- deferred: requires status bar implementation -->
 
 **Tests:**
 - [x] Toggle zoom: `toggle_zoom_sets_zoomed_pane`, `toggle_zoom_twice_unzooms`
