@@ -122,8 +122,7 @@ fn reorder_tabs() {
     let mut win = window_with_tabs(4);
     let tabs: Vec<TabId> = win.tabs().to_vec();
     // Move tab 0 to position 2.
-    let t = win.tabs_mut().remove(0);
-    win.tabs_mut().insert(2, t);
+    assert!(win.reorder_tab(0, 2));
     assert_eq!(win.tabs()[0], tabs[1]);
     assert_eq!(win.tabs()[1], tabs[2]);
     assert_eq!(win.tabs()[2], tabs[0]);

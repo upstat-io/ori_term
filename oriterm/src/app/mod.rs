@@ -300,6 +300,17 @@ impl App {
         std::process::exit(code)
     }
 
+    /// Apply the color palette from the current config to a pane's terminal.
+    ///
+    /// Builds the palette from the config's color scheme and user overrides,
+    /// then writes it into the pane's terminal. Used after spawning a new
+    /// pane (tab create, split, floating).
+    fn apply_palette_to_pane(&self, pane: &Pane, theme: oriterm_core::Theme) {
+        let mut term = pane.terminal().lock();
+        let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
+        *term.palette_mut() = palette;
+    }
+
     /// Read the terminal mode, locking briefly.
     ///
     /// Returns `None` if no active pane is present.

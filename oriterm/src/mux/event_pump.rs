@@ -116,12 +116,48 @@ impl InProcessMux {
         &self.session
     }
 
-    /// Mutable access to the session registry.
+    // -- Tab switching and reordering --
+
+    /// Switch the active tab in a window to a specific tab ID.
     ///
-    /// Used for tab reordering and other mutations that don't warrant
-    /// a dedicated mux method.
-    pub(crate) fn session_mut(&mut self) -> &mut SessionRegistry {
-        &mut self.session
+    /// Returns `true` if the switch was performed, `false` if the window
+    /// or tab was not found.
+    pub(crate) fn switch_active_tab(&mut self, window_id: WindowId, tab_id: TabId) -> bool {
+        let Some(win) = self.session.get_window_mut(window_id) else {
+            return false;
+        };
+        let Some(idx) = win.tabs().iter().position(|&t| t == tab_id) else {
+            return false;
+        };
+        win.set_active_tab_idx(idx);
+        true
+    }
+
+    /// Cycle to the next or previous tab in a window.
+    ///
+    /// `delta` is typically +1 (next) or -1 (previous); wraps around.
+    /// Returns the newly active `TabId`, or `None` if the window was not
+    /// found or has fewer than 2 tabs.
+    pub(crate) fn cycle_active_tab(&mut self, window_id: WindowId, delta: isize) -> Option<TabId> {
+        let win = self.session.get_window_mut(window_id)?;
+        let count = win.tabs().len();
+        if count <= 1 {
+            return None;
+        }
+        let current = win.active_tab_idx();
+        let next = (current as isize + delta).rem_euclid(count as isize) as usize;
+        win.set_active_tab_idx(next);
+        win.active_tab()
+    }
+
+    /// Reorder a tab within a window.
+    ///
+    /// Returns `true` if the move was performed.
+    pub(crate) fn reorder_tab(&mut self, window_id: WindowId, from: usize, to: usize) -> bool {
+        let Some(win) = self.session.get_window_mut(window_id) else {
+            return false;
+        };
+        win.reorder_tab(from, to)
     }
 
     /// Immutable access to the pane registry.

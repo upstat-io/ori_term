@@ -94,13 +94,7 @@ impl App {
             &self.event_proxy,
         ) {
             Ok((new_pane_id, pane)) => {
-                // Apply palette to the new pane's terminal.
-                {
-                    let mut term = pane.terminal().lock();
-                    let palette =
-                        super::config_reload::build_palette_from_config(&self.config.colors, theme);
-                    *term.palette_mut() = palette;
-                }
+                self.apply_palette_to_pane(&pane, theme);
                 self.panes.insert(new_pane_id, pane);
                 log::info!("split pane: {source_pane_id:?} -> {new_pane_id:?} ({direction:?})");
             }
@@ -331,12 +325,7 @@ impl App {
         let Some(mux) = &mut self.mux else { return };
         match mux.spawn_floating_pane(tab_id, &config, theme, &self.event_proxy, &available) {
             Ok((new_pane_id, pane)) => {
-                {
-                    let mut term = pane.terminal().lock();
-                    let palette =
-                        super::config_reload::build_palette_from_config(&self.config.colors, theme);
-                    *term.palette_mut() = palette;
-                }
+                self.apply_palette_to_pane(&pane, theme);
                 self.panes.insert(new_pane_id, pane);
                 log::info!("spawn floating pane: {new_pane_id:?}");
             }

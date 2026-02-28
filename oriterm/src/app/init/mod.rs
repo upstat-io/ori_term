@@ -245,11 +245,7 @@ impl App {
             mux.create_tab(window_id, &config, theme, &self.event_proxy)?;
 
         // Apply color scheme + user overrides to the pane's terminal palette.
-        {
-            let mut term = pane.terminal().lock();
-            let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
-            *term.palette_mut() = palette;
-        }
+        self.apply_palette_to_pane(&pane, theme);
 
         self.panes.insert(pane_id, pane);
 

@@ -252,6 +252,86 @@ fn all_panes_after_multiple_splits() {
     assert_eq!(panes, vec![p1, p2, p3, p4]);
 }
 
+// --- MuxWindow reorder_tab tests ---
+
+#[test]
+fn reorder_tab_basic_move() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    let t1 = TabId::from_raw(1);
+    let t2 = TabId::from_raw(2);
+    let t3 = TabId::from_raw(3);
+    w.add_tab(t1);
+    w.add_tab(t2);
+    w.add_tab(t3);
+    w.set_active_tab_idx(0); // t1 active
+
+    assert!(w.reorder_tab(0, 2)); // move t1 to end
+    assert_eq!(w.tabs(), &[t2, t3, t1]);
+    assert_eq!(w.active_tab_idx(), 2); // active tracks t1
+}
+
+#[test]
+fn reorder_tab_active_before_move() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    let t1 = TabId::from_raw(1);
+    let t2 = TabId::from_raw(2);
+    let t3 = TabId::from_raw(3);
+    w.add_tab(t1);
+    w.add_tab(t2);
+    w.add_tab(t3);
+    w.set_active_tab_idx(2); // t3 active
+
+    // Move t1 (from=0) to position 2 (past active).
+    assert!(w.reorder_tab(0, 2));
+    assert_eq!(w.tabs(), &[t2, t3, t1]);
+    // Active was at 2, from < active, to >= active → shift left.
+    assert_eq!(w.active_tab_idx(), 1);
+    assert_eq!(w.active_tab(), Some(t3));
+}
+
+#[test]
+fn reorder_tab_active_after_move() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    let t1 = TabId::from_raw(1);
+    let t2 = TabId::from_raw(2);
+    let t3 = TabId::from_raw(3);
+    w.add_tab(t1);
+    w.add_tab(t2);
+    w.add_tab(t3);
+    w.set_active_tab_idx(0); // t1 active
+
+    // Move t3 (from=2) to position 0 (before active).
+    assert!(w.reorder_tab(2, 0));
+    assert_eq!(w.tabs(), &[t3, t1, t2]);
+    // Active was at 0, from > active, to <= active → shift right.
+    assert_eq!(w.active_tab_idx(), 1);
+    assert_eq!(w.active_tab(), Some(t1));
+}
+
+#[test]
+fn reorder_tab_out_of_bounds() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    w.add_tab(TabId::from_raw(1));
+    w.add_tab(TabId::from_raw(2));
+
+    assert!(!w.reorder_tab(0, 5));
+    assert!(!w.reorder_tab(5, 0));
+}
+
+#[test]
+fn reorder_tab_noop_same_index() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    let t1 = TabId::from_raw(1);
+    let t2 = TabId::from_raw(2);
+    w.add_tab(t1);
+    w.add_tab(t2);
+    w.set_active_tab_idx(1);
+
+    assert!(w.reorder_tab(1, 1));
+    assert_eq!(w.tabs(), &[t1, t2]);
+    assert_eq!(w.active_tab_idx(), 1);
+}
+
 /// set_active_tab_idx on an empty window is a no-op.
 #[test]
 fn set_active_tab_idx_on_empty_window() {

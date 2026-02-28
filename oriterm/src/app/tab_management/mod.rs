@@ -10,7 +10,6 @@ use oriterm_mux::domain::SpawnConfig;
 use oriterm_mux::{TabId, WindowId as MuxWindowId};
 
 use super::App;
-use crate::app::config_reload;
 
 impl App {
     /// Create a new tab in the given mux window.
@@ -37,12 +36,7 @@ impl App {
         let Some(mux) = &mut self.mux else { return };
         match mux.create_tab(window_id, &config, theme, &self.event_proxy) {
             Ok((_tab_id, pane_id, pane)) => {
-                {
-                    let mut term = pane.terminal().lock();
-                    let palette =
-                        config_reload::build_palette_from_config(&self.config.colors, theme);
-                    *term.palette_mut() = palette;
-                }
+                self.apply_palette_to_pane(&pane, theme);
                 self.panes.insert(pane_id, pane);
                 log::info!("new tab with pane {pane_id:?} in window {window_id:?}");
             }
@@ -132,23 +126,9 @@ impl App {
         let Some(win_id) = self.active_window else {
             return;
         };
-        let Some(win) = mux.session().get_window(win_id) else {
-            return;
-        };
-
-        let count = win.tabs().len();
-        if count <= 1 {
+        if mux.cycle_active_tab(win_id, delta).is_none() {
             return;
         }
-
-        let current = win.active_tab_idx();
-        let next = wrap_index(current, delta, count);
-
-        // Read-only borrow done; now mutate.
-        let Some(win) = mux.session_mut().get_window_mut(win_id) else {
-            return;
-        };
-        win.set_active_tab_idx(next);
 
         // Clear bell badge on the newly active tab.
         if let Some(pane) = self.active_pane_mut() {
@@ -168,22 +148,9 @@ impl App {
         let Some(win_id) = self.active_window else {
             return;
         };
-
-        // Find the index of this tab in the window.
-        let idx = {
-            let Some(win) = mux.session().get_window(win_id) else {
-                return;
-            };
-            match win.tabs().iter().position(|&t| t == tab_id) {
-                Some(i) => i,
-                None => return,
-            }
-        };
-
-        let Some(win) = mux.session_mut().get_window_mut(win_id) else {
+        if !mux.switch_active_tab(win_id, tab_id) {
             return;
-        };
-        win.set_active_tab_idx(idx);
+        }
 
         if let Some(pane) = self.active_pane_mut() {
             pane.clear_bell();
@@ -223,30 +190,9 @@ impl App {
         let Some(win_id) = self.active_window else {
             return;
         };
-        let Some(win) = mux.session_mut().get_window_mut(win_id) else {
-            return;
-        };
-
-        let tabs = win.tabs_mut();
-        if from >= tabs.len() || to >= tabs.len() {
+        if !mux.reorder_tab(win_id, from, to) {
             return;
         }
-        let tab = tabs.remove(from);
-        tabs.insert(to, tab);
-
-        // Adjust active index to track the same tab.
-        let active = win.active_tab_idx();
-        let new_active = if active == from {
-            to
-        } else if from < active && to >= active {
-            active - 1
-        } else if from > active && to <= active {
-            active + 1
-        } else {
-            active
-        };
-        win.set_active_tab_idx(new_active);
-
         self.sync_tab_bar_from_mux();
         self.dirty = true;
     }
@@ -310,6 +256,7 @@ impl App {
 }
 
 /// Wrapping index arithmetic for tab cycling.
+#[cfg(test)]
 fn wrap_index(current: usize, delta: isize, count: usize) -> usize {
     let c = count as isize;
     let next = (current as isize + delta).rem_euclid(c);

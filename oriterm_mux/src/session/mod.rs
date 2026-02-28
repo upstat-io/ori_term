@@ -214,11 +214,32 @@ impl MuxWindow {
         &self.tabs
     }
 
-    /// Mutable access to the ordered tab list.
+    /// Reorder a tab within this window.
     ///
-    /// Used for reordering tabs within a window.
-    pub fn tabs_mut(&mut self) -> &mut Vec<TabId> {
-        &mut self.tabs
+    /// Moves the tab at index `from` to index `to`, adjusting the active
+    /// tab index so it continues to track the same tab.
+    ///
+    /// Returns `true` if the move was performed, `false` if either index
+    /// is out of bounds.
+    pub fn reorder_tab(&mut self, from: usize, to: usize) -> bool {
+        if from >= self.tabs.len() || to >= self.tabs.len() {
+            return false;
+        }
+        let tab = self.tabs.remove(from);
+        self.tabs.insert(to, tab);
+
+        // Adjust active index to keep tracking the same tab.
+        let active = self.active_tab_idx;
+        self.active_tab_idx = if active == from {
+            to
+        } else if from < active && to >= active {
+            active - 1
+        } else if from > active && to <= active {
+            active + 1
+        } else {
+            active
+        };
+        true
     }
 
     /// Index of the currently active tab.
