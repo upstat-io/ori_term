@@ -80,7 +80,6 @@ pub enum InstanceKind {
     /// Cursor rectangle (may blend differently).
     Cursor = 2,
     /// UI rectangle with SDF rounded corners and optional border.
-    #[allow(dead_code, reason = "used by draw_list_convert in Section 07.1")]
     UiRect = 3,
 }
 
@@ -239,7 +238,6 @@ impl InstanceWriter {
     ///
     /// Uses `bg_color` for fill, `fg_color` for border color, and the
     /// previously reserved offsets 72–79 for `corner_radius` and `border_width`.
-    #[allow(dead_code, reason = "used by draw_list_convert in Section 07.1")]
     #[expect(
         clippy::too_many_arguments,
         reason = "UI rect instance: screen rect, fill, border color, corner radius, border width"

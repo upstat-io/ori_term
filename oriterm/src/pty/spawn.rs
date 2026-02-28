@@ -232,7 +232,66 @@ pub(crate) fn build_command(config: &PtyConfig) -> CommandBuilder {
         cmd.env(key, value);
     }
 
+    // Propagate terminal + user variables across the Win32/WSL boundary.
+    // Without WSLENV, tools running inside WSL won't see these env vars.
+    #[cfg(windows)]
+    build_wslenv(&mut cmd, config);
+
     cmd
+}
+
+/// Build the `WSLENV` value that propagates env vars across the Win32/WSL boundary.
+///
+/// Follows the Windows Terminal pattern: parse existing WSLENV to avoid duplicates,
+/// add our terminal variables plus any user-provided overrides, and explicitly
+/// exclude `PATH` (Windows PATH breaks WSL's computed PATH).
+#[cfg(windows)]
+fn build_wslenv(cmd: &mut CommandBuilder, config: &PtyConfig) {
+    use std::collections::HashSet;
+
+    let existing = std::env::var("WSLENV").unwrap_or_default();
+
+    // Collect keys already present in WSLENV. Each entry is `KEY` or `KEY/flags`.
+    let mut seen: HashSet<String> = existing
+        .split(':')
+        .filter(|s| !s.is_empty())
+        .map(|entry| {
+            // Each WSLENV entry is `KEY` or `KEY/flags` — extract just the key.
+            entry
+                .rsplit_once('/')
+                .map_or(entry, |(key, _)| key)
+                .to_uppercase()
+        })
+        .collect();
+
+    // PATH must never be added — Windows PATH breaks WSL's computed PATH.
+    seen.insert("PATH".into());
+
+    // Variables we want to propagate.
+    let builtin = ["TERM", "COLORTERM", "TERM_PROGRAM"];
+    let user_keys: Vec<&str> = config.env.iter().map(|(k, _)| k.as_str()).collect();
+
+    let mut additions = String::new();
+    for key in builtin.iter().copied().chain(user_keys) {
+        if seen.insert(key.to_uppercase()) {
+            if !additions.is_empty() {
+                additions.push(':');
+            }
+            additions.push_str(key);
+        }
+    }
+
+    if additions.is_empty() {
+        // Everything was already in WSLENV — nothing to add.
+        return;
+    }
+
+    let wslenv = if existing.is_empty() {
+        additions
+    } else {
+        format!("{existing}:{additions}")
+    };
+    cmd.env("WSLENV", wslenv);
 }
 
 /// Returns the default shell for the current platform.

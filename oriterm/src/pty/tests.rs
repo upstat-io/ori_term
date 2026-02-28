@@ -97,3 +97,27 @@ fn build_command_default_shell_used_when_none() {
     assert!(!argv.is_empty());
     assert_eq!(argv[0], default_shell());
 }
+
+#[cfg(windows)]
+#[test]
+fn build_command_sets_wslenv_for_cross_boundary_propagation() {
+    let config = PtyConfig::default();
+    let cmd = build_command(&config);
+
+    let wslenv = cmd
+        .get_env("WSLENV")
+        .and_then(|v| v.to_str())
+        .expect("WSLENV must be set on Windows");
+    assert!(
+        wslenv.contains("TERM"),
+        "WSLENV must include TERM: {wslenv}",
+    );
+    assert!(
+        wslenv.contains("COLORTERM"),
+        "WSLENV must include COLORTERM: {wslenv}",
+    );
+    assert!(
+        wslenv.contains("TERM_PROGRAM"),
+        "WSLENV must include TERM_PROGRAM: {wslenv}",
+    );
+}

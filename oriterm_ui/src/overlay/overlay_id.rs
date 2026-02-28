@@ -21,11 +21,6 @@ impl OverlayId {
     pub fn next() -> Self {
         Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
     }
-
-    /// Returns the raw numeric value.
-    pub fn raw(self) -> u64 {
-        self.0
-    }
 }
 
 impl fmt::Debug for OverlayId {
