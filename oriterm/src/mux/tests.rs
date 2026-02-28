@@ -584,6 +584,71 @@ fn multiple_pane_exits_cascade_cleanly() {
     assert_eq!(mux.session().window_count(), 0);
 }
 
+#[test]
+fn batch_pane_exits_emit_last_window_closed_exactly_once() {
+    // 3 panes exit in one poll_events batch. LastWindowClosed must be
+    // emitted exactly once — not once per pane exit.
+    let mut mux = InProcessMux::new();
+    let wid = WindowId::from_raw(100);
+    let tid = TabId::from_raw(100);
+    let p1 = PaneId::from_raw(100);
+    let p2 = PaneId::from_raw(101);
+    let p3 = PaneId::from_raw(102);
+    let did = mux.default_domain();
+
+    mux.session.add_window(MuxWindow::new(wid));
+    mux.session.get_window_mut(wid).unwrap().add_tab(tid);
+
+    let mut tab = MuxTab::new(tid, p1);
+    let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
+    tab.set_tree(tree);
+    let tree = tab.tree().split_at(p2, SplitDirection::Horizontal, p3, 0.5);
+    tab.set_tree(tree);
+    mux.session.add_tab(tab);
+
+    for &pid in &[p1, p2, p3] {
+        mux.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: did,
+        });
+    }
+    drain(&mut mux);
+
+    let tx = mux.event_tx().clone();
+    for &pid in &[p1, p2, p3] {
+        tx.send(MuxEvent::PaneExited {
+            pane_id: pid,
+            exit_code: 0,
+        })
+        .unwrap();
+    }
+
+    let mut panes = std::collections::HashMap::new();
+    mux.poll_events(&mut panes);
+
+    let notifs = drain(&mut mux);
+
+    // LastWindowClosed must appear exactly once.
+    let last_window_count = notifs
+        .iter()
+        .filter(|n| matches!(n, MuxNotification::LastWindowClosed))
+        .count();
+    assert_eq!(
+        last_window_count, 1,
+        "LastWindowClosed emitted {last_window_count} times, expected exactly 1"
+    );
+
+    // Each pane should have exactly one PaneClosed notification.
+    for &pid in &[p1, p2, p3] {
+        let count = notifs
+            .iter()
+            .filter(|n| matches!(n, MuxNotification::PaneClosed(id) if *id == pid))
+            .count();
+        assert_eq!(count, 1, "PaneClosed({pid:?}) emitted {count} times");
+    }
+}
+
 // -- High priority: close window with multiple tabs --
 
 #[test]
