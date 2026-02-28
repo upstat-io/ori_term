@@ -75,7 +75,10 @@ impl App {
             self.exit_app();
         }
 
-        self.release_tab_width_lock();
+        // Width lock is NOT released here. It persists for Chrome-style
+        // rapid-close targeting (close button stays under cursor). The lock
+        // is released when the cursor leaves the tab bar, a new tab is
+        // created, or a drag finishes/cancels.
 
         // Sync tab bar immediately so slide animation has correct tab count.
         self.sync_tab_bar_from_mux();

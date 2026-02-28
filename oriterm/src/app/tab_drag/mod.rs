@@ -174,14 +174,12 @@ impl App {
                 mouse_offset: drag.mouse_offset_in_tab,
                 bar_y: drag.tab_bar_y,
                 bar_bottom: drag.tab_bar_bottom,
+                scale: ctx.window.scale_factor().factor() as f32,
             }
         };
 
-        let scale = self
-            .focused_ctx()
-            .map_or(1.0, |ctx| ctx.window.scale_factor().factor() as f32);
-        let logical_x = position.x as f32 / scale;
-        let logical_y = position.y as f32 / scale;
+        let logical_x = position.x as f32 / drag_info.scale;
+        let logical_y = position.y as f32 / drag_info.scale;
 
         match drag_info.phase {
             DragPhase::Pending => {
@@ -236,25 +234,23 @@ impl App {
         let visual_x = compute_drag_visual_x(logical_x, info.mouse_offset, max_x);
         let new_index = compute_insertion_index(visual_x, tab_width, tab_count);
 
-        // Update the drag visual on the widget.
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.tab_bar
-                .set_drag_visual(Some((info.current_index, visual_x)));
-            ctx.dirty = true;
-        }
-
         // Reorder if the insertion index changed.
-        if new_index != info.current_index {
+        let visual_index = if new_index == info.current_index {
+            info.current_index
+        } else {
             self.reorder_tab_silent(info.current_index, new_index);
-
-            // Update drag state with new index.
             if let Some(ctx) = self.focused_ctx_mut() {
                 if let Some(drag) = &mut ctx.tab_drag {
                     drag.current_index = new_index;
                 }
-                // Update the drag visual to the new index.
-                ctx.tab_bar.set_drag_visual(Some((new_index, visual_x)));
             }
+            new_index
+        };
+
+        // Update the drag visual (exactly once per cursor move).
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.tab_bar.set_drag_visual(Some((visual_index, visual_x)));
+            ctx.dirty = true;
         }
     }
 
@@ -363,6 +359,7 @@ struct DragInfo {
     mouse_offset: f32,
     bar_y: f32,
     bar_bottom: f32,
+    scale: f32,
 }
 
 #[cfg(test)]

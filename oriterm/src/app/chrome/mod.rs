@@ -285,16 +285,20 @@ impl App {
         let in_tab_bar = self.cursor_in_tab_bar(position);
         let locked = self.tab_width_lock().is_some();
 
-        // Manage tab width lock.
-        match (in_tab_bar, locked) {
-            (true, false) => {
-                let tab_width = self
-                    .focused_ctx()
-                    .map_or(0.0, |ctx| ctx.tab_bar.layout().tab_width);
-                self.acquire_tab_width_lock(tab_width);
+        // Manage tab width lock. Skip when a tab drag is active — the drag
+        // owns the lock lifecycle and cursor movement outside the bar (toward
+        // tear-off) must not release it prematurely.
+        if !self.has_tab_drag() {
+            match (in_tab_bar, locked) {
+                (true, false) => {
+                    let tab_width = self
+                        .focused_ctx()
+                        .map_or(0.0, |ctx| ctx.tab_bar.layout().tab_width);
+                    self.acquire_tab_width_lock(tab_width);
+                }
+                (false, true) => self.release_tab_width_lock(),
+                (true, true) | (false, false) => {}
             }
-            (false, true) => self.release_tab_width_lock(),
-            (true, true) | (false, false) => {}
         }
 
         // Compute hit test result.
