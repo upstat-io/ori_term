@@ -201,7 +201,7 @@ impl App {
                 ctx.dirty = true;
             }
 
-            // Draw modal overlays (e.g. paste confirmation dialog).
+            // Draw overlays with per-overlay compositor opacity.
             let logical_size = (logical_w as f32, h as f32 / scale);
             if Self::draw_overlays(
                 &mut ctx.overlays,
@@ -210,6 +210,7 @@ impl App {
                 logical_size,
                 scale,
                 gpu,
+                &ctx.layer_tree,
                 &self.ui_theme,
             ) {
                 ctx.dirty = true;
@@ -318,7 +319,7 @@ impl App {
         let animating = animations_running.get();
 
         // Chrome uses geometric symbols only — no text context needed.
-        renderer.append_ui_draw_list(draw_list, scale);
+        renderer.append_ui_draw_list(draw_list, scale, 1.0);
         animating
     }
 
@@ -371,24 +372,20 @@ impl App {
 
         // Tab bar contains text — use text-aware conversion to rasterize
         // tab title glyphs into the UI overlay layer.
-        renderer.append_ui_draw_list_with_text(draw_list, scale, gpu);
+        renderer.append_ui_draw_list_with_text(draw_list, scale, 1.0, gpu);
         animating
     }
 
-    /// Draw modal overlays (e.g. paste confirmation dialog).
+    /// Draw overlays (active + dismissing) with per-overlay compositor opacity.
     ///
-    /// Overlay coordinates are in logical pixels. The `scale` factor converts
-    /// to physical pixels for the GPU pipeline. Reuses the chrome draw list
-    /// buffer to avoid extra allocation.
+    /// Each overlay is drawn individually so its compositor layer opacity
+    /// can be applied independently (e.g. during simultaneous fade-in/fade-out).
+    /// Modal dim rects are emitted before their content overlay.
     ///
-    /// Uses [`append_ui_draw_list_with_text`](crate::gpu::GpuRenderer::append_ui_draw_list_with_text)
-    /// so dialog text (title, message, button labels) renders with real glyphs.
-    ///
-    /// Returns `true` if overlays have running animations. Returns `false`
-    /// immediately if no overlays are active.
+    /// Returns `true` if overlays have running animations (fade-in/fade-out).
     #[expect(
         clippy::too_many_arguments,
-        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU, theme"
+        reason = "overlay drawing: manager, renderer, draw list, viewport, scale, GPU, tree, theme"
     )]
     fn draw_overlays(
         overlays: &mut OverlayManager,
@@ -397,37 +394,52 @@ impl App {
         logical_size: (f32, f32),
         scale: f32,
         gpu: &GpuState,
+        tree: &oriterm_ui::compositor::layer_tree::LayerTree,
         theme: &UiTheme,
     ) -> bool {
-        if overlays.is_empty() {
+        let count = overlays.draw_count();
+        if count == 0 {
             return false;
         }
 
-        // Build draw list with real measurer (immutable borrow on renderer
-        // ends after draw_overlays — NLL lets the mutable append follow).
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-
-        overlays.layout_overlays(&measurer, theme);
-
-        draw_list.clear();
-        let animations_running = Cell::new(false);
         let bounds = oriterm_ui::geometry::Rect::new(0.0, 0.0, logical_size.0, logical_size.1);
-        let mut ctx = DrawCtx {
-            measurer: &measurer,
-            draw_list,
-            bounds,
-            focused_widget: None,
-            now: Instant::now(),
-            animations_running: &animations_running,
-            theme,
-        };
-        overlays.draw_overlays(&mut ctx);
-        let animating = animations_running.get();
+        let animations_running = Cell::new(false);
+        let mut animating = false;
 
-        // Overlays contain text — use text-aware conversion to rasterize
-        // and emit glyph instances for titles, messages, and button labels.
-        renderer.append_ui_draw_list_with_text(draw_list, scale, gpu);
-        animating
+        // Layout + draw phase: measurer borrows renderer immutably, then
+        // drops before the mutable append_ui_draw_list_with_text call.
+        // We collect (opacity) per overlay, then append after the borrow ends.
+        {
+            let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            overlays.layout_overlays(&measurer, theme);
+        }
+
+        for i in 0..count {
+            draw_list.clear();
+            // Re-create measurer per iteration — cheap (no allocation), and
+            // the immutable borrow drops before the mutable append below.
+            let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
+            let mut ctx = DrawCtx {
+                measurer: &measurer,
+                draw_list,
+                bounds,
+                focused_widget: None,
+                now: Instant::now(),
+                animations_running: &animations_running,
+                theme,
+            };
+            let opacity = overlays.draw_overlay_at(i, &mut ctx, tree);
+
+            // If opacity is < 1.0 an animation is running.
+            if opacity < 1.0 - f32::EPSILON {
+                animating = true;
+            }
+
+            // measurer (immutable borrow on renderer) is dropped here by NLL.
+            renderer.append_ui_draw_list_with_text(draw_list, scale, opacity, gpu);
+        }
+
+        animating || animations_running.get()
     }
 
     /// Draw the search bar overlay above the grid area.
@@ -479,7 +491,7 @@ impl App {
         draw_list.clear();
         let _ = badge.draw(draw_list, &measurer, pos, max_text_w);
 
-        renderer.append_ui_draw_list_with_text(draw_list, scale, gpu);
+        renderer.append_ui_draw_list_with_text(draw_list, scale, 1.0, gpu);
     }
 }
 

@@ -49,6 +49,10 @@ pub struct TextContext<'a> {
 /// GPU coordinates. Pass `1.0` when draw list coordinates are already in
 /// physical pixels (or at 1:1 scale).
 ///
+/// The `opacity` parameter (0.0–1.0) multiplies all output color alphas.
+/// Used by the compositor to fade overlays in and out. Pass `1.0` for no
+/// opacity modification.
+///
 /// Shadow commands emit an expanded shadow rect before the main rect.
 /// Line commands are converted to thin rectangles.
 /// Image and clip commands are logged as no-ops.
@@ -57,20 +61,23 @@ pub fn convert_draw_list(
     ui_writer: &mut InstanceWriter,
     text_ctx: Option<&mut TextContext<'_>>,
     scale: f32,
+    opacity: f32,
 ) {
     // Reborrow text_ctx so we can use it across loop iterations.
     let mut text_ctx = text_ctx;
 
     for cmd in draw_list.commands() {
         match cmd {
-            DrawCommand::Rect { rect, style } => convert_rect(*rect, style, ui_writer, scale),
+            DrawCommand::Rect { rect, style } => {
+                convert_rect(*rect, style, ui_writer, scale, opacity);
+            }
             DrawCommand::Line {
                 from,
                 to,
                 width,
                 color,
             } => {
-                convert_line(*from, *to, *width, *color, ui_writer, scale);
+                convert_line(*from, *to, *width, *color, ui_writer, scale, opacity);
             }
             DrawCommand::Text {
                 position,
@@ -79,7 +86,7 @@ pub fn convert_draw_list(
                 bg_hint,
             } => {
                 if let Some(ctx) = text_ctx.as_deref_mut() {
-                    convert_text(*position, shaped, *color, *bg_hint, ctx, scale);
+                    convert_text(*position, shaped, *color, *bg_hint, ctx, scale, opacity);
                 } else {
                     log::trace!("DrawCommand::Text deferred — no TextContext provided");
                 }
@@ -100,7 +107,13 @@ pub fn convert_draw_list(
 }
 
 /// Convert a styled rect command to one or two UI rect instances.
-fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter, scale: f32) {
+fn convert_rect(
+    rect: Rect,
+    style: &RectStyle,
+    writer: &mut InstanceWriter,
+    scale: f32,
+    opacity: f32,
+) {
     // Resolve fill color: prefer gradient first stop, then solid fill.
     let fill = style
         .gradient
@@ -120,7 +133,7 @@ fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter, scal
         };
         writer.push_ui_rect(
             shadow_rect.scaled(scale),
-            color_to_linear(shadow.color),
+            color_to_linear_with_opacity(shadow.color, opacity),
             [0.0; 4],
             (uniform_radius(&style.corner_radius) + expand) * scale,
             0.0,
@@ -129,13 +142,13 @@ fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter, scal
 
     // Main rect instance.
     let screen = to_screen_rect(rect).scaled(scale);
-    let (border_color, border_width) = style
-        .border
-        .map_or(([0.0; 4], 0.0), |b| (color_to_linear(b.color), b.width));
+    let (border_color, border_width) = style.border.map_or(([0.0; 4], 0.0), |b| {
+        (color_to_linear_with_opacity(b.color, opacity), b.width)
+    });
 
     writer.push_ui_rect(
         screen,
-        color_to_linear(fill),
+        color_to_linear_with_opacity(fill, opacity),
         border_color,
         uniform_radius(&style.corner_radius) * scale,
         border_width * scale,
@@ -150,7 +163,7 @@ fn convert_rect(rect: Rect, style: &RectStyle, writer: &mut InstanceWriter, scal
 /// where a single bounding box fills a solid square for 45° lines.
 #[expect(
     clippy::too_many_arguments,
-    reason = "line conversion: endpoints, thickness, color, output, scale"
+    reason = "line conversion: endpoints, thickness, color, output, scale, opacity"
 )]
 fn convert_line(
     from: Point,
@@ -159,6 +172,7 @@ fn convert_line(
     color: Color,
     writer: &mut InstanceWriter,
     scale: f32,
+    opacity: f32,
 ) {
     let dx = to.x - from.x;
     let dy = to.y - from.y;
@@ -167,7 +181,7 @@ fn convert_line(
         return;
     }
 
-    let fill = color_to_linear(color);
+    let fill = color_to_linear_with_opacity(color, opacity);
     let hw = width * 0.5;
 
     // Axis-aligned fast paths: single rect.
@@ -256,7 +270,7 @@ fn to_screen_rect(rect: Rect) -> ScreenRect {
 /// no scaling of glyph bitmap dimensions, which would cause blurriness.
 #[expect(
     clippy::too_many_arguments,
-    reason = "text conversion: position, shaped, color, bg_hint, text context, scale"
+    reason = "text conversion: position, shaped, color, bg_hint, text context, scale, opacity"
 )]
 fn convert_text(
     position: Point,
@@ -265,10 +279,11 @@ fn convert_text(
     bg_hint: Option<Color>,
     ctx: &mut TextContext<'_>,
     scale: f32,
+    opacity: f32,
 ) {
     let fg = color_to_rgb(color);
     let subpixel_bg = bg_hint.map(color_to_rgb);
-    let alpha = color.a;
+    let alpha = color.a * opacity;
     let baseline = shaped.baseline;
 
     // Convert logical position to physical. All subsequent values
@@ -381,17 +396,19 @@ fn color_to_rgb(c: Color) -> oriterm_core::Rgb {
     }
 }
 
-/// Convert an sRGB [`Color`] to a linear-light `[f32; 4]` for the GPU.
+/// Convert an sRGB [`Color`] to a linear-light `[f32; 4]` for the GPU,
+/// multiplying alpha by the compositor `opacity`.
 ///
 /// The `*Srgb` render target applies hardware sRGB encoding on output, so
 /// all colors passed to shaders must be in linear space. UI `Color` values
-/// are stored as sRGB; this decodes each RGB channel while preserving alpha.
-fn color_to_linear(c: Color) -> [f32; 4] {
+/// are stored as sRGB; this decodes each RGB channel and applies the
+/// compositor opacity to the alpha channel.
+fn color_to_linear_with_opacity(c: Color, opacity: f32) -> [f32; 4] {
     [
         srgb_f32_to_linear(c.r),
         srgb_f32_to_linear(c.g),
         srgb_f32_to_linear(c.b),
-        c.a,
+        c.a * opacity,
     ]
 }
 

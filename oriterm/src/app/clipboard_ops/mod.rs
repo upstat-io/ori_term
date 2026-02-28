@@ -217,8 +217,15 @@ impl App {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pending_paste = Some(text);
             let viewport = ctx.overlays.viewport();
-            ctx.overlays
-                .push_modal(Box::new(dialog), viewport, Placement::Center);
+            let now = std::time::Instant::now();
+            ctx.overlays.push_modal(
+                Box::new(dialog),
+                viewport,
+                Placement::Center,
+                &mut ctx.layer_tree,
+                &mut ctx.layer_animator,
+                now,
+            );
             ctx.dirty = true;
         }
     }
@@ -232,7 +239,8 @@ impl App {
             self.write_paste_to_pty(&text);
         }
         if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.overlays.clear_all();
+            ctx.overlays
+                .clear_all(&mut ctx.layer_tree, &mut ctx.layer_animator);
             ctx.dirty = true;
         }
     }
@@ -241,7 +249,8 @@ impl App {
     pub(super) fn cancel_paste(&mut self) {
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.pending_paste = None;
-            ctx.overlays.clear_all();
+            ctx.overlays
+                .clear_all(&mut ctx.layer_tree, &mut ctx.layer_animator);
             ctx.dirty = true;
         }
     }

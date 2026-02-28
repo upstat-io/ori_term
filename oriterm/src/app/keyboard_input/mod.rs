@@ -125,6 +125,7 @@ impl App {
                 };
                 // Borrow split: inline window lookup borrows only self.windows,
                 // leaving self.renderer and self.ui_theme available as disjoint borrows.
+                let now = std::time::Instant::now();
                 let result = {
                     let Some(ctx) = self
                         .focused_window_id
@@ -132,8 +133,15 @@ impl App {
                     else {
                         return;
                     };
-                    ctx.overlays
-                        .process_key_event(ui_event, measurer, &self.ui_theme, None)
+                    ctx.overlays.process_key_event(
+                        ui_event,
+                        measurer,
+                        &self.ui_theme,
+                        None,
+                        &ctx.layer_tree,
+                        &mut ctx.layer_animator,
+                        now,
+                    )
                 };
                 self.handle_overlay_result(result);
             }

@@ -10,6 +10,16 @@
 
 ---
 
+## Priority Queue
+
+Sections listed here are worked on **before** sequential scanning. When `/continue-roadmap` runs without arguments, check this list first — the first incomplete section here becomes the focus.
+
+| Priority | Section | Reason |
+|----------|---------|--------|
+| 1 | 43 — Compositor Layer System | Unblocks 28 features across 8 sections (overlay fade, tab sliding, smooth scroll, expose mode, etc.) |
+
+---
+
 ## Keyword Clusters by Section
 
 ### Section 01: Cell + Grid

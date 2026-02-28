@@ -8,6 +8,8 @@ use std::time::Instant;
 
 use oriterm_mux::layout::DividerLayout;
 
+use oriterm_ui::compositor::layer_animator::LayerAnimator;
+use oriterm_ui::compositor::layer_tree::LayerTree;
 use oriterm_ui::draw::DrawList;
 use oriterm_ui::geometry::Rect;
 use oriterm_ui::overlay::OverlayManager;
@@ -41,6 +43,10 @@ pub(crate) struct WindowContext {
 
     // Layout caches.
     pub cached_dividers: Option<Vec<DividerLayout>>,
+
+    // Compositor state.
+    pub layer_tree: LayerTree,
+    pub layer_animator: LayerAnimator,
 
     // Interaction state.
     pub hovering_divider: Option<DividerLayout>,
@@ -78,6 +84,8 @@ impl WindowContext {
             pane_cache: PaneRenderCache::new(),
             frame: None,
             chrome_draw_list: DrawList::new(),
+            layer_tree: LayerTree::new(Rect::default()),
+            layer_animator: LayerAnimator::new(),
             cached_dividers: None,
             hovering_divider: None,
             divider_drag: None,

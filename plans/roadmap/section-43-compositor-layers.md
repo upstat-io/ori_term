@@ -34,7 +34,7 @@ sections:
     status: complete
   - id: "43.10"
     title: Overlay Fade Integration
-    status: not-started
+    status: complete
   - id: "43.11"
     title: Tab Sliding Integration
     status: not-started
@@ -482,12 +482,12 @@ First consumer — proves the full pipeline works.
 
 **File:** `oriterm_ui/src/overlay/manager.rs`, `oriterm/src/gpu/renderer/mod.rs`
 
-- [ ] `OverlayManager` creates compositor layers for overlays
-- [ ] `push_overlay` → add `Textured` layer, animate opacity 0→1 (150ms EaseOut)
-- [ ] `push_modal` → add `SolidColor` dim layer (animated opacity) + `Textured` content layer
-- [ ] Dismiss → animate opacity 1→0, `AnimationDelegate::animation_ended` removes layer
-- [ ] Dismissing overlays invisible to event routing (already "dismissed" semantically)
-- [ ] `clear_all` → instant removal, cancel animations
+- [x] `OverlayManager` creates compositor layers for overlays
+- [x] `push_overlay` → add `Textured` layer, animate opacity 0→1 (150ms EaseOut)
+- [x] `push_modal` → add `SolidColor` dim layer (animated opacity) + `Textured` content layer
+- [x] Dismiss → animate opacity 1→0, `cleanup_dismissed` removes layer when animation ends
+- [x] Dismissing overlays invisible to event routing (already "dismissed" semantically)
+- [x] `clear_all` → instant removal, cancel animations
 
 ---
 
@@ -532,7 +532,7 @@ Grid content as a compositor layer with animated Y transform.
 - [x] Animation groups run in parallel
 - [x] AnimationBuilder fluent API works
 - [x] Lerp impls for Rect, Transform2D, Point, Size
-- [ ] Overlay fade-in/fade-out working via compositor  <!-- blocked-by:16 -->
+- [x] Overlay fade-in/fade-out working via compositor
 - [ ] Tab sliding working via compositor transforms  <!-- blocked-by:16 -->
 - [ ] Smooth scrolling working via compositor transform  <!-- blocked-by:16 -->
 - [ ] Performance: zero overhead when no layers are animating  <!-- blocked-by:16 -->

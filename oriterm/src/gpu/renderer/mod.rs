@@ -338,12 +338,18 @@ impl GpuRenderer {
     ///
     /// Call this after [`prepare`](Self::prepare) and before
     /// [`render_frame`](Self::render_frame).
-    pub fn append_ui_draw_list(&mut self, draw_list: &oriterm_ui::draw::DrawList, scale: f32) {
+    pub fn append_ui_draw_list(
+        &mut self,
+        draw_list: &oriterm_ui::draw::DrawList,
+        scale: f32,
+        opacity: f32,
+    ) {
         super::draw_list_convert::convert_draw_list(
             draw_list,
             &mut self.prepared.ui_rects,
             None,
             scale,
+            opacity,
         );
     }
 
@@ -362,6 +368,7 @@ impl GpuRenderer {
         &mut self,
         draw_list: &oriterm_ui::draw::DrawList,
         scale: f32,
+        opacity: f32,
         gpu: &GpuState,
     ) {
         let ui_fc = self
@@ -406,6 +413,7 @@ impl GpuRenderer {
             &mut self.prepared.ui_rects,
             Some(&mut text_ctx),
             scale,
+            opacity,
         );
     }
 

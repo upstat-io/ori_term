@@ -42,7 +42,7 @@ This outputs:
 
 **If argument provided**, find the matching section file and skip to Step 3.
 
-**If no argument provided**, use the scanner's `=== FOCUS ===` section — the first section with `[ ]` items, scanning sequentially from Section 01.
+**If no argument provided**, check the **Priority Queue** in `plans/roadmap/index.md` first. The first incomplete priority section becomes the focus. If all priority sections are complete (or the queue is empty), fall back to the scanner's `=== FOCUS ===` section — the first section with `[ ]` items, scanning sequentially from Section 01.
 
 #### Dependency Skip Rule
 

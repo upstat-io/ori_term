@@ -33,7 +33,7 @@ fn read_u32(buf: &[u8], offset: usize) -> u32 {
 fn empty_draw_list_produces_no_instances() {
     let dl = DrawList::new();
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
     assert!(writer.is_empty());
 }
 
@@ -46,7 +46,7 @@ fn filled_rect_produces_one_instance() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
 
@@ -80,7 +80,7 @@ fn rect_with_border_writes_border_fields() {
     dl.push_rect(Rect::new(0.0, 0.0, 200.0, 100.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
 
@@ -111,7 +111,7 @@ fn rect_with_shadow_produces_two_instances() {
     dl.push_rect(Rect::new(100.0, 100.0, 200.0, 150.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     // Shadow + main rect.
     assert_eq!(writer.len(), 2);
@@ -145,7 +145,7 @@ fn horizontal_line_converts_to_rect() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
 
@@ -168,7 +168,7 @@ fn zero_length_line_produces_nothing() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert!(writer.is_empty());
 }
@@ -181,7 +181,7 @@ fn image_command_is_noop() {
     dl.push_image(Rect::new(0.0, 0.0, 64.0, 64.0), 1, [0.0, 0.0, 1.0, 1.0]);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert!(writer.is_empty());
 }
@@ -197,7 +197,7 @@ fn clip_commands_are_noop() {
     dl.pop_clip();
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     // Only the rect should produce an instance; clips are no-ops.
     assert_eq!(writer.len(), 1);
@@ -222,7 +222,7 @@ fn multiple_rects_accumulate() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 3);
 }
@@ -235,7 +235,7 @@ fn invisible_rect_still_writes_instance() {
     dl.push_rect(Rect::new(0.0, 0.0, 50.0, 50.0), RectStyle::default());
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     // An unstyled rect writes a transparent instance (the GPU will discard it).
     assert_eq!(writer.len(), 1);
@@ -313,7 +313,7 @@ fn text_without_context_is_noop() {
     dl.push_text(Point::new(10.0, 20.0), st, Color::WHITE);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     // No text context → text is deferred, no instances.
     assert!(writer.is_empty());
@@ -346,7 +346,7 @@ fn text_single_glyph_produces_one_instance() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui_writer, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui_writer, Some(&mut ctx), 1.0, 1.0);
 
     // No UI rect instances (only text).
     assert!(ui_writer.is_empty());
@@ -416,7 +416,7 @@ fn text_spaces_are_advance_only() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // Only 2 glyph instances (space skipped).
     assert_eq!(mono.len(), 2);
@@ -466,7 +466,7 @@ fn text_mixed_with_rects() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // 2 UI rect instances, 1 glyph instance.
     assert_eq!(ui.len(), 2);
@@ -503,7 +503,7 @@ fn text_empty_shaped_produces_nothing() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert!(mono.is_empty());
 }
@@ -545,7 +545,7 @@ fn text_atlas_miss_skips_glyph() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // Only 1 instance (glyph 99 missed in atlas → skipped).
     assert_eq!(mono.len(), 1);
@@ -605,7 +605,7 @@ fn text_color_glyph_routes_to_color_writer() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // Color glyph routes to color writer.
     assert!(mono.is_empty());
@@ -622,7 +622,7 @@ fn uniform_radius_picks_max_of_four_corners() {
     dl.push_rect(Rect::new(0.0, 0.0, 200.0, 100.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     let rec = writer.as_bytes();
     assert_eq!(read_f32(rec, 72), 8.0, "should pick max(2, 8, 4, 6) = 8");
@@ -635,7 +635,7 @@ fn all_corners_zero_is_sharp_rect() {
     dl.push_rect(Rect::new(0.0, 0.0, 50.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     let rec = writer.as_bytes();
     assert_eq!(read_f32(rec, 72), 0.0, "all-zero radii → sharp rect");
@@ -649,7 +649,7 @@ fn radius_larger_than_half_dimension_passes_through() {
     dl.push_rect(Rect::new(0.0, 0.0, 20.0, 10.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     let rec = writer.as_bytes();
     // The converter passes the radius as-is; the SDF shader clamps internally.
@@ -667,7 +667,7 @@ fn zero_width_rect_produces_instance() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -684,7 +684,7 @@ fn zero_height_rect_produces_instance() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -707,7 +707,7 @@ fn shadow_with_zero_blur_and_spread() {
     dl.push_rect(Rect::new(100.0, 100.0, 200.0, 150.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 2);
     let bytes = writer.as_bytes();
@@ -736,7 +736,7 @@ fn shadow_with_negative_offset() {
     dl.push_rect(Rect::new(100.0, 100.0, 50.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     let bytes = writer.as_bytes();
     let sx = read_f32(bytes, 0);
@@ -760,7 +760,7 @@ fn shadow_radius_inherits_rect_corner_radius() {
     dl.push_rect(Rect::new(0.0, 0.0, 100.0, 100.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     let bytes = writer.as_bytes();
     // Shadow corner_radius = original(10) + expand(4+2) = 16.
@@ -785,7 +785,7 @@ fn vertical_line_converts_to_rect() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -809,7 +809,7 @@ fn diagonal_line_produces_stepping_rects() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     // 10px diagonal → 11 stepping rects (0..=10).
     assert_eq!(writer.len(), 11);
@@ -871,7 +871,7 @@ fn diagonal_line_x_pattern_no_overlap() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     // 11 rects per diagonal = 22 total.
     assert_eq!(writer.len(), 22);
@@ -924,7 +924,7 @@ fn text_subpixel_glyph_routes_to_subpixel_writer() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert!(mono.is_empty(), "should not go to mono");
     assert_eq!(subpx.len(), 1, "should route to subpixel writer");
@@ -966,7 +966,7 @@ fn text_many_glyphs_cursor_accumulates() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert_eq!(mono.len(), 50);
 
@@ -1014,7 +1014,7 @@ fn text_two_commands_independent_cursors() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert_eq!(mono.len(), 2);
 
@@ -1077,7 +1077,7 @@ fn text_negative_bearing_extends_left() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert_eq!(mono.len(), 1);
     let gx = read_f32(mono.as_bytes(), 0);
@@ -1132,7 +1132,7 @@ fn text_all_spaces_produces_no_glyph_instances() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     assert!(
         mono.is_empty(),
@@ -1180,7 +1180,7 @@ fn text_fractional_position_applies_subpixel_phase() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // If the subpixel phase key matches, the atlas lookup succeeds and
     // we get one glyph instance.
@@ -1202,7 +1202,7 @@ fn border_only_rect_has_transparent_fill() {
     dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -1228,7 +1228,7 @@ fn scale_factor_applies_to_rect_position_and_size() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.25);
+    convert_draw_list(&dl, &mut writer, None, 1.25, 1.0);
 
     assert_eq!(writer.len(), 1);
     let rec = writer.as_bytes();
@@ -1247,7 +1247,7 @@ fn scale_factor_applies_to_border_and_radius() {
     dl.push_rect(Rect::new(0.0, 0.0, 100.0, 50.0), style);
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 2.0);
+    convert_draw_list(&dl, &mut writer, None, 2.0, 1.0);
 
     let rec = writer.as_bytes();
     assert_eq!(read_f32(rec, 72), 16.0); // radius 8 * 2
@@ -1263,7 +1263,7 @@ fn scale_factor_one_is_identity() {
     );
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     let rec = writer.as_bytes();
     assert_eq!(read_f32(rec, 0), 10.0);
@@ -1285,7 +1285,7 @@ fn layer_commands_are_noop_in_converter() {
     dl.pop_layer();
 
     let mut writer = InstanceWriter::new();
-    convert_draw_list(&dl, &mut writer, None, 1.0);
+    convert_draw_list(&dl, &mut writer, None, 1.0, 1.0);
 
     // Only the rect should produce an instance; layer commands are no-ops.
     assert_eq!(writer.len(), 1);
@@ -1340,7 +1340,7 @@ fn text_with_layer_bg_hint_routes_subpixel_with_bg() {
         size_q6: TEST_SIZE_Q6,
         hinted: true,
     };
-    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0);
+    convert_draw_list(&dl, &mut ui, Some(&mut ctx), 1.0, 1.0);
 
     // Subpixel glyph should route to subpixel writer with bg_hint.
     assert!(mono.is_empty());

@@ -282,6 +282,19 @@ impl ApplicationHandler<TermEvent> for App {
             }
         }
 
+        // Tick compositor animations and clean up fully-faded overlays.
+        {
+            let now = std::time::Instant::now();
+            if let Some(ctx) = self.focused_ctx_mut() {
+                let animating = ctx.layer_animator.tick(&mut ctx.layer_tree, now);
+                ctx.overlays
+                    .cleanup_dismissed(&mut ctx.layer_tree, &ctx.layer_animator);
+                if animating {
+                    ctx.dirty = true;
+                }
+            }
+        }
+
         // Check if any window is dirty and render it.
         let any_dirty = self.focused_ctx().is_some_and(|ctx| ctx.dirty);
         if any_dirty {
@@ -301,12 +314,22 @@ impl ApplicationHandler<TermEvent> for App {
             self.handle_redraw();
         }
 
-        // Schedule wakeup for the next blink toggle so the event loop
-        // doesn't sleep past it. When blinking is inactive, the default
-        // ControlFlow::Wait lets the event loop sleep indefinitely.
-        if self.blinking_active {
+        // Schedule wakeup for continuous rendering when animations are
+        // active or for the next blink toggle. The default ControlFlow::Wait
+        // lets the event loop sleep indefinitely when nothing is animating.
+        let has_animations = self
+            .focused_ctx()
+            .is_some_and(|ctx| ctx.layer_animator.is_any_animating());
+        if has_animations {
+            // Compositor animations: wake up promptly to drive the next frame.
+            // 16ms ≈ 60 FPS — smooth enough for fade transitions.
+            let next_frame = std::time::Instant::now() + std::time::Duration::from_millis(16);
+            event_loop.set_control_flow(ControlFlow::WaitUntil(next_frame));
+        } else if self.blinking_active {
             let next_toggle = self.cursor_blink.next_toggle();
             event_loop.set_control_flow(ControlFlow::WaitUntil(next_toggle));
+        } else {
+            // Nothing animating — sleep until the next external event.
         }
     }
 }

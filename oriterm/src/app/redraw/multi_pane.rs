@@ -329,6 +329,7 @@ impl App {
                 logical_size,
                 scale,
                 gpu,
+                &ctx.layer_tree,
                 &self.ui_theme,
             ) {
                 ctx.dirty = true;
