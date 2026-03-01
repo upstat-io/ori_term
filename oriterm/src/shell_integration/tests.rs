@@ -659,3 +659,207 @@ fn prompt_navigation_scrolls_to_next() {
         "should navigate to prompt below viewport"
     );
 }
+
+// --- Gap analysis: extra content after OSC 133 action letter ---
+
+#[test]
+fn interceptor_osc133_extra_content_after_action_letter() {
+    let mut term = make_term();
+    // `133;Cextra` — action letter C followed by garbage. The VTE parser
+    // splits on `;`, so params[1] = b"Cextra". Our handler checks only
+    // params[1][0], so the action should still be recognized.
+    intercept(&mut term, b"\x1b]133;Cextra\x07");
+    assert_eq!(term.prompt_state(), PromptState::OutputStart);
+}
+
+#[test]
+fn interceptor_osc133_extra_content_after_d() {
+    let mut term = make_term();
+    // Set up a C→D cycle to verify D still works.
+    intercept(&mut term, b"\x1b]133;C\x07");
+    intercept(&mut term, b"\x1b]133;Dextra\x07");
+    assert_eq!(term.prompt_state(), PromptState::None);
+}
+
+// --- Gap analysis: negative exit code in OSC 133;D ---
+
+#[test]
+fn interceptor_osc133d_with_negative_exit_code() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]133;C\x07");
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Signal-killed process: exit code -1.
+    intercept(&mut term, b"\x1b]133;D;-1\x07");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+    assert!(term.last_command_duration().is_some());
+}
+
+// --- Gap analysis: exit code with option suffix ---
+
+#[test]
+fn interceptor_osc133d_with_exit_code_and_aid() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]133;C\x07");
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    // `D;127;aid=foo` — exit code followed by key=value option.
+    intercept(&mut term, b"\x1b]133;D;127;aid=foo\x07");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+    assert!(term.last_command_duration().is_some());
+}
+
+// --- Gap analysis: OSC 133;A with trailing semicolons/bare keys ---
+
+#[test]
+fn interceptor_osc133a_trailing_semicolon() {
+    let mut term = make_term();
+    // `133;A;` — trailing semicolon produces an empty params[2].
+    intercept(&mut term, b"\x1b]133;A;\x07");
+    assert_eq!(term.prompt_state(), PromptState::PromptStart);
+    assert!(term.prompt_mark_pending());
+}
+
+#[test]
+fn interceptor_osc133a_bare_key_option() {
+    let mut term = make_term();
+    // `133;A;barekey` — unknown option, should be tolerated.
+    intercept(&mut term, b"\x1b]133;A;barekey\x07");
+    assert_eq!(term.prompt_state(), PromptState::PromptStart);
+}
+
+// --- Gap analysis: OSC 7 with empty URI ---
+
+#[test]
+fn interceptor_osc7_empty_uri() {
+    let mut term = make_term();
+    // `\x1b]7;\x07` — semicolon but no path content.
+    intercept(&mut term, b"\x1b]7;\x07");
+    // Empty URI should not set CWD (path is empty after parsing).
+    assert!(term.cwd().is_none());
+}
+
+#[test]
+fn interceptor_osc7_file_scheme_only() {
+    let mut term = make_term();
+    // `file://` with no path after scheme.
+    intercept(&mut term, b"\x1b]7;file://\x07");
+    // No `/` after hostname portion — path is the hostname itself.
+    // This is an edge case; CWD should either be empty or not set.
+    // The parser returns the empty hostname portion, which is empty.
+    // Since the path is empty, CWD should not be updated.
+    assert!(term.cwd().is_none());
+}
+
+// --- Gap analysis: OSC 9 single-character body ---
+
+#[test]
+fn interceptor_osc9_single_char_body() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]9;X\x07");
+
+    let notifs = term.drain_notifications();
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].body, "X");
+}
+
+// --- Gap analysis: command timing very fast ---
+
+#[test]
+fn command_timing_very_fast_command() {
+    let mut term = make_term();
+    // C→D with no sleep in between — sub-millisecond command.
+    intercept(&mut term, b"\x1b]133;C\x07");
+    intercept(&mut term, b"\x1b]133;D\x07");
+
+    let dur = term.last_command_duration().expect("should have duration");
+    // Should be zero or very small, not None.
+    assert!(dur.as_secs() == 0);
+}
+
+// --- Gap analysis: RIS clears shell state (end-to-end via interceptor) ---
+
+#[test]
+fn ris_clears_cwd_and_effective_title() {
+    let mut term = make_term();
+
+    // Set CWD via OSC 7.
+    intercept(&mut term, b"\x1b]7;file:///home/user/projects\x07");
+    assert_eq!(term.effective_title(), "projects");
+
+    // RIS via high-level VTE processor.
+    let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    proc.advance(&mut term, b"\x1bc");
+
+    // CWD should be cleared, title falls back to empty.
+    assert!(term.cwd().is_none());
+    assert_eq!(term.effective_title(), "");
+}
+
+#[test]
+fn ris_clears_prompt_markers() {
+    let mut term = make_term();
+
+    // Set up a full prompt lifecycle.
+    intercept(&mut term, b"\x1b]133;A\x07");
+    term.mark_prompt_row();
+    intercept(&mut term, b"\x1b]133;B\x07");
+    term.mark_command_start_row();
+    intercept(&mut term, b"\x1b]133;C\x07");
+    term.mark_output_start_row();
+
+    assert_eq!(term.prompt_markers().len(), 1);
+    assert!(term.prompt_markers()[0].command.is_some());
+
+    // RIS.
+    let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    proc.advance(&mut term, b"\x1bc");
+
+    assert!(term.prompt_markers().is_empty());
+    assert_eq!(term.prompt_state(), PromptState::None);
+}
+
+#[test]
+fn ris_clears_pending_notifications() {
+    let mut term = make_term();
+
+    // Push a notification via OSC 9.
+    intercept(&mut term, b"\x1b]9;Build finished\x07");
+    assert_eq!(term.drain_notifications().len(), 1);
+
+    // Push another.
+    intercept(&mut term, b"\x1b]9;Test passed\x07");
+
+    // RIS.
+    let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+    proc.advance(&mut term, b"\x1bc");
+
+    assert!(
+        term.drain_notifications().is_empty(),
+        "RIS should clear pending notifications"
+    );
+}
+
+// --- Gap analysis: multiple A markers without B/C/D ---
+
+#[test]
+fn multiple_osc133a_without_completion_creates_separate_markers() {
+    let mut term = make_term();
+    let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+
+    // First prompt.
+    intercept(&mut term, b"\x1b]133;A\x07");
+    term.mark_prompt_row();
+
+    // Move cursor down (simulates shell output between prompts).
+    proc.advance(&mut term, b"\r\n\r\n");
+
+    // Second prompt (e.g., user pressed Ctrl-C, shell re-emits prompt).
+    intercept(&mut term, b"\x1b]133;A\x07");
+    term.mark_prompt_row();
+
+    // Should have two markers — first incomplete, second fresh.
+    assert_eq!(term.prompt_markers().len(), 2);
+    assert!(term.prompt_markers()[0].command.is_none());
+    assert!(term.prompt_markers()[0].output.is_none());
+}

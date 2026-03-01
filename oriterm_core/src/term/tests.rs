@@ -1505,3 +1505,148 @@ fn scroll_to_next_prompt_scrolls_viewport() {
     let scrolled = term.scroll_to_next_prompt();
     assert!(scrolled);
 }
+
+// --- RIS clears shell integration state ---
+
+#[test]
+fn ris_clears_prompt_state() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    term.set_command_start_mark_pending(true);
+    term.mark_command_start_row();
+
+    assert_eq!(term.prompt_markers().len(), 1);
+    assert_eq!(term.prompt_state(), super::PromptState::None);
+
+    // Manually set prompt state to simulate mid-cycle.
+    *term.prompt_state_mut() = super::PromptState::CommandStart;
+
+    // RIS should clear everything.
+    feed(&mut term, b"\x1bc");
+
+    assert_eq!(term.prompt_state(), super::PromptState::None);
+    assert!(term.prompt_markers().is_empty());
+    assert!(!term.prompt_mark_pending());
+    assert!(!term.command_start_mark_pending());
+    assert!(!term.output_start_mark_pending());
+}
+
+#[test]
+fn ris_clears_cwd_and_title_state() {
+    let mut term = make_term();
+    *term.cwd_mut() = Some("/home/user".to_string());
+    term.set_has_explicit_title(true);
+    term.mark_title_dirty();
+
+    feed(&mut term, b"\x1bc");
+
+    assert!(term.cwd().is_none());
+    assert!(!term.has_explicit_title());
+    assert_eq!(term.effective_title(), "");
+}
+
+#[test]
+fn ris_clears_command_timing() {
+    let mut term = make_term();
+    term.set_command_start(std::time::Instant::now());
+    let _ = term.finish_command();
+
+    // Verify we had a duration.
+    assert!(term.last_command_duration().is_some());
+
+    feed(&mut term, b"\x1bc");
+
+    assert!(term.last_command_duration().is_none());
+}
+
+#[test]
+fn ris_clears_pending_notifications() {
+    let mut term = make_term();
+    term.push_notification(super::Notification {
+        title: "Build".to_string(),
+        body: "Done".to_string(),
+    });
+
+    assert_eq!(term.drain_notifications().len(), 1);
+
+    // Push another.
+    term.push_notification(super::Notification {
+        title: "Test".to_string(),
+        body: "Pass".to_string(),
+    });
+
+    feed(&mut term, b"\x1bc");
+
+    assert!(term.drain_notifications().is_empty());
+}
+
+// --- Drain notifications idempotent ---
+
+#[test]
+fn drain_notifications_returns_empty_on_second_call() {
+    let mut term = make_term();
+    term.push_notification(super::Notification {
+        title: String::new(),
+        body: "hello".to_string(),
+    });
+
+    let first = term.drain_notifications();
+    assert_eq!(first.len(), 1);
+
+    let second = term.drain_notifications();
+    assert!(second.is_empty(), "second drain should return empty");
+}
+
+// --- Multiple sequential OSC 133;A ---
+
+#[test]
+fn multiple_prompt_starts_without_completion_create_separate_markers() {
+    let mut term = make_term();
+
+    // First prompt at row 0.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    // Move cursor down.
+    feed(&mut term, b"\r\n\r\n");
+
+    // Second prompt at a different row (simulates Ctrl-C re-prompt).
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    // Should have two separate markers.
+    assert_eq!(term.prompt_markers().len(), 2);
+    assert!(term.prompt_markers()[0].prompt < term.prompt_markers()[1].prompt);
+    // First marker has no command/output (incomplete).
+    assert!(term.prompt_markers()[0].command.is_none());
+    assert!(term.prompt_markers()[0].output.is_none());
+}
+
+// --- Prompt marker at scrollback boundary ---
+
+#[test]
+fn prune_prompt_markers_zero_eviction_is_noop() {
+    let mut term = make_term();
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    let before = term.prompt_markers().len();
+    term.prune_prompt_markers(0);
+    assert_eq!(term.prompt_markers().len(), before);
+}
+
+#[test]
+fn prune_prompt_markers_exact_boundary() {
+    let mut term = make_term();
+    // Marker at row 0.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    // Evict exactly 1 row — marker at row 0 is below threshold (0 < 1).
+    term.prune_prompt_markers(1);
+    assert!(
+        term.prompt_markers().is_empty(),
+        "marker at row 0 should be evicted when evicted=1"
+    );
+}

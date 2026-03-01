@@ -7,7 +7,7 @@ use log::debug;
 
 use crate::event::{Event, EventListener};
 
-use super::super::{CharsetState, Term, TermMode};
+use super::super::{CharsetState, PromptState, Term, TermMode};
 
 impl<T: EventListener> Term<T> {
     /// RIS (ESC c): full terminal reset.
@@ -36,6 +36,18 @@ impl<T: EventListener> Term<T> {
         self.cwd = None;
         self.keyboard_mode_stack.clear();
         self.inactive_keyboard_mode_stack.clear();
+
+        // Shell integration state.
+        self.prompt_state = PromptState::None;
+        self.prompt_mark_pending = false;
+        self.prompt_markers.clear();
+        self.command_start_mark_pending = false;
+        self.output_start_mark_pending = false;
+        self.pending_notifications.clear();
+        self.command_start = None;
+        self.last_command_duration = None;
+        self.has_explicit_title = false;
+        self.title_dirty = true;
 
         self.event_listener.send_event(Event::ResetTitle);
     }
