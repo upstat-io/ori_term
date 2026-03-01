@@ -74,6 +74,14 @@ impl App {
         self.sync_tab_bar_for_window(source_winit_id);
         self.sync_tab_bar_for_window(new_winit_id);
 
+        // Render the source window so its surface shows the updated tab
+        // bar. The OS drag blocks the event loop, and `about_to_wait`
+        // only renders the focused window — so if the new window steals
+        // focus during `set_visible`, the source surface would otherwise
+        // show stale content (the torn tab still present) until it
+        // regains focus.
+        self.handle_redraw();
+
         // Compute grab offset: where the cursor anchors to the new window.
         let (grab_offset, screen_pos) = {
             let Some(ctx) = self.windows.get(&new_winit_id) else {

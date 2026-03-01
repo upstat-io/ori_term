@@ -177,7 +177,9 @@ impl SessionRegistry {
         if self.tabs.len() != 1 {
             return false;
         }
-        let (_, tab) = self.tabs.iter().next().expect("len == 1");
+        let Some((_, tab)) = self.tabs.iter().next() else {
+            return false;
+        };
         tab.all_panes() == [pane_id]
     }
 }

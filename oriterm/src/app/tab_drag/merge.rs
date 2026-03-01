@@ -240,14 +240,10 @@ impl App {
         self.mouse
             .set_button_down(winit::event::MouseButton::Left, true);
 
-        // Focus + activate the target window.
+        // Focus + activate the target window and acquire width lock.
         self.focused_window_id = Some(target_wid);
         if let Some(ctx) = self.windows.get(&target_wid) {
             self.active_window = Some(ctx.window.mux_window_id());
-        }
-
-        // Acquire width lock.
-        if let Some(ctx) = self.windows.get(&target_wid) {
             let tw = ctx.tab_bar.layout().tab_width;
             self.acquire_tab_width_lock(tw);
         }

@@ -54,9 +54,10 @@ impl App {
             Ok((_tab_id, pane_id, pane)) => {
                 self.apply_palette_to_pane(&pane, theme);
                 self.panes.insert(pane_id, pane);
-                let mut discard = Vec::new();
-                let mux = self.mux.as_mut().expect("checked above");
-                mux.drain_notifications(&mut discard);
+                if let Some(mux) = self.mux.as_mut() {
+                    let mut discard = Vec::new();
+                    mux.drain_notifications(&mut discard);
+                }
             }
             Err(e) => {
                 log::error!("failed to create initial tab for new window: {e}");

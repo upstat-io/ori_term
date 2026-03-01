@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use oriterm_mux::domain::Domain;
-use oriterm_mux::{DomainId, PaneId, SessionRegistry, TabId, WindowId};
+use oriterm_mux::{DomainId, MuxWindow, PaneId, SessionRegistry, TabId, WindowId};
 
 use super::InProcessMux;
 use crate::mux_event::{MuxEvent, MuxNotification};
@@ -168,72 +168,39 @@ impl InProcessMux {
     ///
     /// Returns `true` if the move was performed.
     pub(crate) fn move_tab_to_window(&mut self, tab_id: TabId, dest_window_id: WindowId) -> bool {
-        // Find source window.
-        let Some(source_window_id) = self.session.window_for_tab(tab_id) else {
-            return false;
-        };
-
-        // No-op if source == dest.
-        if source_window_id == dest_window_id {
-            return false;
-        }
-
-        // Verify destination window exists.
-        if self.session.get_window(dest_window_id).is_none() {
-            return false;
-        }
-
-        // Remove from source window.
-        let Some(source) = self.session.get_window_mut(source_window_id) else {
-            return false;
-        };
-        source.remove_tab(tab_id);
-        let source_empty = source.tabs().is_empty();
-
-        // Add to destination window and make it active.
-        let Some(dest) = self.session.get_window_mut(dest_window_id) else {
-            return false;
-        };
-        dest.add_tab(tab_id);
-        let dest_idx = dest.tabs().len() - 1;
-        dest.set_active_tab_idx(dest_idx);
-
-        // Emit notifications for both windows.
-        self.notifications
-            .push(MuxNotification::WindowTabsChanged(dest_window_id));
-
-        // Handle empty source window.
-        if source_empty {
-            self.session.remove_window(source_window_id);
-            if self.session.window_count() == 0 {
-                self.notifications.push(MuxNotification::LastWindowClosed);
-            } else {
-                self.notifications
-                    .push(MuxNotification::WindowClosed(source_window_id));
-            }
-        } else {
-            self.notifications
-                .push(MuxNotification::WindowTabsChanged(source_window_id));
-        }
-
-        // Trigger layout recomputation for the moved tab in its new window.
-        self.notifications
-            .push(MuxNotification::TabLayoutChanged(tab_id));
-
-        true
+        self.move_tab_impl(tab_id, dest_window_id, |dest, id| {
+            dest.add_tab(id);
+        })
     }
 
     /// Move a tab from its current window to a specific index in the
     /// destination window.
     ///
-    /// Like [`move_tab_to_window`] but inserts at `dest_index` instead of
-    /// appending. The tab becomes the active tab in the destination window.
+    /// Like [`move_tab_to_window`](Self::move_tab_to_window) but inserts at
+    /// `dest_index` instead of appending. The tab becomes the active tab in
+    /// the destination window.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(crate) fn move_tab_to_window_at(
         &mut self,
         tab_id: TabId,
         dest_window_id: WindowId,
         dest_index: usize,
+    ) -> bool {
+        self.move_tab_impl(tab_id, dest_window_id, |dest, id| {
+            dest.insert_tab_at(dest_index, id);
+        })
+    }
+
+    /// Shared implementation for cross-window tab moves.
+    ///
+    /// Validates source/dest, removes the tab from its source window, calls
+    /// `insert` to place it in the destination, activates it, and emits
+    /// notifications. Cleans up the source window if it becomes empty.
+    fn move_tab_impl(
+        &mut self,
+        tab_id: TabId,
+        dest_window_id: WindowId,
+        insert: impl FnOnce(&mut MuxWindow, TabId),
     ) -> bool {
         let Some(source_window_id) = self.session.window_for_tab(tab_id) else {
             return false;
@@ -245,19 +212,22 @@ impl InProcessMux {
             return false;
         }
 
+        // Remove from source window.
         let Some(source) = self.session.get_window_mut(source_window_id) else {
             return false;
         };
         source.remove_tab(tab_id);
         let source_empty = source.tabs().is_empty();
 
+        // Insert into destination and activate.
         let Some(dest) = self.session.get_window_mut(dest_window_id) else {
             return false;
         };
-        dest.insert_tab_at(dest_index, tab_id);
-        let actual_idx = dest.tabs().iter().position(|&t| t == tab_id).unwrap_or(0);
-        dest.set_active_tab_idx(actual_idx);
+        insert(dest, tab_id);
+        let active_idx = dest.tabs().iter().position(|&t| t == tab_id).unwrap_or(0);
+        dest.set_active_tab_idx(active_idx);
 
+        // Emit notifications.
         self.notifications
             .push(MuxNotification::WindowTabsChanged(dest_window_id));
 
