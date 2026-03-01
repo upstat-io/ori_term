@@ -1,7 +1,7 @@
 ---
 section: 31
 title: In-Process Mux + Multi-Pane Rendering
-status: in-progress
+status: complete
 tier: 4M
 goal: Wire up InProcessMux, rewire App to use mux layer, render multiple panes per tab with correct viewport offsets and dividers
 sections:
@@ -19,7 +19,7 @@ sections:
     status: complete
   - id: "31.5"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 31: In-Process Mux + Multi-Pane Rendering
@@ -258,7 +258,7 @@ Per-pane `PreparedFrame` caching to avoid re-preparing unchanged panes on every 
 - [x] `cargo build --target x86_64-pc-windows-gnu` — compiles
 - [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
 - [x] `cargo test` — all existing tests pass (no regression)
-- [ ] **Visual test**: split pane shows two independent terminal grids
-- [ ] **Performance test**: frame time with 4 panes < 2× single-pane frame time
+- [x] **Visual test**: split pane shows two independent terminal grids
+- [x] **Performance test**: frame time with 4 panes < 2× single-pane frame time
 
 **Exit Criteria:** The mux layer is fully wired into the App. Multiple panes render correctly with proper offsets, dividers, and focus borders. Cached rendering prevents unnecessary GPU work. The single-pane case has zero overhead. All existing functionality works unchanged.

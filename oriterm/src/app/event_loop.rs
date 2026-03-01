@@ -163,6 +163,7 @@ impl ApplicationHandler<TermEvent> for App {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
+                self.perf.record_cursor_move();
                 self.mouse.set_cursor_pos(position);
                 self.update_chrome_hover(position);
                 self.update_tab_bar_hover(position);
@@ -284,6 +285,7 @@ impl ApplicationHandler<TermEvent> for App {
                 self.apply_config_reload();
             }
             TermEvent::MuxWakeup => {
+                self.perf.record_wakeup();
                 // The real work happens in `pump_mux_events()` during
                 // `about_to_wait`. This wakeup ensures the event loop
                 // doesn't sleep past pending mux events. The dirty flag
@@ -297,6 +299,8 @@ impl ApplicationHandler<TermEvent> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.perf.record_tick();
+
         // Process deferred window creation (keybinding actions lack
         // ActiveEventLoop access; the flag is set in execute_action).
         if self.pending_new_window {
@@ -347,9 +351,12 @@ impl ApplicationHandler<TermEvent> for App {
             }
         }
 
-        // Check if any window is dirty and render it.
+        // Check if any window is dirty and render it, subject to frame budget.
         let any_dirty = self.focused_ctx().is_some_and(|ctx| ctx.dirty);
-        if any_dirty {
+        let now = std::time::Instant::now();
+        let budget_elapsed = now.duration_since(self.last_render) >= super::FRAME_BUDGET;
+
+        if any_dirty && budget_elapsed {
             // Clear dirty BEFORE rendering so that if handle_redraw sets
             // it back to true (e.g. chrome hover animations in progress),
             // the flag is preserved for the next frame.
@@ -364,7 +371,12 @@ impl ApplicationHandler<TermEvent> for App {
             // lag for hover effects. Rendering here — at the end of the
             // event batch — ensures the frame reflects the latest state.
             self.handle_redraw();
+            self.last_render = std::time::Instant::now();
+            self.perf.record_render();
         }
+
+        // Periodic performance stats.
+        self.perf.maybe_log();
 
         // Schedule wakeup for continuous rendering when animations are
         // active or for the next blink toggle. The default ControlFlow::Wait
@@ -372,10 +384,15 @@ impl ApplicationHandler<TermEvent> for App {
         let has_animations = self
             .focused_ctx()
             .is_some_and(|ctx| ctx.layer_animator.is_any_animating());
-        if has_animations {
+        if any_dirty && !budget_elapsed {
+            // Dirty but budget not yet elapsed — wake up when budget allows.
+            let remaining =
+                super::FRAME_BUDGET.saturating_sub(now.duration_since(self.last_render));
+            event_loop.set_control_flow(ControlFlow::WaitUntil(now + remaining));
+        } else if has_animations {
             // Compositor animations: wake up promptly to drive the next frame.
             // 16ms ≈ 60 FPS — smooth enough for fade transitions.
-            let next_frame = std::time::Instant::now() + std::time::Duration::from_millis(16);
+            let next_frame = now + std::time::Duration::from_millis(16);
             event_loop.set_control_flow(ControlFlow::WaitUntil(next_frame));
         } else if self.blinking_active {
             let next_toggle = self.cursor_blink.next_toggle();

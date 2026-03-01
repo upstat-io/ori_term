@@ -259,6 +259,6 @@ Render emoji and icon characters in tab titles. The font pipeline already suppor
 - [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — compiles
 - [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
 - [x] **Close stress test**: rapidly close many tabs while hovering tab bar — close buttons don't shift unexpectedly (tab width lock works)
-- [ ] **Visual test**: tab bar renders correctly at 100%, 125%, 150%, 200% DPI scales
+- [x] **Visual test**: tab bar renders correctly at 100%, 125%, 150%, 200% DPI scales
 
 **Exit Criteria:** Tab bar layout computes deterministically for any tab count and window width. GPU-rendered tab bar includes bell animation, drag overlay, and separator suppression. Hit testing dispatches clicks with correct priority ordering.

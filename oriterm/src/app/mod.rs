@@ -21,6 +21,7 @@ mod mouse_report;
 mod mouse_selection;
 mod mux_pump;
 mod pane_ops;
+mod perf_stats;
 mod redraw;
 mod search_ui;
 mod tab_bar_input;
@@ -30,7 +31,7 @@ pub(crate) mod window_context;
 mod window_management;
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::ModifiersState;
@@ -42,6 +43,7 @@ use oriterm_mux::{PaneId, WindowId as MuxWindowId};
 use self::cursor_blink::CursorBlink;
 use self::keyboard_input::ImeState;
 use self::mouse_selection::MouseState;
+use self::perf_stats::PerfStats;
 use self::window_context::WindowContext;
 use crate::clipboard::Clipboard;
 use crate::config::Config;
@@ -57,6 +59,12 @@ use oriterm_ui::theme::UiTheme;
 
 /// Default DPI for font rasterization.
 const DEFAULT_DPI: f32 = 96.0;
+
+/// Minimum time between renders (~120 FPS cap).
+///
+/// Prevents burning CPU when PTY output is continuous. The event loop
+/// defers rendering until this budget has elapsed since the last frame.
+const FRAME_BUDGET: Duration = Duration::from_millis(8);
 
 /// Terminal application state and event loop handler.
 ///
@@ -134,6 +142,12 @@ pub(crate) struct App {
 
     // Suppress the stale WM_LBUTTONUP after a live merge.
     merge_drag_suppress_release: bool,
+
+    // Frame budget: time of last render to enforce FRAME_BUDGET spacing.
+    last_render: Instant,
+
+    // Performance counters logged periodically.
+    perf: PerfStats,
 }
 
 impl App {
@@ -177,6 +191,8 @@ impl App {
             #[cfg(target_os = "windows")]
             torn_off_pending: None,
             merge_drag_suppress_release: false,
+            last_render: Instant::now(),
+            perf: PerfStats::new(),
         }
     }
 

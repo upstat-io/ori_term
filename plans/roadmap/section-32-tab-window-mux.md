@@ -1,7 +1,7 @@
 ---
 section: 32
 title: Tab & Window Management (Mux-Aware)
-status: in-progress
+status: complete
 tier: 4M
 goal: Multi-tab with mux integration, multi-window with shared GPU, tab CRUD, window lifecycle, cross-window tab movement, ConPTY-safe shutdown
 sections:
@@ -16,10 +16,10 @@ sections:
     status: complete
   - id: "32.4"
     title: Cross-Window Operations
-    status: in-progress
+    status: complete
   - id: "32.5"
     title: Section Completion
-    status: in-progress
+    status: complete
 ---
 
 # Section 32: Tab & Window Management (Mux-Aware)
@@ -195,23 +195,23 @@ Move tabs between windows. Tab identity (TabId) preserved — same panes, same l
   - [x] Refuse if it's the last tab in the last window
   - [x] Create new window via `create_window()`
   - [x] Move tab to new window
-- [ ] Tab tear-off integration (built on Section 17 drag infrastructure):  <!-- blocked-by:17 -->
-  - [ ] Drag tab beyond `TEAR_OFF_THRESHOLD` → `move_tab_to_new_window`
-  - [ ] Drag tab to another window → `move_tab_to_window`
-  - [ ] Multi-pane tabs move as a unit (entire SplitTree preserved)
+- [x] Tab tear-off integration (built on Section 17 drag infrastructure):
+  - [x] Drag tab beyond `TEAR_OFF_THRESHOLD` → `move_tab_to_new_window`
+  - [x] Drag tab to another window → `move_tab_to_window`
+  - [x] Multi-pane tabs move as a unit (entire SplitTree preserved)
 
 **Tests:**
 - [x] Move tab from window A to window B: tab appears in B, removed from A
 - [x] Move tab: panes resized to target window dimensions
 - [x] Move last tab: source window closes (not the app, if other windows exist)
-- [ ] Tear-off: creates new window with the dragged tab  <!-- blocked-by:17 -->
+- [x] Tear-off: creates new window with the dragged tab
 - [x] Multi-pane tab: split layout preserved after cross-window move
 
 ---
 
 ## 32.5 Section Completion
 
-- [ ] All 32.1–32.4 items complete  <!-- blocked-by:17 -->
+- [x] All 32.1–32.4 items complete
 - [x] Tab management: create, close, duplicate, cycle, reorder — all through mux
 - [x] Multi-window: shared GPU, font collection, config. Correct lifecycle.
 - [x] No-flash window startup, DPI handling, Aero Snap

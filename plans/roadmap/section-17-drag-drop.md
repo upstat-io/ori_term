@@ -1,7 +1,7 @@
 ---
 section: 17
 title: Drag & Drop
-status: in-progress
+status: complete
 tier: 4
 goal: Chrome-style tab dragging with tear-off, OS-level drag, and merge detection
 sections:
@@ -13,7 +13,7 @@ sections:
     status: complete
   - id: "17.3"
     title: Section Completion
-    status: not-started
+    status: complete
 ---
 
 # Section 17: Drag & Drop
@@ -130,14 +130,14 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
 
 ## 17.3 Section Completion
 
-- [ ] All 17.1–17.2 items complete
-- [ ] Drag: 10px threshold, center-based insertion, tear-off with directional thresholds, mouse offset preservation
-- [ ] OS drag + merge: WM_MOVING detection, seamless drag continuation, synthesized mouse-down, stale button-up suppression
-- [ ] Escape cancels drag and restores original tab position
-- [ ] Single-tab windows skip in-bar drag, go directly to OS-level tear-off
-- [ ] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — compiles
-- [ ] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
-- [ ] **Drag stress test**: rapid drag reorder across multiple windows, tear-off and merge in quick succession — no crash, no orphaned tabs
-- [ ] **Seamless merge test**: drag tab out of one window, over another window's tab bar, continue dragging without releasing mouse — tab seamlessly continues in target window
+- [x] All 17.1–17.2 items complete
+- [x] Drag: 10px threshold, center-based insertion, tear-off with directional thresholds, mouse offset preservation
+- [x] OS drag + merge: WM_MOVING detection, seamless drag continuation, synthesized mouse-down, stale button-up suppression
+- [x] Escape cancels drag and restores original tab position
+- [x] Single-tab windows skip in-bar drag, go directly to OS-level tear-off
+- [x] `cargo build -p oriterm --target x86_64-pc-windows-gnu` — compiles
+- [x] `cargo clippy -p oriterm --target x86_64-pc-windows-gnu` — no warnings
+- [x] **Drag stress test**: rapid drag reorder across multiple windows, tear-off and merge in quick succession — no crash, no orphaned tabs
+- [x] **Seamless merge test**: drag tab out of one window, over another window's tab bar, continue dragging without releasing mouse — tab seamlessly continues in target window
 
 **Exit Criteria:** Chrome-style tab dragging works with click-vs-drag disambiguation, threshold-based tear-off, OS-level drag with merge detection, and seamless drag continuation across windows. No orphaned tabs, no stale mouse state.
