@@ -447,7 +447,9 @@ fn cwd_short_path(cwd: &str) -> &str {
     }
     // Strip trailing slash then take last component.
     let trimmed = cwd.strip_suffix('/').unwrap_or(cwd);
-    trimmed.rsplit('/').next().unwrap_or(cwd)
+    let component = trimmed.rsplit('/').next().unwrap_or(cwd);
+    // Paths like `///` reduce to an empty component after stripping — return `/`.
+    if component.is_empty() { "/" } else { component }
 }
 
 #[cfg(test)]

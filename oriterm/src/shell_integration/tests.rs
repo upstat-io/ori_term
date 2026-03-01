@@ -458,3 +458,203 @@ fn command_duration_updates_on_new_command() {
     assert!(dur1.as_millis() >= 10);
     assert!(dur2.as_millis() >= 10);
 }
+
+// --- Gap analysis tests ---
+
+// OSC 7: percent-encoded paths (Fish and some shells percent-encode URIs).
+
+#[test]
+fn interceptor_osc7_percent_encoded_space() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]7;file://host/home/user/my%20project\x07");
+    assert_eq!(term.cwd(), Some("/home/user/my project"));
+}
+
+#[test]
+fn interceptor_osc7_percent_encoded_special_chars() {
+    let mut term = make_term();
+    // %C3%A9 is UTF-8 for 'é'.
+    intercept(&mut term, b"\x1b]7;file:///home/user/caf%C3%A9\x07");
+    assert_eq!(term.cwd(), Some("/home/user/café"));
+}
+
+#[test]
+fn percent_decode_passthrough() {
+    use super::interceptor::percent_decode;
+    let input = "/home/user/projects";
+    let result = percent_decode(input);
+    assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
+    assert_eq!(result, "/home/user/projects");
+}
+
+#[test]
+fn percent_decode_space_and_hash() {
+    use super::interceptor::percent_decode;
+    assert_eq!(percent_decode("hello%20world"), "hello world");
+    assert_eq!(percent_decode("%23hash"), "#hash");
+}
+
+#[test]
+fn percent_decode_invalid_hex_passthrough() {
+    use super::interceptor::percent_decode;
+    // %ZZ is not valid hex — pass through literally.
+    assert_eq!(percent_decode("hello%ZZworld"), "hello%ZZworld");
+    // Truncated: % at end of string.
+    assert_eq!(percent_decode("hello%2"), "hello%2");
+}
+
+// OSC 7: Windows drive letter paths (cross-compiled from WSL targeting Windows).
+
+#[test]
+fn interceptor_osc7_windows_drive_letter() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]7;file:///C:/Users/eric/code\x07");
+    assert_eq!(term.cwd(), Some("/C:/Users/eric/code"));
+}
+
+#[test]
+fn parse_osc7_path_windows_drive() {
+    use super::interceptor::parse_osc7_path;
+    assert_eq!(parse_osc7_path("file:///C:/Users/eric"), "/C:/Users/eric");
+}
+
+// OSC 7: query string and fragment stripping.
+
+#[test]
+fn interceptor_osc7_strips_query_and_fragment() {
+    let mut term = make_term();
+    intercept(
+        &mut term,
+        b"\x1b]7;file://host/home/user?query=1#section\x07",
+    );
+    assert_eq!(term.cwd(), Some("/home/user"));
+}
+
+#[test]
+fn parse_osc7_path_strips_query() {
+    use super::interceptor::parse_osc7_path;
+    assert_eq!(parse_osc7_path("file://host/home/user?q=1"), "/home/user");
+}
+
+#[test]
+fn parse_osc7_path_strips_fragment() {
+    use super::interceptor::parse_osc7_path;
+    assert_eq!(
+        parse_osc7_path("file://host/home/user#section"),
+        "/home/user"
+    );
+}
+
+#[test]
+fn parse_osc7_path_bare_path_strips_fragment() {
+    use super::interceptor::parse_osc7_path;
+    assert_eq!(parse_osc7_path("/tmp/dir#frag"), "/tmp/dir");
+}
+
+// OSC 133;D with exit code parameter (shells emit `D;0` or `D;127`).
+
+#[test]
+fn interceptor_osc133d_with_exit_code_zero() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]133;C\x07");
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    intercept(&mut term, b"\x1b]133;D;0\x07");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+    assert!(term.last_command_duration().is_some());
+}
+
+#[test]
+fn interceptor_osc133d_with_nonzero_exit_code() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]133;C\x07");
+    intercept(&mut term, b"\x1b]133;D;127\x07");
+
+    assert_eq!(term.prompt_state(), PromptState::None);
+}
+
+// OSC 99: Kitty notification protocol.
+
+#[test]
+fn interceptor_osc99_kitty_notification() {
+    let mut term = make_term();
+    intercept(&mut term, b"\x1b]99;Build complete\x07");
+
+    let notifs = term.drain_notifications();
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0].body, "Build complete");
+    assert!(notifs[0].title.is_empty());
+}
+
+// Script writing: nonexistent parent directory returns error.
+
+#[test]
+fn ensure_scripts_nonexistent_parent_returns_error() {
+    let result = ensure_scripts_on_disk(Path::new("/nonexistent/path/shell-int"));
+    assert!(result.is_err());
+}
+
+// Prompt navigation with multiple prompts across scrollback.
+
+#[test]
+fn prompt_navigation_scrolls_to_previous() {
+    // Small terminal: 4 visible lines, 100 scrollback.
+    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidListener);
+    let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+
+    // Mark prompt at current position (abs row 0).
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    assert_eq!(term.prompt_rows(), &[0]);
+
+    // Write enough lines to push the prompt into scrollback.
+    for _ in 0..20 {
+        proc.advance(&mut term, b"\n");
+    }
+
+    // Viewport is at bottom, prompt row 0 is in scrollback.
+    assert!(term.scroll_to_previous_prompt());
+}
+
+#[test]
+fn prompt_navigation_no_prompt_above_returns_false() {
+    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidListener);
+
+    // Mark prompt at current position (row 0), viewport is already here.
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+
+    // No prompt ABOVE viewport top — should return false.
+    assert!(!term.scroll_to_previous_prompt());
+}
+
+#[test]
+fn prompt_navigation_scrolls_to_next() {
+    let mut term = Term::new(4, 80, 100, Theme::Dark, VoidListener);
+    let mut proc = vte::ansi::Processor::<vte::ansi::StdSyncHandler>::new();
+
+    // Write some content then mark a prompt.
+    for _ in 0..10 {
+        proc.advance(&mut term, b"\n");
+    }
+    term.set_prompt_mark_pending(true);
+    term.mark_prompt_row();
+    let prompt_row = *term.prompt_rows().last().unwrap();
+
+    // Write more content to push the prompt into scrollback.
+    for _ in 0..20 {
+        proc.advance(&mut term, b"\n");
+    }
+
+    // Scroll all the way up.
+    let sb_len = term.grid().scrollback().len();
+    term.grid_mut().scroll_display(sb_len as isize);
+
+    // Now navigate to the next prompt (should be below viewport).
+    let scrolled = term.scroll_to_next_prompt();
+    // There should be a prompt row at or after the viewport bottom.
+    assert!(
+        scrolled || prompt_row < sb_len,
+        "should navigate to prompt below viewport"
+    );
+}

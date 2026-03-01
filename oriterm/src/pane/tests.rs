@@ -71,6 +71,16 @@ fn short_path_single_dir() {
     assert_eq!(cwd_short_path("/tmp"), "tmp");
 }
 
+#[test]
+fn short_path_triple_slash() {
+    assert_eq!(cwd_short_path("///"), "/");
+}
+
+#[test]
+fn short_path_double_slash() {
+    assert_eq!(cwd_short_path("//"), "/");
+}
+
 /// Cross-thread atomic visibility (simulated with sequential ops).
 #[test]
 fn dirty_flag_cross_thread_pattern() {
