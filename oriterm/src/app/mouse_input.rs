@@ -174,11 +174,11 @@ impl App {
     }
 
     /// Handle a mouse button event (left, middle, right).
+    ///
+    /// Button state (`set_button_down`) is already tracked unconditionally
+    /// in the `MouseInput` match arm before this function is called.
     pub(super) fn handle_mouse_input(&mut self, button: MouseButton, state: ElementState) {
-        // Track button state unconditionally — mouse reporting needs this
-        // for drag/motion events even when the press itself was reported.
         let pressed = state == ElementState::Pressed;
-        self.mouse.set_button_down(button, pressed);
 
         // Floating pane drag: start on left-press over title bar or edge,
         // finish on left-release when dragging. Takes priority over dividers.

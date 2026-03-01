@@ -216,6 +216,14 @@ impl ApplicationHandler<TermEvent> for App {
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
+                // Track button state unconditionally — must run before any
+                // early-return branch. Otherwise a press that reaches
+                // handle_mouse_input but whose release is consumed by the tab
+                // bar (or overlay/chrome) leaves buttons.left() stuck true,
+                // causing phantom auto-scroll on subsequent CursorMoved.
+                self.mouse
+                    .set_button_down(button, state == winit::event::ElementState::Pressed);
+
                 // Modal overlay: intercept mouse events.
                 if self.try_overlay_mouse(button, state) {
                     return;
