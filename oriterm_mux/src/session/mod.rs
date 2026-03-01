@@ -257,6 +257,21 @@ impl MuxWindow {
         self.tabs.push(tab_id);
     }
 
+    /// Insert a tab at a specific index. Appends if `index >= len()`.
+    ///
+    /// Adjusts `active_tab_idx` to continue tracking the same tab when
+    /// the insertion shifts it rightward.
+    pub fn insert_tab_at(&mut self, index: usize, tab_id: TabId) {
+        if index >= self.tabs.len() {
+            self.tabs.push(tab_id);
+        } else {
+            self.tabs.insert(index, tab_id);
+            if index <= self.active_tab_idx {
+                self.active_tab_idx += 1;
+            }
+        }
+    }
+
     /// Remove a tab by ID. Adjusts `active_tab_idx` if needed.
     ///
     /// Returns `true` if the tab was found and removed.

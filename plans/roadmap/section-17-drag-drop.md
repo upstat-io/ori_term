@@ -10,7 +10,7 @@ sections:
     status: complete
   - id: "17.2"
     title: OS-Level Drag + Merge
-    status: not-started
+    status: complete
   - id: "17.3"
     title: Section Completion
     status: not-started
@@ -50,7 +50,7 @@ Chrome-style tab dragging with two phases: within-bar reorder and tear-off to ne
 - [x] State transitions:
   - [x] **Mouse down on tab** — `try_start_tab_drag()`: create Pending state, acquire width lock
   - [x] **Mouse move while Pending, distance > `DRAG_START_THRESHOLD` (10px)** — transition to `DraggingInBar`
-    - [ ] If single-tab window: skip `DraggingInBar`, go directly to OS-level drag + tear-off (17.2)
+    - [x] If single-tab window: skip `DraggingInBar`, go directly to OS-level drag + tear-off (17.2)
     - [x] If multi-tab window: enter `DraggingInBar`
   - [x] **Mouse move while `DraggingInBar`**:
     - [x] Compute `drag_visual_x` from cursor position minus `mouse_offset_in_tab`
@@ -85,47 +85,46 @@ When a tab is torn off the bar, it creates a new window that follows the cursor 
 
 **Reference:** `_old/src/app/tab_drag.rs`
 
-- [ ] `tear_off_tab(&mut self, tab_id: TabId, source_wid: WindowId, event_loop: &ActiveEventLoop) -> Option<(WindowId, (i32, i32))>`  <!-- unblocks:32.4 -->
-  - [ ] Remove tab from source window's tab list
-  - [ ] Compute grab offset: where cursor appears in the new window's client area
-    - [ ] Account for `TAB_LEFT_MARGIN` — the tab doesn't start at x=0
-    - [ ] Preserve Y position relative to tab bar
-  - [ ] Create new window (`create_window()`, initially hidden)
-  - [ ] Position new window so cursor is at `grab_offset` within client area
-  - [ ] Render new window (hidden) — fill GPU buffers before showing
-  - [ ] Show new window, then render source window (ensures correct z-order)
-  - [ ] Update `drag.source_window` to new window
-  - [ ] If source window is now empty: close it
-  - [ ] Return `(new_window_id, grab_offset)` for OS drag
-- [ ] `begin_os_tab_drag()` — Windows-specific:
-  - [ ] Collect merge target rects from other windows' tab bars
-  - [ ] Configure WM_MOVING handler to detect cursor over merge targets
-  - [ ] Set `torn_off_pending` state
-  - [ ] Call `window.drag_window()` — enters OS modal move loop, blocks until mouse-up
-- [ ] `check_torn_off_merge()` — called every event loop iteration during/after OS drag:
-  - [ ] Check if WM_MOVING detected a merge target
-  - [ ] If merge detected:
-    - [ ] Find target window
-    - [ ] Compute insertion index via `compute_drop_index(target_wid, screen_x)`
-    - [ ] Remove tab from torn window, insert into target window at index
-    - [ ] Resize tab to match target window's grid dimensions
-    - [ ] Close the torn (now empty) window
-    - [ ] Activate target window
-  - [ ] If merge was **live** (detected during WM_MOVING, not after):
-    - [ ] Start a new `DraggingInBar` state in the target window
-    - [ ] **Synthesize mouse-down**: `self.left_mouse_down = true` — because the OS modal loop consumed the original button-down event
-    - [ ] Set `merge_drag_suppress_release = true` — ignore the stale `WM_LBUTTONUP` that arrives after the modal loop ends
-    - [ ] This allows **seamless drag**: user drags tab out, over another window, and continues dragging within the target window without releasing the mouse button
-  - [ ] If no merge target: show the torn window (OS modal loop may have hidden it)
-- [ ] `compute_drop_index(&self, target_wid: WindowId, screen_x: f64) -> usize`
-  - [ ] Get target window bounds (using visible frame bounds on Windows — accounts for DWM invisible borders)
-  - [ ] Convert screen X to local X within target window
-  - [ ] Compute tab index from local X position: `((local_x - left_margin) / tab_width).floor()`
-  - [ ] Clamp to `[0, target_tab_count]`
-- [ ] `merge_drag_suppress_release: bool` on App:
-  - [ ] Set to true after seamless merge
-  - [ ] Checked in mouse-up handler: if true, ignore the release and clear the flag
-  - [ ] Prevents the stale button-up from finalizing a non-existent drag
+- [x] `tear_off_tab(&mut self, event_loop: &ActiveEventLoop)` (`oriterm/src/app/tab_drag/tear_off.rs`)
+  - [x] Remove tab from source window's tab list
+  - [x] Compute grab offset: where cursor appears in the new window's client area
+    - [x] Account for `TAB_LEFT_MARGIN` — the tab doesn't start at x=0
+    - [x] Preserve Y position relative to tab bar
+  - [x] Create new window (`create_window_bare()`, initially hidden)
+  - [x] Position new window so cursor is at `grab_offset` within client area
+  - [x] Render new window (hidden) — clear surface before showing
+  - [x] Show new window, then render source window (ensures correct z-order)
+  - [x] If source window is now empty: close it
+  - [x] Start OS drag on new window
+- [x] `begin_os_tab_drag()` — Windows-specific:
+  - [x] Collect merge target rects from other windows' tab bars
+  - [x] Configure WM_MOVING handler to detect cursor over merge targets
+  - [x] Set `torn_off_pending` state
+  - [x] Call `window.drag_window()` — enters OS modal move loop, blocks until mouse-up
+- [x] `check_torn_off_merge()` — called every event loop iteration in `about_to_wait` (`oriterm/src/app/tab_drag/merge.rs`):
+  - [x] Check if WM_MOVING detected a merge target
+  - [x] If merge detected:
+    - [x] Find target window
+    - [x] Compute insertion index via `compute_drop_index(target_wid, screen_x)`
+    - [x] Move tab from torn window to target window at index via `move_tab_to_window_at`
+    - [x] Resize tab to match target window's grid dimensions
+    - [x] Close the torn (now empty) window
+    - [x] Activate target window
+  - [x] If merge was **live** (detected during WM_MOVING, not after):
+    - [x] Start a new `DraggingInBar` state in the target window
+    - [x] **Synthesize mouse-down**: `self.mouse.set_button_down(Left, true)` — because the OS modal loop consumed the original button-down event
+    - [x] Set `merge_drag_suppress_release = true` — ignore the stale `WM_LBUTTONUP` that arrives after the modal loop ends
+    - [x] This allows **seamless drag**: user drags tab out, over another window, and continues dragging within the target window without releasing the mouse button
+  - [x] If no merge target: show the torn window (OS modal loop may have hidden it)
+- [x] `compute_drop_index(&self, target_wid: WindowId, screen_x: f64) -> usize`
+  - [x] Get target window bounds (using visible frame bounds on Windows — accounts for DWM invisible borders)
+  - [x] Convert screen X to local X within target window
+  - [x] Compute tab index from local X position: `((local_x - left_margin + tab_width/2) / tab_width).floor()`
+  - [x] Clamp to `[0, target_tab_count]`
+- [x] `merge_drag_suppress_release: bool` on App:
+  - [x] Set to true after seamless merge
+  - [x] Checked in mouse-up handler: if true, ignore the release and clear the flag
+  - [x] Prevents the stale button-up from finalizing a non-existent drag
 
 ---
 

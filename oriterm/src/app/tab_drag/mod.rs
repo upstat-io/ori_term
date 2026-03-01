@@ -4,6 +4,11 @@
 //! pixel-perfect visual tracking, center-based insertion index, and post-drag
 //! settle animation. Tear-off detection signals Section 17.2.
 
+#[cfg(target_os = "windows")]
+mod merge;
+#[cfg(target_os = "windows")]
+mod tear_off;
+
 use oriterm_mux::TabId;
 
 use oriterm_ui::widgets::tab_bar::constants::{
@@ -27,8 +32,8 @@ pub(crate) enum DragPhase {
 /// Created on mouse-down over a tab, destroyed on mouse-up or cancel.
 /// All coordinates are in logical pixels.
 pub(crate) struct TabDragState {
-    /// Mux tab ID (for tear-off handoff in Section 17.2).
-    #[allow(dead_code, reason = "used by tear-off in Section 17.2")]
+    /// Mux tab ID (for tear-off handoff and merge).
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub tab_id: TabId,
     /// Tab index when drag started (for Escape undo).
     pub original_index: usize,
@@ -46,6 +51,21 @@ pub(crate) struct TabDragState {
     pub tab_bar_y: f32,
     /// Tab bar bottom edge in logical pixels.
     pub tab_bar_bottom: f32,
+}
+
+/// Pending tear-off state for OS-level drag.
+///
+/// Set by [`App::tear_off_tab()`] when a tab exceeds the tear-off threshold,
+/// consumed by [`App::check_torn_off_merge()`] in `about_to_wait` after the
+/// OS modal drag loop completes.
+#[cfg(target_os = "windows")]
+pub(crate) struct TornOffPending {
+    /// Winit ID of the torn-off window (the new, single-tab window).
+    pub winit_id: winit::window::WindowId,
+    /// Mux tab ID of the dragged tab.
+    pub tab_id: TabId,
+    /// Cursor offset from the tab's left edge at drag start.
+    pub mouse_offset: f32,
 }
 
 // -- Pure computation helpers (testable without App) --
@@ -157,7 +177,11 @@ impl App {
     /// Handles threshold-based phase transitions, visual tracking, reorder
     /// swaps, and tear-off detection. Returns `true` if the event was
     /// consumed (caller should skip other mouse handling).
-    pub(super) fn update_tab_drag(&mut self, position: winit::dpi::PhysicalPosition<f64>) -> bool {
+    pub(super) fn update_tab_drag(
+        &mut self,
+        position: winit::dpi::PhysicalPosition<f64>,
+        #[cfg(target_os = "windows")] event_loop: &winit::event_loop::ActiveEventLoop,
+    ) -> bool {
         // Extract drag data (all Copy fields) to break the borrow chain.
         let drag_info = {
             let Some(ctx) = self.focused_ctx() else {
@@ -175,6 +199,7 @@ impl App {
                 bar_y: drag.tab_bar_y,
                 bar_bottom: drag.tab_bar_bottom,
                 scale: ctx.window.scale_factor().factor() as f32,
+                tab_count: ctx.tab_bar.layout().tab_count,
             }
         };
 
@@ -192,6 +217,14 @@ impl App {
                     return true;
                 }
 
+                // Single-tab window: skip DraggingInBar, go directly to
+                // OS-level drag with merge detection.
+                #[cfg(target_os = "windows")]
+                if drag_info.tab_count <= 1 {
+                    self.begin_single_tab_os_drag(event_loop);
+                    return true;
+                }
+
                 // Transition to DraggingInBar.
                 if let Some(ctx) = self.focused_ctx_mut() {
                     if let Some(drag) = &mut ctx.tab_drag {
@@ -199,22 +232,42 @@ impl App {
                     }
                 }
                 // Fall through to DraggingInBar handling below.
-                self.update_drag_in_bar(logical_x, logical_y, drag_info);
+                self.update_drag_in_bar(
+                    logical_x,
+                    logical_y,
+                    drag_info,
+                    #[cfg(target_os = "windows")]
+                    event_loop,
+                );
                 true
             }
             DragPhase::DraggingInBar => {
-                self.update_drag_in_bar(logical_x, logical_y, drag_info);
+                self.update_drag_in_bar(
+                    logical_x,
+                    logical_y,
+                    drag_info,
+                    #[cfg(target_os = "windows")]
+                    event_loop,
+                );
                 true
             }
         }
     }
 
     /// Core in-bar drag logic: visual tracking, reorder, tear-off check.
-    fn update_drag_in_bar(&mut self, logical_x: f32, logical_y: f32, info: DragInfo) {
-        // Tear-off detection (Section 17.2 will act on this).
+    fn update_drag_in_bar(
+        &mut self,
+        logical_x: f32,
+        logical_y: f32,
+        info: DragInfo,
+        #[cfg(target_os = "windows")] event_loop: &winit::event_loop::ActiveEventLoop,
+    ) {
+        // Tear-off detection.
         if exceeds_tear_off(logical_y, info.bar_y, info.bar_bottom) {
-            // For now, just log. Section 17.2 will handle actual tear-off.
-            log::debug!("tab drag: tear-off threshold exceeded");
+            #[cfg(target_os = "windows")]
+            self.tear_off_tab(event_loop);
+            #[cfg(not(target_os = "windows"))]
+            log::debug!("tab drag: tear-off not supported on this platform");
             return;
         }
 
@@ -360,6 +413,8 @@ struct DragInfo {
     bar_y: f32,
     bar_bottom: f32,
     scale: f32,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    tab_count: usize,
 }
 
 #[cfg(test)]

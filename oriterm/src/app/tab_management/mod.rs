@@ -6,6 +6,8 @@
 
 use std::path::PathBuf;
 
+use winit::window::WindowId;
+
 use oriterm_mux::domain::SpawnConfig;
 use oriterm_mux::{TabId, WindowId as MuxWindowId};
 
@@ -204,7 +206,6 @@ impl App {
     /// Preserves the tab's panes and split layout. If the source window
     /// becomes empty, it is closed. Panes in the moved tab are resized to
     /// fit the destination window dimensions.
-    #[allow(dead_code, reason = "wired to tab tear-off in Section 17")]
     pub(super) fn move_tab_to_window(&mut self, tab_id: TabId, dest_window: MuxWindowId) {
         let Some(mux) = &mut self.mux else { return };
         if !mux.move_tab_to_window(tab_id, dest_window) {
@@ -232,7 +233,7 @@ impl App {
     ///
     /// Creates a new window, then moves the tab there. Refuses if the tab
     /// is the last tab in the last window (would leave zero windows).
-    #[allow(dead_code, reason = "wired to tab tear-off in Section 17")]
+    #[allow(dead_code, reason = "superseded by tear_off_tab in Section 17.2")]
     pub(super) fn move_tab_to_new_window(
         &mut self,
         tab_id: TabId,
@@ -416,6 +417,53 @@ impl App {
             .collect();
 
         if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.tab_bar.set_tabs(entries);
+            ctx.tab_bar.set_active_index(active_idx);
+        }
+    }
+
+    /// Rebuild the tab bar for a specific window by its winit ID.
+    ///
+    /// Like [`sync_tab_bar_from_mux`] but targets a specific window instead
+    /// of the active window. Used by tear-off/merge when both source and
+    /// destination windows need their tab bars updated.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    pub(super) fn sync_tab_bar_for_window(&mut self, winit_id: WindowId) {
+        let mux_wid = {
+            let Some(ctx) = self.windows.get(&winit_id) else {
+                return;
+            };
+            ctx.window.mux_window_id()
+        };
+        let Some(mux) = self.mux.as_ref() else {
+            return;
+        };
+        let Some(win) = mux.session().get_window(mux_wid) else {
+            return;
+        };
+
+        let active_idx = win.active_tab_idx();
+        let entries: Vec<oriterm_ui::widgets::tab_bar::TabEntry> = win
+            .tabs()
+            .iter()
+            .map(|&tab_id| {
+                let tab = mux.session().get_tab(tab_id);
+                let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
+                let title = pane_id
+                    .and_then(|pid| self.panes.get(&pid))
+                    .map(|p| p.title().to_owned())
+                    .unwrap_or_default();
+                let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());
+                let display = if is_zoomed {
+                    format!("{title} [Z]")
+                } else {
+                    title
+                };
+                oriterm_ui::widgets::tab_bar::TabEntry::new(display)
+            })
+            .collect();
+
+        if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.tab_bar.set_tabs(entries);
             ctx.tab_bar.set_active_index(active_idx);
         }

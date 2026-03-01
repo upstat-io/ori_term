@@ -223,6 +223,63 @@ impl InProcessMux {
         true
     }
 
+    /// Move a tab from its current window to a specific index in the
+    /// destination window.
+    ///
+    /// Like [`move_tab_to_window`] but inserts at `dest_index` instead of
+    /// appending. The tab becomes the active tab in the destination window.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    pub(crate) fn move_tab_to_window_at(
+        &mut self,
+        tab_id: TabId,
+        dest_window_id: WindowId,
+        dest_index: usize,
+    ) -> bool {
+        let Some(source_window_id) = self.session.window_for_tab(tab_id) else {
+            return false;
+        };
+        if source_window_id == dest_window_id {
+            return false;
+        }
+        if self.session.get_window(dest_window_id).is_none() {
+            return false;
+        }
+
+        let Some(source) = self.session.get_window_mut(source_window_id) else {
+            return false;
+        };
+        source.remove_tab(tab_id);
+        let source_empty = source.tabs().is_empty();
+
+        let Some(dest) = self.session.get_window_mut(dest_window_id) else {
+            return false;
+        };
+        dest.insert_tab_at(dest_index, tab_id);
+        let actual_idx = dest.tabs().iter().position(|&t| t == tab_id).unwrap_or(0);
+        dest.set_active_tab_idx(actual_idx);
+
+        self.notifications
+            .push(MuxNotification::WindowTabsChanged(dest_window_id));
+
+        if source_empty {
+            self.session.remove_window(source_window_id);
+            if self.session.window_count() == 0 {
+                self.notifications.push(MuxNotification::LastWindowClosed);
+            } else {
+                self.notifications
+                    .push(MuxNotification::WindowClosed(source_window_id));
+            }
+        } else {
+            self.notifications
+                .push(MuxNotification::WindowTabsChanged(source_window_id));
+        }
+
+        self.notifications
+            .push(MuxNotification::TabLayoutChanged(tab_id));
+
+        true
+    }
+
     /// Immutable access to the pane registry.
     #[allow(dead_code, reason = "used when pane registry queries are wired to App")]
     pub(crate) fn pane_registry(&self) -> &oriterm_mux::registry::PaneRegistry {

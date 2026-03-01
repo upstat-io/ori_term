@@ -341,6 +341,95 @@ fn set_active_tab_idx_on_empty_window() {
     assert!(w.active_tab().is_none());
 }
 
+// --- insert_tab_at tests ---
+
+#[test]
+fn insert_tab_at_start() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    w.add_tab(TabId::from_raw(1));
+    w.add_tab(TabId::from_raw(2));
+    w.set_active_tab_idx(0);
+
+    w.insert_tab_at(0, TabId::from_raw(3));
+    assert_eq!(
+        w.tabs(),
+        &[TabId::from_raw(3), TabId::from_raw(1), TabId::from_raw(2)]
+    );
+    // Active was at 0, insertion at 0 → shifts to 1.
+    assert_eq!(w.active_tab(), Some(TabId::from_raw(1)));
+    assert_eq!(w.active_tab_idx(), 1);
+}
+
+#[test]
+fn insert_tab_at_middle() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    w.add_tab(TabId::from_raw(1));
+    w.add_tab(TabId::from_raw(2));
+    w.add_tab(TabId::from_raw(3));
+    w.set_active_tab_idx(2);
+
+    w.insert_tab_at(1, TabId::from_raw(4));
+    assert_eq!(
+        w.tabs(),
+        &[
+            TabId::from_raw(1),
+            TabId::from_raw(4),
+            TabId::from_raw(2),
+            TabId::from_raw(3)
+        ]
+    );
+    // Active was at 2, insertion at 1 (before) → shifts to 3.
+    assert_eq!(w.active_tab(), Some(TabId::from_raw(3)));
+    assert_eq!(w.active_tab_idx(), 3);
+}
+
+#[test]
+fn insert_tab_at_end() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    w.add_tab(TabId::from_raw(1));
+    w.add_tab(TabId::from_raw(2));
+    w.set_active_tab_idx(0);
+
+    // Inserting at len() appends.
+    w.insert_tab_at(2, TabId::from_raw(3));
+    assert_eq!(
+        w.tabs(),
+        &[TabId::from_raw(1), TabId::from_raw(2), TabId::from_raw(3)]
+    );
+    // Active was at 0, insertion at 2 (after) → no shift.
+    assert_eq!(w.active_tab_idx(), 0);
+}
+
+#[test]
+fn insert_tab_at_past_end_appends() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    w.add_tab(TabId::from_raw(1));
+
+    w.insert_tab_at(100, TabId::from_raw(2));
+    assert_eq!(w.tabs(), &[TabId::from_raw(1), TabId::from_raw(2)]);
+}
+
+#[test]
+fn insert_tab_at_does_not_shift_active_when_after() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    w.add_tab(TabId::from_raw(1));
+    w.add_tab(TabId::from_raw(2));
+    w.add_tab(TabId::from_raw(3));
+    w.set_active_tab_idx(0);
+
+    // Insert after active — no shift needed.
+    w.insert_tab_at(2, TabId::from_raw(4));
+    assert_eq!(w.active_tab_idx(), 0);
+    assert_eq!(w.active_tab(), Some(TabId::from_raw(1)));
+}
+
+#[test]
+fn insert_tab_at_empty_window() {
+    let mut w = MuxWindow::new(WindowId::from_raw(1));
+    w.insert_tab_at(0, TabId::from_raw(1));
+    assert_eq!(w.tabs(), &[TabId::from_raw(1)]);
+}
+
 // --- Zoom state tests ---
 
 #[test]

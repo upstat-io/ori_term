@@ -168,7 +168,11 @@ impl ApplicationHandler<TermEvent> for App {
                 self.update_tab_bar_hover(position);
 
                 // Tab drag: consume all cursor moves when active.
-                if self.update_tab_drag(position) {
+                if self.update_tab_drag(
+                    position,
+                    #[cfg(target_os = "windows")]
+                    event_loop,
+                ) {
                     return;
                 }
 
@@ -219,6 +223,14 @@ impl ApplicationHandler<TermEvent> for App {
                 // Check chrome first — if a control button was clicked,
                 // don't propagate to selection/PTY reporting.
                 if self.try_chrome_mouse(button, state, event_loop) {
+                    return;
+                }
+                // Suppress stale WM_LBUTTONUP after live merge.
+                if button == winit::event::MouseButton::Left
+                    && state == winit::event::ElementState::Released
+                    && self.merge_drag_suppress_release
+                {
+                    self.merge_drag_suppress_release = false;
                     return;
                 }
                 // Tab drag: finish on left-button release.
@@ -283,6 +295,10 @@ impl ApplicationHandler<TermEvent> for App {
             self.pending_new_window = false;
             self.create_window(event_loop);
         }
+
+        // Check for completed OS-level tab drag (tear-off + merge).
+        #[cfg(target_os = "windows")]
+        self.check_torn_off_merge();
 
         // Pump mux events: drain PTY reader thread messages and process
         // resulting notifications before rendering.

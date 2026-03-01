@@ -126,6 +126,14 @@ pub(crate) struct App {
     // need `ActiveEventLoop` (which keyboard input handlers lack).
     // Processed in `about_to_wait` where the event loop is available.
     pending_new_window: bool,
+
+    // Pending tear-off state. Set by `tear_off_tab()`, consumed by
+    // `check_torn_off_merge()` in `about_to_wait`.
+    #[cfg(target_os = "windows")]
+    torn_off_pending: Option<tab_drag::TornOffPending>,
+
+    // Suppress the stale WM_LBUTTONUP after a live merge.
+    merge_drag_suppress_release: bool,
 }
 
 impl App {
@@ -166,6 +174,9 @@ impl App {
             ime: ImeState::new(),
             ui_theme,
             pending_new_window: false,
+            #[cfg(target_os = "windows")]
+            torn_off_pending: None,
+            merge_drag_suppress_release: false,
         }
     }
 

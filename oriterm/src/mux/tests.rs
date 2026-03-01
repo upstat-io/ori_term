@@ -4296,6 +4296,92 @@ fn move_multi_pane_tab_preserves_split_layout() {
     assert!(mux.session().get_window(w1).is_none());
 }
 
+// -- Cross-window tab movement at index (Section 17.2) --
+
+#[test]
+fn move_tab_to_window_at_inserts_at_start() {
+    let (mut mux, _w1, w2, t1, _t2, t3) = two_window_setup();
+
+    assert!(mux.move_tab_to_window_at(t1, w2, 0));
+
+    let w2_win = mux.session().get_window(w2).unwrap();
+    // t1 inserted at index 0, before t3.
+    assert_eq!(w2_win.tabs(), &[t1, t3]);
+    assert_eq!(w2_win.active_tab(), Some(t1));
+}
+
+#[test]
+fn move_tab_to_window_at_inserts_at_end() {
+    let (mut mux, _w1, w2, t1, _t2, t3) = two_window_setup();
+
+    assert!(mux.move_tab_to_window_at(t1, w2, 100));
+
+    let w2_win = mux.session().get_window(w2).unwrap();
+    // Past-end index appends.
+    assert_eq!(w2_win.tabs(), &[t3, t1]);
+    assert_eq!(w2_win.active_tab(), Some(t1));
+}
+
+#[test]
+fn move_tab_to_window_at_middle() {
+    let (mut mux, _w1, w2, t1, t2, t3) = two_window_setup();
+
+    // Move t2 to w2. w2 has [t3], insert at index 0.
+    assert!(mux.move_tab_to_window_at(t2, w2, 0));
+    drain(&mut mux);
+    // w2 now [t2, t3]. Move t1 to w2 at index 1.
+    assert!(mux.move_tab_to_window_at(t1, w2, 1));
+
+    let w2_win = mux.session().get_window(w2).unwrap();
+    assert_eq!(w2_win.tabs(), &[t2, t1, t3]);
+    assert_eq!(w2_win.active_tab(), Some(t1));
+}
+
+#[test]
+fn move_tab_to_window_at_emits_notifications() {
+    let (mut mux, w1, w2, t1, _t2, _t3) = two_window_setup();
+
+    mux.move_tab_to_window_at(t1, w2, 0);
+
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::WindowTabsChanged(id) if *id == w2))
+    );
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::WindowTabsChanged(id) if *id == w1))
+    );
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::TabLayoutChanged(id) if *id == t1))
+    );
+}
+
+#[test]
+fn move_tab_to_window_at_same_window_is_noop() {
+    let (mut mux, w1, _w2, t1, _t2, _t3) = two_window_setup();
+    assert!(!mux.move_tab_to_window_at(t1, w1, 0));
+}
+
+#[test]
+fn move_tab_to_window_at_last_tab_closes_source() {
+    let (mut mux, w1, w2, _t1, _t2, t3) = two_window_setup();
+
+    assert!(mux.move_tab_to_window_at(t3, w1, 0));
+
+    assert!(mux.session().get_window(w2).is_none());
+    let notifs = drain(&mut mux);
+    assert!(
+        notifs
+            .iter()
+            .any(|n| matches!(n, MuxNotification::WindowClosed(id) if *id == w2))
+    );
+}
+
 // -- Section 32.5: Integration tests --
 
 #[test]
