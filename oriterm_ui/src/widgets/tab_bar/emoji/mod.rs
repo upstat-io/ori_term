@@ -4,6 +4,7 @@
 //! (set by OSC 0/1). Only recognizes codepoints in the `Emoji_Presentation`
 //! set — alphanumeric or symbol prefixes are not treated as icons.
 
+use oriterm_core::is_emoji_presentation;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::widget::TabIcon;
@@ -21,29 +22,6 @@ pub fn extract_emoji_icon(icon_name: &str) -> Option<TabIcon> {
     } else {
         None
     }
-}
-
-/// Whether a codepoint has `Emoji_Presentation` — renders as emoji by default.
-///
-/// Covers the most common pictographic emoji ranges. Variation selectors
-/// (U+FE0F) are handled by grapheme clustering, not here.
-fn is_emoji_presentation(cp: char) -> bool {
-    matches!(cp,
-        // Miscellaneous Technical (watch, hourglass, play buttons, etc.).
-        '\u{2300}'..='\u{23FF}'
-        // Miscellaneous Symbols (sun, cloud, stars, zodiac, etc.).
-        | '\u{2600}'..='\u{27BF}'
-        // Supplemental arrows / misc symbols (stars, circles).
-        | '\u{2B50}'..='\u{2B55}'
-        // CJK symbols and Mahjong tiles.
-        | '\u{3030}' | '\u{303D}'
-        // Enclosed CJK letters.
-        | '\u{3297}' | '\u{3299}'
-        // Enclosed alphanumeric supplement.
-        | '\u{1F100}'..='\u{1F1FF}'
-        // Supplementary symbols and pictographs (most emoji live here).
-        | '\u{1F200}'..='\u{1FFFF}'
-    )
 }
 
 #[cfg(test)]

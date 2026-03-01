@@ -282,17 +282,8 @@ fn shape_ui_run(
 
 /// Whether a codepoint is likely emoji and should prefer emoji font resolution.
 ///
-/// Mirrors the ranges in `oriterm_ui::widgets::tab_bar::emoji::is_emoji_presentation`
-/// plus ZWJ and variation selectors used in emoji sequences.
+/// Delegates to [`oriterm_core::is_emoji_presentation`] for the base ranges,
+/// then adds ZWJ and variation selectors used in emoji sequences.
 fn is_likely_emoji(cp: char) -> bool {
-    matches!(cp,
-        '\u{2300}'..='\u{23FF}'
-        | '\u{2600}'..='\u{27BF}'
-        | '\u{2B50}'..='\u{2B55}'
-        | '\u{200D}'
-        | '\u{FE0F}'
-        | '\u{3030}' | '\u{303D}'
-        | '\u{3297}' | '\u{3299}'
-        | '\u{1F100}'..='\u{1FFFF}'
-    )
+    oriterm_core::is_emoji_presentation(cp) || matches!(cp, '\u{200D}' | '\u{FE0F}')
 }

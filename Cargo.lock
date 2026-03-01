@@ -1853,6 +1853,7 @@ version = "0.1.0-alpha.3"
 dependencies = [
  "image",
  "log",
+ "oriterm_core",
  "smallvec",
  "unicode-segmentation",
  "windows-sys 0.60.2",

@@ -7,6 +7,7 @@
 
 use std::time::Instant;
 
+use crate::color::Color;
 use crate::draw::RectStyle;
 use crate::geometry::{Point, Rect};
 use crate::input::{HoverEvent, KeyEvent, MouseEvent};
@@ -64,6 +65,8 @@ struct TabStrip {
     active: bool,
     /// Bell animation phase for the current tab (0.0 if none).
     bell: f32,
+    /// Title/icon text color for the current tab.
+    text_color: Color,
 }
 
 // --- Drawing helpers ---
@@ -104,21 +107,33 @@ impl TabBarWidget {
         ctx.draw_list.push_layer(bg);
         ctx.draw_list.push_rect(tab_rect, style);
 
-        // Title text (with optional icon prefix).
-        let text_color = if strip.active {
-            self.colors.text_fg
-        } else {
-            self.colors.inactive_text
-        };
+        self.draw_tab_label(ctx, tab, x, strip);
+
+        // Close button: always visible on active, hover-only on inactive.
+        let show_close = strip.active || self.hover_hit.is_tab(index);
+        if show_close {
+            self.draw_close_button(ctx, index, x, strip);
+        }
+
+        ctx.draw_list.pop_layer();
+    }
+
+    /// Draws the icon (if any) and title text for a tab at the given X position.
+    ///
+    /// Shared between [`draw_tab`] (normal tabs) and [`draw_dragged_tab_overlay`]
+    /// (floating drag overlay) — the only differences are position and color.
+    /// Text color comes from `strip.text_color`.
+    fn draw_tab_label(&self, ctx: &mut DrawCtx<'_>, tab: &TabEntry, x: f32, strip: &TabStrip) {
+        let color = strip.text_color;
 
         // Icon rendering: shape and draw emoji before the title.
         let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
-            let icon_style = TextStyle::new(ctx.theme.font_size_small, text_color);
+            let icon_style = TextStyle::new(ctx.theme.font_size_small, color);
             let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
             let icon_x = x + TAB_PADDING;
             let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;
             ctx.draw_list
-                .push_text(Point::new(icon_x, icon_y), icon_shaped.clone(), text_color);
+                .push_text(Point::new(icon_x, icon_y), icon_shaped.clone(), color);
             icon_shaped.width + ICON_TEXT_GAP
         } else {
             0.0
@@ -130,21 +145,13 @@ impl TabBarWidget {
             &tab.title
         };
         let max_w = (self.layout.max_text_width() - text_offset).max(0.0);
-        let text_style = TextStyle::new(ctx.theme.font_size_small, text_color)
-            .with_overflow(TextOverflow::Ellipsis);
+        let text_style =
+            TextStyle::new(ctx.theme.font_size_small, color).with_overflow(TextOverflow::Ellipsis);
         let shaped = ctx.measurer.shape(title, &text_style, max_w);
         let text_x = x + TAB_PADDING + text_offset;
         let text_y = strip.y + (strip.h - shaped.height) / 2.0;
         ctx.draw_list
-            .push_text(Point::new(text_x, text_y), shaped, text_color);
-
-        // Close button: always visible on active, hover-only on inactive.
-        let show_close = strip.active || self.hover_hit.is_tab(index);
-        if show_close {
-            self.draw_close_button(ctx, index, x, strip);
-        }
-
-        ctx.draw_list.pop_layer();
+            .push_text(Point::new(text_x, text_y), shaped, color);
     }
 
     /// Draws the close (×) button for a tab.
@@ -302,35 +309,7 @@ impl TabBarWidget {
         ctx.draw_list.push_layer(self.colors.active_bg);
         ctx.draw_list.push_rect(tab_rect, style);
 
-        // Title text (with optional icon prefix).
-        let text_offset = if let Some(TabIcon::Emoji(ref emoji)) = tab.icon {
-            let icon_style = TextStyle::new(ctx.theme.font_size_small, self.colors.text_fg);
-            let icon_shaped = ctx.measurer.shape(emoji, &icon_style, f32::INFINITY);
-            let icon_x = visual_x + TAB_PADDING;
-            let icon_y = strip.y + (strip.h - icon_shaped.height) / 2.0;
-            ctx.draw_list.push_text(
-                Point::new(icon_x, icon_y),
-                icon_shaped.clone(),
-                self.colors.text_fg,
-            );
-            icon_shaped.width + ICON_TEXT_GAP
-        } else {
-            0.0
-        };
-
-        let title = if tab.title.is_empty() {
-            "Terminal"
-        } else {
-            &tab.title
-        };
-        let max_w = (self.layout.max_text_width() - text_offset).max(0.0);
-        let text_style = TextStyle::new(ctx.theme.font_size_small, self.colors.text_fg)
-            .with_overflow(TextOverflow::Ellipsis);
-        let shaped = ctx.measurer.shape(title, &text_style, max_w);
-        let text_x = visual_x + TAB_PADDING + text_offset;
-        let text_y = strip.y + (strip.h - shaped.height) / 2.0;
-        ctx.draw_list
-            .push_text(Point::new(text_x, text_y), shaped, self.colors.text_fg);
+        self.draw_tab_label(ctx, tab, visual_x, strip);
 
         // Close button (always visible on dragged tab).
         self.draw_close_icon(ctx, visual_x, strip);
@@ -441,6 +420,7 @@ impl Widget for TabBarWidget {
             h: TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
             active: false,
             bell: 0.0,
+            text_color: self.colors.inactive_text,
         };
 
         // 2. Inactive tabs (drawn first, behind active tab).
@@ -450,6 +430,7 @@ impl Widget for TabBarWidget {
             }
             strip.active = false;
             strip.bell = bell_phase(&self.tabs[i], ctx.now);
+            strip.text_color = self.colors.inactive_text;
             self.draw_tab(ctx, i, &strip);
 
             if strip.bell > 0.0 {
@@ -461,6 +442,7 @@ impl Widget for TabBarWidget {
         if self.active_index < self.tabs.len() && !self.is_dragged(self.active_index) {
             strip.active = true;
             strip.bell = 0.0;
+            strip.text_color = self.colors.text_fg;
             self.draw_tab(ctx, self.active_index, &strip);
         }
 
@@ -474,6 +456,7 @@ impl Widget for TabBarWidget {
         self.draw_dropdown_button(ctx, &strip);
 
         // 7. Dragged tab overlay (floats above everything).
+        strip.text_color = self.colors.text_fg;
         self.draw_dragged_tab_overlay(ctx, &strip);
     }
 

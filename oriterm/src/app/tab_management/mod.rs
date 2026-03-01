@@ -402,12 +402,9 @@ impl App {
             .map(|&tab_id| {
                 let tab = mux.session().get_tab(tab_id);
                 let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-                let mut title = pane_id
-                    .and_then(|pid| self.panes.get(&pid))
-                    .map(|p| p.title().to_owned())
-                    .unwrap_or_default();
-                let icon = pane_id
-                    .and_then(|pid| self.panes.get(&pid))
+                let pane = pane_id.and_then(|pid| self.panes.get(&pid));
+                let mut title = pane.map(|p| p.title().to_owned()).unwrap_or_default();
+                let icon = pane
                     .and_then(|p| p.icon_name())
                     .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
                 // Strip leading emoji from title when it matches the icon
@@ -463,12 +460,9 @@ impl App {
             .map(|&tab_id| {
                 let tab = mux.session().get_tab(tab_id);
                 let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-                let mut title = pane_id
-                    .and_then(|pid| self.panes.get(&pid))
-                    .map(|p| p.title().to_owned())
-                    .unwrap_or_default();
-                let icon = pane_id
-                    .and_then(|pid| self.panes.get(&pid))
+                let pane = pane_id.and_then(|pid| self.panes.get(&pid));
+                let mut title = pane.map(|p| p.title().to_owned()).unwrap_or_default();
+                let icon = pane
                     .and_then(|p| p.icon_name())
                     .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
                 // Strip leading emoji from title when it matches the icon

@@ -18,6 +18,7 @@ pub mod selection;
 pub mod sync;
 pub mod term;
 pub mod theme;
+pub mod unicode;
 
 pub use cell::{Cell, CellExtra, CellFlags, Hyperlink};
 pub use color::{Palette, Rgb, SelectionColors};
@@ -37,3 +38,4 @@ pub use term::{
     DamageLine, RenderableCell, RenderableContent, RenderableCursor, Term, TermDamage, TermMode,
 };
 pub use theme::Theme;
+pub use unicode::is_emoji_presentation;
