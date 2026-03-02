@@ -6,39 +6,8 @@ use oriterm_core::{Event, EventListener};
 use oriterm_mux::PaneId;
 
 use super::{MuxEvent, MuxEventProxy};
-use crate::event::TermEvent;
 
-/// Shared winit event loop proxy for tests.
-///
-/// Winit only allows one event loop per process. We create it once via
-/// `OnceLock` and share the proxy across all tests.
-fn shared_proxy() -> winit::event_loop::EventLoopProxy<TermEvent> {
-    use std::sync::OnceLock;
-
-    static PROXY: OnceLock<winit::event_loop::EventLoopProxy<TermEvent>> = OnceLock::new();
-    PROXY
-        .get_or_init(|| {
-            #[cfg(target_os = "linux")]
-            {
-                use winit::platform::x11::EventLoopBuilderExtX11;
-                let event_loop = winit::event_loop::EventLoop::<TermEvent>::with_user_event()
-                    .with_any_thread(true)
-                    .build()
-                    .expect("event loop");
-                event_loop.create_proxy()
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                let event_loop = winit::event_loop::EventLoop::<TermEvent>::with_user_event()
-                    .build()
-                    .expect("event loop");
-                event_loop.create_proxy()
-            }
-        })
-        .clone()
-}
-
-/// Create a test proxy with mpsc channel and shared winit proxy.
+/// Create a test proxy with mpsc channel and no-op wakeup.
 fn test_proxy() -> (
     MuxEventProxy,
     mpsc::Receiver<MuxEvent>,
@@ -48,14 +17,14 @@ fn test_proxy() -> (
     let (tx, rx) = mpsc::channel();
     let wakeup = Arc::new(AtomicBool::new(false));
     let dirty = Arc::new(AtomicBool::new(false));
-    let winit_proxy = shared_proxy();
+    let noop_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
 
     let proxy = MuxEventProxy::new(
         PaneId::from_raw(1),
         tx,
         Arc::clone(&wakeup),
         Arc::clone(&dirty),
-        winit_proxy,
+        noop_wakeup,
     );
     (proxy, rx, wakeup, dirty)
 }
@@ -157,10 +126,10 @@ fn command_complete_maps_to_command_complete() {
 #[test]
 fn icon_name_maps_to_pane_icon_changed() {
     let (proxy, rx, _, _) = test_proxy();
-    proxy.send_event(Event::IconName("🐍python".to_string()));
+    proxy.send_event(Event::IconName("\u{1f40d}python".to_string()));
     let event = rx.try_recv().unwrap();
     assert!(
-        matches!(&event, MuxEvent::PaneIconChanged { pane_id, icon_name } if *pane_id == PaneId::from_raw(1) && icon_name == "🐍python")
+        matches!(&event, MuxEvent::PaneIconChanged { pane_id, icon_name } if *pane_id == PaneId::from_raw(1) && icon_name == "\u{1f40d}python")
     );
 }
 
@@ -237,14 +206,14 @@ fn disconnected_receiver_does_not_panic() {
     let (tx, rx) = mpsc::channel();
     let wakeup = Arc::new(AtomicBool::new(false));
     let dirty = Arc::new(AtomicBool::new(false));
-    let winit_proxy = shared_proxy();
+    let noop_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
 
     let proxy = MuxEventProxy::new(
         PaneId::from_raw(1),
         tx,
         Arc::clone(&wakeup),
         Arc::clone(&dirty),
-        winit_proxy,
+        noop_wakeup,
     );
 
     // Drop the receiver to simulate a disconnected channel.
@@ -255,7 +224,7 @@ fn disconnected_receiver_does_not_panic() {
     proxy.send_event(Event::Bell);
     proxy.send_event(Event::Title("test".to_string()));
     proxy.send_event(Event::ResetTitle);
-    proxy.send_event(Event::IconName("🐍".to_string()));
+    proxy.send_event(Event::IconName("\u{1f40d}".to_string()));
     proxy.send_event(Event::ResetIconName);
     proxy.send_event(Event::PtyWrite("data".to_string()));
     proxy.send_event(Event::ChildExit(0));
@@ -289,9 +258,9 @@ fn mux_event_debug_all_variants() {
         (
             MuxEvent::PaneIconChanged {
                 pane_id: id,
-                icon_name: "🐍".to_string(),
+                icon_name: "\u{1f40d}".to_string(),
             },
-            "PaneIconChanged(Pane(1), \"🐍\")",
+            "PaneIconChanged(Pane(1), \"\u{1f40d}\")",
         ),
         (
             MuxEvent::PaneCwdChanged {

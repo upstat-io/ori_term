@@ -38,7 +38,7 @@ impl App {
         };
 
         let Some(mux) = &mut self.mux else { return };
-        match mux.create_tab(window_id, &config, theme, &self.event_proxy) {
+        match mux.create_tab(window_id, &config, theme, &self.mux_wakeup) {
             Ok((_tab_id, pane_id, pane)) => {
                 self.apply_palette_to_pane(&pane, theme);
                 self.panes.insert(pane_id, pane);

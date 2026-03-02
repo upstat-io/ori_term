@@ -93,7 +93,7 @@ impl App {
             direction,
             &config,
             theme,
-            &self.event_proxy,
+            &self.mux_wakeup,
         ) {
             Ok((new_pane_id, pane)) => {
                 self.apply_palette_to_pane(&pane, theme);
@@ -330,7 +330,7 @@ impl App {
         };
 
         let Some(mux) = &mut self.mux else { return };
-        match mux.spawn_floating_pane(tab_id, &config, theme, &self.event_proxy, &available) {
+        match mux.spawn_floating_pane(tab_id, &config, theme, &self.mux_wakeup, &available) {
             Ok((new_pane_id, pane)) => {
                 self.apply_palette_to_pane(&pane, theme);
                 self.panes.insert(new_pane_id, pane);

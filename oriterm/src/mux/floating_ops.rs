@@ -4,8 +4,7 @@
 //! Separated from the main CRUD operations to keep `mod.rs` under 500 lines.
 
 use std::io;
-
-use winit::event_loop::EventLoopProxy;
+use std::sync::Arc;
 
 use oriterm_core::Theme;
 use oriterm_mux::domain::SpawnConfig;
@@ -14,7 +13,6 @@ use oriterm_mux::layout::floating::FloatingPane;
 use oriterm_mux::{PaneId, TabId};
 
 use super::InProcessMux;
-use crate::event::TermEvent;
 use crate::mux_event::MuxNotification;
 use crate::pane::Pane;
 
@@ -31,10 +29,10 @@ impl InProcessMux {
         tab_id: TabId,
         config: &SpawnConfig,
         theme: Theme,
-        winit_proxy: &EventLoopProxy<TermEvent>,
+        wakeup: &Arc<dyn Fn() + Send + Sync>,
         available: &Rect,
     ) -> io::Result<(PaneId, Pane)> {
-        let (pane_id, pane) = self.spawn_pane(tab_id, config, theme, winit_proxy)?;
+        let (pane_id, pane) = self.spawn_pane(tab_id, config, theme, wakeup)?;
 
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             self.pane_registry.unregister(pane_id);

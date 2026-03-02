@@ -5,13 +5,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::mpsc;
 
-use winit::event_loop::EventLoopProxy;
-
 use oriterm_core::{FairMutex, Term, Theme};
 use oriterm_mux::domain::{Domain, DomainState, SpawnConfig};
 use oriterm_mux::{DomainId, PaneId};
 
-use crate::event::TermEvent;
 use crate::mux_event::{MuxEvent, MuxEventProxy};
 use crate::pane::{Pane, PaneNotifier, PaneParts};
 use crate::pty::{PtyConfig, PtyEventLoop, spawn_pty};
@@ -74,7 +71,7 @@ impl LocalDomain {
         config: &SpawnConfig,
         theme: Theme,
         mux_tx: &mpsc::Sender<MuxEvent>,
-        winit_proxy: &EventLoopProxy<TermEvent>,
+        wakeup: Arc<dyn Fn() + Send + Sync>,
     ) -> io::Result<Pane> {
         // 1. Spawn PTY with the configured shell.
         let pty_config = PtyConfig {
@@ -109,7 +106,7 @@ impl LocalDomain {
             mux_tx.clone(),
             Arc::clone(&wakeup_pending),
             Arc::clone(&grid_dirty),
-            winit_proxy.clone(),
+            wakeup,
         );
         let term = Term::new(
             usize::from(config.rows),

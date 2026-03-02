@@ -993,6 +993,8 @@ fn word_right_at_buffer_end_clamps_with_grid() {
 
 /// Create a Pane with default settings and a live PTY.
 fn make_pane(rows: u16, cols: u16) -> crate::pane::Pane {
+    use std::sync::Arc;
+
     use oriterm_mux::domain::SpawnConfig;
     use oriterm_mux::{DomainId, PaneId};
 
@@ -1007,57 +1009,14 @@ fn make_pane(rows: u16, cols: u16) -> crate::pane::Pane {
         scrollback: 1000,
         ..SpawnConfig::default()
     };
+    let noop_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     domain
         .spawn_pane(
             PaneId::from_raw(0),
             &config,
             oriterm_core::Theme::default(),
             &mux_tx,
-            &test_proxy(),
+            noop_wakeup,
         )
         .expect("pane creation should succeed")
-}
-
-/// Get a cloned winit `EventLoopProxy` for tests.
-fn test_proxy() -> winit::event_loop::EventLoopProxy<crate::event::TermEvent> {
-    use crate::event::TermEvent;
-    use std::sync::OnceLock;
-
-    static PROXY: OnceLock<winit::event_loop::EventLoopProxy<TermEvent>> = OnceLock::new();
-    PROXY
-        .get_or_init(|| {
-            let event_loop = build_event_loop();
-            let proxy = event_loop.create_proxy();
-            std::mem::forget(event_loop);
-            proxy
-        })
-        .clone()
-}
-
-/// Build a winit event loop usable from test threads.
-fn build_event_loop() -> winit::event_loop::EventLoop<crate::event::TermEvent> {
-    use crate::event::TermEvent;
-
-    #[cfg(windows)]
-    {
-        use winit::platform::windows::EventLoopBuilderExtWindows;
-        winit::event_loop::EventLoop::<TermEvent>::with_user_event()
-            .with_any_thread(true)
-            .build()
-            .expect("event loop")
-    }
-    #[cfg(target_os = "linux")]
-    {
-        use winit::platform::x11::EventLoopBuilderExtX11;
-        winit::event_loop::EventLoop::<TermEvent>::with_user_event()
-            .with_any_thread(true)
-            .build()
-            .expect("event loop")
-    }
-    #[cfg(target_os = "macos")]
-    {
-        winit::event_loop::EventLoop::<TermEvent>::with_user_event()
-            .build()
-            .expect("event loop")
-    }
 }

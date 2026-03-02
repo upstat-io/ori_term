@@ -50,7 +50,7 @@ impl App {
             shell_integration: self.config.behavior.shell_integration,
             ..oriterm_mux::domain::SpawnConfig::default()
         };
-        let tab_result = mux.create_tab(mux_window_id, &spawn_config, theme, &self.event_proxy);
+        let tab_result = mux.create_tab(mux_window_id, &spawn_config, theme, &self.mux_wakeup);
         match tab_result {
             Ok((_tab_id, pane_id, pane)) => {
                 self.apply_palette_to_pane(&pane, theme);

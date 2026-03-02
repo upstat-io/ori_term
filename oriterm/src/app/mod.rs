@@ -31,6 +31,7 @@ pub(crate) mod window_context;
 mod window_management;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use winit::event_loop::EventLoopProxy;
@@ -94,8 +95,8 @@ pub(crate) struct App {
     // Double-buffer for mux notifications (avoids per-frame allocation).
     notification_buf: Vec<MuxNotification>,
 
-    // Event loop proxy for waking the event loop from background threads.
-    event_proxy: EventLoopProxy<TermEvent>,
+    // Wakeup callback for mux event proxies (decoupled from winit for testability).
+    mux_wakeup: Arc<dyn Fn() + Send + Sync>,
 
     // Keyboard modifier state (updated on ModifiersChanged).
     modifiers: ModifiersState,
@@ -167,6 +168,9 @@ impl App {
         );
         let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
         let ui_theme = resolve_ui_theme(&config);
+        let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = event_proxy.send_event(TermEvent::MuxWakeup);
+        });
         Self {
             gpu: None,
             renderer: None,
@@ -176,7 +180,7 @@ impl App {
             panes: HashMap::new(),
             active_window: None,
             notification_buf: Vec::new(),
-            event_proxy,
+            mux_wakeup,
             modifiers: ModifiersState::empty(),
             cursor_blink: CursorBlink::new(blink_interval),
             blinking_active: false,

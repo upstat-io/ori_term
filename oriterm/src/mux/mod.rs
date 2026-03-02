@@ -12,9 +12,8 @@ mod event_pump;
 mod floating_ops;
 
 use std::io;
+use std::sync::Arc;
 use std::sync::mpsc;
-
-use winit::event_loop::EventLoopProxy;
 
 use oriterm_core::Theme;
 use oriterm_mux::domain::{Domain, SpawnConfig};
@@ -24,7 +23,6 @@ use oriterm_mux::session::{MuxTab, MuxWindow};
 use oriterm_mux::{DomainId, IdAllocator, PaneId, SessionRegistry, TabId, WindowId};
 
 use crate::domain::LocalDomain;
-use crate::event::TermEvent;
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
 
@@ -107,13 +105,17 @@ impl InProcessMux {
         tab_id: TabId,
         config: &SpawnConfig,
         theme: Theme,
-        winit_proxy: &EventLoopProxy<TermEvent>,
+        wakeup: &Arc<dyn Fn() + Send + Sync>,
     ) -> io::Result<(PaneId, Pane)> {
         let pane_id = self.pane_alloc.alloc();
         let domain_id = self.local_domain.id();
-        let pane =
-            self.local_domain
-                .spawn_pane(pane_id, config, theme, &self.event_tx, winit_proxy)?;
+        let pane = self.local_domain.spawn_pane(
+            pane_id,
+            config,
+            theme,
+            &self.event_tx,
+            Arc::clone(wakeup),
+        )?;
 
         self.pane_registry.register(PaneEntry {
             pane: pane_id,
@@ -239,10 +241,10 @@ impl InProcessMux {
         window_id: WindowId,
         config: &SpawnConfig,
         theme: Theme,
-        winit_proxy: &EventLoopProxy<TermEvent>,
+        wakeup: &Arc<dyn Fn() + Send + Sync>,
     ) -> io::Result<(TabId, PaneId, Pane)> {
         let tab_id = self.tab_alloc.alloc();
-        let (pane_id, pane) = self.spawn_pane(tab_id, config, theme, winit_proxy)?;
+        let (pane_id, pane) = self.spawn_pane(tab_id, config, theme, wakeup)?;
 
         let mux_tab = MuxTab::new(tab_id, pane_id);
         self.session.add_tab(mux_tab);
@@ -305,9 +307,9 @@ impl InProcessMux {
         direction: SplitDirection,
         config: &SpawnConfig,
         theme: Theme,
-        winit_proxy: &EventLoopProxy<TermEvent>,
+        wakeup: &Arc<dyn Fn() + Send + Sync>,
     ) -> io::Result<(PaneId, Pane)> {
-        let (new_pane_id, pane) = self.spawn_pane(tab_id, config, theme, winit_proxy)?;
+        let (new_pane_id, pane) = self.spawn_pane(tab_id, config, theme, wakeup)?;
 
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             self.pane_registry.unregister(new_pane_id);

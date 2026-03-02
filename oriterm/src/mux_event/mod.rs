@@ -12,12 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
-use winit::event_loop::EventLoopProxy;
-
 use oriterm_core::{ClipboardType, Event, EventListener};
 use oriterm_mux::{PaneId, TabId, WindowId};
-
-use crate::event::TermEvent;
 
 /// Events from pane PTY reader threads to the mux layer.
 ///
@@ -142,8 +138,8 @@ pub(crate) struct MuxEventProxy {
     wakeup_pending: Arc<AtomicBool>,
     /// Set when the pane's grid has new content to render.
     grid_dirty: Arc<AtomicBool>,
-    /// Wakes the winit event loop when events arrive.
-    winit_proxy: EventLoopProxy<TermEvent>,
+    /// Wakes the event loop when events arrive.
+    wakeup: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl MuxEventProxy {
@@ -153,21 +149,21 @@ impl MuxEventProxy {
         tx: mpsc::Sender<MuxEvent>,
         wakeup_pending: Arc<AtomicBool>,
         grid_dirty: Arc<AtomicBool>,
-        winit_proxy: EventLoopProxy<TermEvent>,
+        wakeup: Arc<dyn Fn() + Send + Sync>,
     ) -> Self {
         Self {
             pane_id,
             tx,
             wakeup_pending,
             grid_dirty,
-            winit_proxy,
+            wakeup,
         }
     }
 
-    /// Send a `MuxEvent` and wake the winit event loop.
+    /// Send a `MuxEvent` and wake the event loop.
     fn send(&self, event: MuxEvent) {
         let _ = self.tx.send(event);
-        let _ = self.winit_proxy.send_event(TermEvent::MuxWakeup);
+        (self.wakeup)();
     }
 }
 
@@ -249,7 +245,7 @@ impl EventListener for MuxEventProxy {
             }
             // Events that don't need mux routing — still wake the event loop.
             Event::ColorRequest(..) | Event::CursorBlinkingChange | Event::MouseCursorDirty => {
-                let _ = self.winit_proxy.send_event(TermEvent::MuxWakeup);
+                (self.wakeup)();
             }
         }
     }
