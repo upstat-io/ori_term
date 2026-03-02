@@ -7,8 +7,9 @@ use std::cmp;
 
 use vte::ansi::NamedPrivateMode;
 
+use crate::cell::CellFlags;
 use crate::event::EventListener;
-use crate::index::Column;
+use crate::index::{Column, Line};
 use crate::term::{Term, TermMode};
 
 /// DECRPM value: 1 = set, 2 = reset.
@@ -25,6 +26,8 @@ pub(super) fn named_private_mode_number(mode: NamedPrivateMode) -> u16 {
         NamedPrivateMode::LineWrap => 7,
         NamedPrivateMode::BlinkingCursor => 12,
         NamedPrivateMode::ShowCursor => 25,
+        NamedPrivateMode::ReverseWraparound => 45,
+        NamedPrivateMode::AltScreen => 47,
         NamedPrivateMode::ReportMouseClicks => 1000,
         NamedPrivateMode::ReportCellMouseMotion => 1002,
         NamedPrivateMode::ReportAllMouseMotion => 1003,
@@ -32,7 +35,10 @@ pub(super) fn named_private_mode_number(mode: NamedPrivateMode) -> u16 {
         NamedPrivateMode::Utf8Mouse => 1005,
         NamedPrivateMode::SgrMouse => 1006,
         NamedPrivateMode::AlternateScroll => 1007,
+        NamedPrivateMode::UrxvtMouse => 1015,
         NamedPrivateMode::UrgencyHints => 1042,
+        NamedPrivateMode::AltScreenOpt => 1047,
+        NamedPrivateMode::SaveCursor => 1048,
         NamedPrivateMode::SwapScreenAndSetRestoreCursor => 1049,
         NamedPrivateMode::BracketedPaste => 2004,
         NamedPrivateMode::SyncUpdate => 2026,
@@ -47,18 +53,22 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::LineWrap => Some(TermMode::LINE_WRAP),
         NamedPrivateMode::BlinkingCursor => Some(TermMode::CURSOR_BLINKING),
         NamedPrivateMode::ShowCursor => Some(TermMode::SHOW_CURSOR),
+        NamedPrivateMode::ReverseWraparound => Some(TermMode::REVERSE_WRAP),
+        NamedPrivateMode::AltScreen
+        | NamedPrivateMode::AltScreenOpt
+        | NamedPrivateMode::SwapScreenAndSetRestoreCursor => Some(TermMode::ALT_SCREEN),
         NamedPrivateMode::ReportMouseClicks => Some(TermMode::MOUSE_REPORT_CLICK),
         NamedPrivateMode::ReportCellMouseMotion => Some(TermMode::MOUSE_DRAG),
         NamedPrivateMode::ReportAllMouseMotion => Some(TermMode::MOUSE_MOTION),
         NamedPrivateMode::ReportFocusInOut => Some(TermMode::FOCUS_IN_OUT),
         NamedPrivateMode::Utf8Mouse => Some(TermMode::MOUSE_UTF8),
         NamedPrivateMode::SgrMouse => Some(TermMode::MOUSE_SGR),
+        NamedPrivateMode::UrxvtMouse => Some(TermMode::MOUSE_URXVT),
         NamedPrivateMode::UrgencyHints => Some(TermMode::URGENCY_HINTS),
-        NamedPrivateMode::SwapScreenAndSetRestoreCursor => Some(TermMode::ALT_SCREEN),
         NamedPrivateMode::BracketedPaste => Some(TermMode::BRACKETED_PASTE),
         NamedPrivateMode::SyncUpdate => Some(TermMode::SYNC_UPDATE),
         NamedPrivateMode::AlternateScroll => Some(TermMode::ALTERNATE_SCROLL),
-        NamedPrivateMode::ColumnMode => None,
+        NamedPrivateMode::SaveCursor | NamedPrivateMode::ColumnMode => None,
     }
 }
 
@@ -78,6 +88,32 @@ pub(super) fn crate_version_number() -> usize {
 }
 
 impl<T: EventListener> Term<T> {
+    /// Try reverse wraparound: if cursor is at column 0 and the previous
+    /// line was soft-wrapped, move cursor to the last column of that line.
+    ///
+    /// Returns `true` if the wrap happened, `false` if no-op.
+    pub(super) fn try_reverse_wrap(&mut self) -> bool {
+        let grid = self.grid_mut();
+        if grid.cursor().col().0 != 0 {
+            return false;
+        }
+        let line = grid.cursor().line();
+        if line == 0 {
+            return false;
+        }
+        let last_col = grid.cols().saturating_sub(1);
+        let prev = line - 1;
+        let wrapped = grid[Line(prev as i32)][Column(last_col)]
+            .flags
+            .contains(CellFlags::WRAP);
+        if wrapped {
+            grid.move_to(prev, Column(last_col));
+            true
+        } else {
+            false
+        }
+    }
+
     /// Origin-aware absolute cursor positioning.
     ///
     /// When ORIGIN mode is active, `line` is relative to the scroll region

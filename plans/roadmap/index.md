@@ -475,7 +475,7 @@ profile quick-launch, taskbar integration, start menu
 ---
 
 ### Section 22: Terminal Modes
-**File:** `section-22-terminal-modes.md` | **Tier:** 5 | **Status:** Not Started
+**File:** `section-22-terminal-modes.md` | **Tier:** 5 | **Status:** Mostly Complete
 
 ```
 DECSET, DECRST, terminal modes, mode table
@@ -913,7 +913,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 19 | Event Routing & Render Scheduling | `section-19-event-routing.md` | 4 | Not Started |
 | 20 | Shell Integration | `section-20-shell-integration.md` | 4 | Not Started |
 | 21 | Context Menu & Window Controls | `section-21-context-menu.md` | 4 | Not Started |
-| 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Not Started |
+| 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Mostly Complete |
 | 23 | Performance & Damage Tracking | `section-23-performance.md` | 5 | Not Started |
 | 38 | Terminal Protocol Extensions | `section-38-protocol-extensions.md` | 5 | Not Started |
 | 39 | Image Protocols | `section-39-image-protocols.md` | 5 | Not Started |

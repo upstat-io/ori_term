@@ -28,8 +28,6 @@ mod sgr;
 mod status;
 
 impl<T: EventListener> Handler for Term<T> {
-    // --- Print + Execute (C0 controls) ---
-
     /// Print a character, translated through the active charset.
     #[inline]
     fn input(&mut self, c: char) {
@@ -55,8 +53,11 @@ impl<T: EventListener> Handler for Term<T> {
         grid.put_char(c);
     }
 
-    /// Move cursor left by one column, clearing the wrap-pending state.
+    /// Move cursor left by one column, with reverse wraparound (mode 45).
     fn backspace(&mut self) {
+        if self.mode.contains(TermMode::REVERSE_WRAP) && self.try_reverse_wrap() {
+            return;
+        }
         self.grid_mut().backspace();
     }
 
@@ -116,8 +117,6 @@ impl<T: EventListener> Handler for Term<T> {
         self.charset.set_single_shift(index);
     }
 
-    // --- CSI cursor movement ---
-
     /// CUP / HVP: absolute cursor positioning (ORIGIN-aware).
     fn goto(&mut self, line: i32, col: usize) {
         self.goto_origin_aware(line, col);
@@ -168,8 +167,6 @@ impl<T: EventListener> Handler for Term<T> {
         grid.carriage_return();
     }
 
-    // --- CSI erase ---
-
     /// ED: erase in display.
     fn clear_screen(&mut self, mode: ClearMode) {
         self.selection_dirty = true;
@@ -199,8 +196,6 @@ impl<T: EventListener> Handler for Term<T> {
         self.grid_mut().erase_chars(count);
     }
 
-    // --- CSI insert / delete ---
-
     /// ICH: insert blank characters at cursor.
     fn insert_blank(&mut self, count: usize) {
         self.selection_dirty = true;
@@ -225,7 +220,6 @@ impl<T: EventListener> Handler for Term<T> {
         self.grid_mut().delete_lines(count);
     }
 
-    // --- CSI scroll ---
     /// SU: scroll up (content moves up, blank lines at bottom).
     fn scroll_up(&mut self, count: usize) {
         self.selection_dirty = true;
@@ -249,8 +243,6 @@ impl<T: EventListener> Handler for Term<T> {
         self.selection_dirty = true;
         self.grid_mut().next_line();
     }
-
-    // --- CSI tab ---
 
     /// CHT: cursor forward tabulation.
     fn move_forward_tabs(&mut self, count: u16) {
@@ -279,8 +271,6 @@ impl<T: EventListener> Handler for Term<T> {
         self.grid_mut().clear_tab_stop(clear);
     }
 
-    // --- CSI scroll region + cursor save/restore ---
-
     /// DECSTBM: set scroll region.
     fn set_scrolling_region(&mut self, top: usize, bottom: Option<usize>) {
         self.grid_mut().set_scroll_region(top, bottom);
@@ -297,8 +287,6 @@ impl<T: EventListener> Handler for Term<T> {
     fn restore_cursor_position(&mut self) {
         self.grid_mut().restore_cursor();
     }
-
-    // --- CSI mode setting ---
 
     /// SM: set ANSI mode.
     fn set_mode(&mut self, mode: Mode) {
@@ -348,7 +336,15 @@ impl<T: EventListener> Handler for Term<T> {
         self.status_report_private_mode(mode);
     }
 
-    // --- CSI device status ---
+    /// XTSAVE: save current state of private mode values.
+    fn save_private_mode_values(&mut self, modes: &[u16]) {
+        self.apply_xtsave(modes);
+    }
+
+    /// XTRESTORE: restore previously saved private mode values.
+    fn restore_private_mode_values(&mut self, modes: &[u16]) {
+        self.apply_xtrestore(modes);
+    }
 
     /// DA: device attributes response.
     fn identify_terminal(&mut self, intermediate: Option<char>) {
@@ -365,8 +361,6 @@ impl<T: EventListener> Handler for Term<T> {
         self.status_text_area_size_chars();
     }
 
-    // --- ESC sequences (keypad mode, reset) ---
-
     /// DECKPAM: set application keypad mode.
     fn set_keypad_application_mode(&mut self) {
         self.mode.insert(TermMode::APP_KEYPAD);
@@ -382,16 +376,12 @@ impl<T: EventListener> Handler for Term<T> {
         self.esc_reset_state();
     }
 
-    // --- SGR (Select Graphic Rendition) ---
-
     /// SGR: set a terminal attribute (bold, italic, colors, etc.).
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         let template = &mut self.grid_mut().cursor_mut().template;
         sgr::apply(template, &attr);
     }
-
-    // --- OSC (Operating System Commands) ---
 
     /// OSC 0/2: set window title.
     fn set_title(&mut self, title: Option<String>) {
@@ -442,8 +432,6 @@ impl<T: EventListener> Handler for Term<T> {
     fn set_hyperlink(&mut self, hyperlink: Option<VteHyperlink>) {
         self.osc_set_hyperlink(hyperlink);
     }
-
-    // --- DCS + Misc (cursor shape, keyboard protocol) ---
 
     /// DECSCUSR: set cursor shape and blinking state.
     fn set_cursor_style(&mut self, style: Option<CursorStyle>) {

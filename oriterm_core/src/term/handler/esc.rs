@@ -48,6 +48,7 @@ impl<T: EventListener> Term<T> {
         self.last_command_duration = None;
         self.has_explicit_title = false;
         self.title_dirty = true;
+        self.saved_private_modes.clear();
 
         self.event_listener.send_event(Event::ResetTitle);
     }

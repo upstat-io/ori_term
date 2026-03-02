@@ -361,7 +361,7 @@ fn dectcem_hides_cursor() {
     // CSI ? 25 l — hide cursor.
     feed(&mut t, b"\x1b[?25l");
 
-    assert!(!t.mode().contains(crate::term::TermMode::SHOW_CURSOR));
+    assert!(!t.mode().contains(TermMode::SHOW_CURSOR));
 }
 
 #[test]
@@ -371,7 +371,7 @@ fn dectcem_shows_cursor() {
     feed(&mut t, b"\x1b[?25l");
     feed(&mut t, b"\x1b[?25h");
 
-    assert!(t.mode().contains(crate::term::TermMode::SHOW_CURSOR));
+    assert!(t.mode().contains(TermMode::SHOW_CURSOR));
 }
 
 #[test]
@@ -381,7 +381,7 @@ fn decset_alt_screen_switches_to_alt() {
     // CSI ? 1049 h — switch to alt screen.
     feed(&mut t, b"\x1b[?1049h");
 
-    assert!(t.mode().contains(crate::term::TermMode::ALT_SCREEN));
+    assert!(t.mode().contains(TermMode::ALT_SCREEN));
     // Alt screen should be clear.
     assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, ' ');
 }
@@ -394,7 +394,7 @@ fn decrst_alt_screen_switches_back() {
     feed(&mut t, b"alt");
     feed(&mut t, b"\x1b[?1049l"); // Leave alt.
 
-    assert!(!t.mode().contains(crate::term::TermMode::ALT_SCREEN));
+    assert!(!t.mode().contains(TermMode::ALT_SCREEN));
     // Primary screen content restored.
     assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'h');
 }
@@ -794,7 +794,7 @@ fn deckpam_sets_application_keypad() {
     // ESC = — DECKPAM.
     feed(&mut t, b"\x1b=");
 
-    assert!(t.mode().contains(crate::term::TermMode::APP_KEYPAD));
+    assert!(t.mode().contains(TermMode::APP_KEYPAD));
 }
 
 #[test]
@@ -804,7 +804,7 @@ fn deckpnm_resets_application_keypad() {
     // ESC > — DECKPNM.
     feed(&mut t, b"\x1b>");
 
-    assert!(!t.mode().contains(crate::term::TermMode::APP_KEYPAD));
+    assert!(!t.mode().contains(TermMode::APP_KEYPAD));
 }
 
 // --- Tab CSI tests ---
@@ -2493,7 +2493,7 @@ fn esc_c_ris_resets_all_state() {
     // Title should be cleared.
     assert!(t.title().is_empty());
     // Mode should be default.
-    assert_eq!(t.mode(), super::super::TermMode::default());
+    assert_eq!(t.mode(), TermMode::default());
     // Charset should be back to ASCII (not DEC special graphics).
     let mut charset = t.charset().clone();
     assert_eq!(charset.translate('q'), 'q');
@@ -2708,11 +2708,11 @@ fn esc_c_ris_exits_alt_screen() {
     // Write on primary, switch to alt.
     feed(&mut t, b"PRIMARY");
     feed(&mut t, b"\x1b[?1049h"); // DECSET 1049: enter alt screen
-    assert!(t.mode().contains(super::super::TermMode::ALT_SCREEN));
+    assert!(t.mode().contains(TermMode::ALT_SCREEN));
     // RIS should exit alt screen.
     feed(&mut t, b"\x1bc");
     assert!(
-        !t.mode().contains(super::super::TermMode::ALT_SCREEN),
+        !t.mode().contains(TermMode::ALT_SCREEN),
         "RIS should exit alt screen",
     );
 }
@@ -2840,13 +2840,13 @@ fn esc_c_ris_resets_origin_mode() {
     let mut t = term();
     // Set origin mode.
     feed(&mut t, b"\x1b[?6h"); // DECSET 6: origin mode
-    assert!(t.mode().contains(super::super::TermMode::ORIGIN));
+    assert!(t.mode().contains(TermMode::ORIGIN));
     // Move cursor.
     feed(&mut t, b"\x1b[3;5H");
     // RIS.
     feed(&mut t, b"\x1bc");
     assert!(
-        !t.mode().contains(super::super::TermMode::ORIGIN),
+        !t.mode().contains(TermMode::ORIGIN),
         "RIS should reset origin mode",
     );
     assert_eq!(
@@ -2915,7 +2915,7 @@ fn decscusr_1_sets_blinking_block() {
 
     assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Block);
     assert!(
-        t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        t.mode().contains(TermMode::CURSOR_BLINKING),
         "CSI 1 q should enable blinking"
     );
 }
@@ -2927,7 +2927,7 @@ fn decscusr_2_sets_steady_block() {
 
     assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Block);
     assert!(
-        !t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        !t.mode().contains(TermMode::CURSOR_BLINKING),
         "CSI 2 q should disable blinking"
     );
 }
@@ -2939,7 +2939,7 @@ fn decscusr_5_sets_blinking_bar() {
 
     assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
     assert!(
-        t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        t.mode().contains(TermMode::CURSOR_BLINKING),
         "CSI 5 q should enable blinking"
     );
 }
@@ -2951,7 +2951,7 @@ fn decscusr_6_sets_steady_bar() {
 
     assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
     assert!(
-        !t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        !t.mode().contains(TermMode::CURSOR_BLINKING),
         "CSI 6 q should disable blinking"
     );
 }
@@ -2962,7 +2962,7 @@ fn decscusr_3_sets_blinking_underline() {
     feed(&mut t, b"\x1b[3 q");
 
     assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Underline);
-    assert!(t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+    assert!(t.mode().contains(TermMode::CURSOR_BLINKING));
 }
 
 #[test]
@@ -2971,7 +2971,7 @@ fn decscusr_4_sets_steady_underline() {
     feed(&mut t, b"\x1b[4 q");
 
     assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Underline);
-    assert!(!t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+    assert!(!t.mode().contains(TermMode::CURSOR_BLINKING));
 }
 
 #[test]
@@ -3008,8 +3008,7 @@ fn push_keyboard_mode_1() {
 
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     assert!(
-        t.mode()
-            .contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES),
+        t.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
         "push_keyboard_mode(1) should set DISAMBIGUATE_ESC_CODES"
     );
 }
@@ -3021,11 +3020,8 @@ fn push_keyboard_mode_3() {
     feed(&mut t, b"\x1b[>3u");
 
     assert_eq!(t.keyboard_mode_stack().len(), 1);
-    assert!(
-        t.mode()
-            .contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES)
-    );
-    assert!(t.mode().contains(crate::term::TermMode::REPORT_EVENT_TYPES));
+    assert!(t.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+    assert!(t.mode().contains(TermMode::REPORT_EVENT_TYPES));
 }
 
 #[test]
@@ -3040,12 +3036,9 @@ fn pop_keyboard_mode() {
     feed(&mut t, b"\x1b[<u");
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     // Active mode should be the remaining mode (1 = DISAMBIGUATE_ESC_CODES).
+    assert!(t.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
     assert!(
-        t.mode()
-            .contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES)
-    );
-    assert!(
-        !t.mode().contains(crate::term::TermMode::REPORT_EVENT_TYPES),
+        !t.mode().contains(TermMode::REPORT_EVENT_TYPES),
         "after pop, only first pushed mode should remain active"
     );
 }
@@ -3060,8 +3053,7 @@ fn pop_all_keyboard_modes() {
     feed(&mut t, b"\x1b[<2u");
     assert!(t.keyboard_mode_stack().is_empty());
     assert!(
-        !t.mode()
-            .intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL),
+        !t.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
         "all kitty flags should be cleared after popping all modes"
     );
 }
@@ -3128,10 +3120,7 @@ fn ris_clears_keyboard_mode_stack_and_flags() {
     // RIS.
     feed(&mut t, b"\x1bc");
     assert!(t.keyboard_mode_stack().is_empty());
-    assert!(
-        !t.mode()
-            .intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL)
-    );
+    assert!(!t.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
 }
 
 #[test]
@@ -3181,10 +3170,7 @@ fn pop_more_than_stack_depth_clamps() {
     // Pop 999 from a stack of 2 — should clamp to empty.
     feed(&mut t, b"\x1b[<999u");
     assert!(t.keyboard_mode_stack().is_empty());
-    assert!(
-        !t.mode()
-            .intersects(crate::term::TermMode::KITTY_KEYBOARD_PROTOCOL)
-    );
+    assert!(!t.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
 }
 
 #[test]
@@ -3209,8 +3195,7 @@ fn keyboard_mode_stack_survives_alt_screen_swap() {
     feed(&mut t, b"\x1b[?1049l");
     assert_eq!(t.keyboard_mode_stack().len(), 1);
     assert!(
-        t.mode()
-            .contains(crate::term::TermMode::DISAMBIGUATE_ESC_CODES),
+        t.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES),
         "primary stack mode should be restored after alt screen exit"
     );
 }
@@ -3220,23 +3205,23 @@ fn decscusr_set_same_shape_twice_is_idempotent() {
     let (mut t, _listener) = term_with_recorder();
     feed(&mut t, b"\x1b[5 q");
     assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
-    assert!(t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+    assert!(t.mode().contains(TermMode::CURSOR_BLINKING));
 
     // Set the same shape again.
     feed(&mut t, b"\x1b[5 q");
     assert_eq!(t.cursor_shape(), crate::grid::CursorShape::Bar);
-    assert!(t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+    assert!(t.mode().contains(TermMode::CURSOR_BLINKING));
 }
 
 #[test]
 fn ris_clears_cursor_blinking() {
     let (mut t, _listener) = term_with_recorder();
     feed(&mut t, b"\x1b[5 q");
-    assert!(t.mode().contains(crate::term::TermMode::CURSOR_BLINKING));
+    assert!(t.mode().contains(TermMode::CURSOR_BLINKING));
 
     feed(&mut t, b"\x1bc");
     assert!(
-        !t.mode().contains(crate::term::TermMode::CURSOR_BLINKING),
+        !t.mode().contains(TermMode::CURSOR_BLINKING),
         "RIS should clear cursor blinking flag"
     );
 }
@@ -4392,4 +4377,269 @@ fn ris_clears_all_visible_lines() {
             "line {line} col 0 should be blank after RIS, got {ch:?}"
         );
     }
+}
+
+// --- Mouse mutual exclusion ---
+
+use super::super::TermMode;
+
+#[test]
+fn mouse_mode_1003_clears_1000_and_1002() {
+    let mut t = term();
+    // Set mode 1000 (report clicks).
+    feed(&mut t, b"\x1b[?1000h");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+
+    // Set mode 1003 (all motion) — should clear 1000.
+    feed(&mut t, b"\x1b[?1003h");
+    assert!(t.mode().contains(TermMode::MOUSE_MOTION));
+    assert!(!t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+    assert!(!t.mode().contains(TermMode::MOUSE_DRAG));
+}
+
+#[test]
+fn mouse_mode_1002_clears_1000_and_1003() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1003h");
+    assert!(t.mode().contains(TermMode::MOUSE_MOTION));
+
+    feed(&mut t, b"\x1b[?1002h");
+    assert!(t.mode().contains(TermMode::MOUSE_DRAG));
+    assert!(!t.mode().contains(TermMode::MOUSE_MOTION));
+    assert!(!t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+}
+
+#[test]
+fn mouse_encoding_1006_clears_1005_and_1015() {
+    let mut t = term();
+    // Set UTF-8 mouse.
+    feed(&mut t, b"\x1b[?1005h");
+    assert!(t.mode().contains(TermMode::MOUSE_UTF8));
+
+    // Set SGR mouse — should clear UTF-8.
+    feed(&mut t, b"\x1b[?1006h");
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+    assert!(!t.mode().contains(TermMode::MOUSE_UTF8));
+    assert!(!t.mode().contains(TermMode::MOUSE_URXVT));
+}
+
+#[test]
+fn mouse_encoding_1015_clears_1005_and_1006() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1006h");
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+
+    feed(&mut t, b"\x1b[?1015h");
+    assert!(t.mode().contains(TermMode::MOUSE_URXVT));
+    assert!(!t.mode().contains(TermMode::MOUSE_SGR));
+    assert!(!t.mode().contains(TermMode::MOUSE_UTF8));
+}
+
+// --- Legacy alt screen ---
+
+#[test]
+fn mode_47_swaps_without_cursor_save() {
+    let mut t = term();
+    // Move cursor to (5, 10).
+    feed(&mut t, b"\x1b[6;11H");
+    assert_eq!(t.grid().cursor().line(), 5);
+    assert_eq!(t.grid().cursor().col(), Column(10));
+
+    // Enter alt screen (mode 47).
+    feed(&mut t, b"\x1b[?47h");
+    assert!(t.mode().contains(TermMode::ALT_SCREEN));
+    // Cursor is NOT saved; alt screen cursor starts at origin.
+    // (The alt grid's cursor was never explicitly set, so it's at 0,0.)
+
+    // Move cursor in alt screen.
+    feed(&mut t, b"\x1b[3;5H");
+    assert_eq!(t.grid().cursor().line(), 2);
+    assert_eq!(t.grid().cursor().col(), Column(4));
+
+    // Leave alt screen (mode 47).
+    feed(&mut t, b"\x1b[?47l");
+    assert!(!t.mode().contains(TermMode::ALT_SCREEN));
+    // Cursor is NOT restored — whatever was on primary grid stays.
+    // We verify alt screen was exited.
+}
+
+#[test]
+fn mode_1047_clears_alt_on_enter() {
+    let mut t = term();
+    // Enter alt screen with mode 1049 first (which saves/restores).
+    feed(&mut t, b"\x1b[?1049h");
+    // Write content.
+    feed(&mut t, b"ALTTEXT");
+    // Leave alt screen.
+    feed(&mut t, b"\x1b[?1049l");
+
+    // Now enter alt screen with mode 1047 — alt should be cleared.
+    feed(&mut t, b"\x1b[?1047h");
+    assert!(t.mode().contains(TermMode::ALT_SCREEN));
+
+    // Verify alt grid is clean (first cell is blank).
+    let ch = t.grid()[crate::index::Line(0)][Column(0)].ch;
+    assert!(
+        ch == ' ' || ch == '\0',
+        "alt grid should be cleared on mode 1047 enter, got {ch:?}"
+    );
+
+    feed(&mut t, b"\x1b[?1047l");
+    assert!(!t.mode().contains(TermMode::ALT_SCREEN));
+}
+
+#[test]
+fn mode_1048_saves_and_restores_cursor() {
+    let mut t = term();
+    // Move cursor to (3, 7).
+    feed(&mut t, b"\x1b[4;8H");
+    assert_eq!(t.grid().cursor().line(), 3);
+    assert_eq!(t.grid().cursor().col(), Column(7));
+
+    // Save cursor (mode 1048 DECSET).
+    feed(&mut t, b"\x1b[?1048h");
+
+    // Move cursor elsewhere.
+    feed(&mut t, b"\x1b[1;1H");
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+
+    // Restore cursor (mode 1048 DECRST).
+    feed(&mut t, b"\x1b[?1048l");
+    assert_eq!(t.grid().cursor().line(), 3);
+    assert_eq!(t.grid().cursor().col(), Column(7));
+}
+
+// --- Reverse wraparound (mode 45) ---
+
+#[test]
+fn reverse_wrap_at_col0_wraps_to_previous_wrapped_line() {
+    let mut t = Term::new(24, 10, 0, Theme::default(), crate::event::VoidListener);
+    // Enable reverse wraparound.
+    feed(&mut t, b"\x1b[?45h");
+    assert!(t.mode().contains(TermMode::REVERSE_WRAP));
+
+    // Fill first line and force wrap with one more char.
+    feed(&mut t, b"1234567890X");
+    // "1234567890" fills line 0, WRAP flag set, "X" goes to line 1 col 0.
+    assert_eq!(t.grid().cursor().line(), 1);
+    assert_eq!(t.grid().cursor().col(), Column(1));
+
+    // Move to col 0.
+    feed(&mut t, b"\r");
+    assert_eq!(t.grid().cursor().col(), Column(0));
+
+    // BS should wrap back to line 0, col 9 (last col of wrapped line).
+    feed(&mut t, b"\x08");
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(9));
+}
+
+#[test]
+fn reverse_wrap_at_col0_noop_if_not_wrapped() {
+    let mut t = Term::new(24, 10, 0, Theme::default(), crate::event::VoidListener);
+    feed(&mut t, b"\x1b[?45h");
+
+    // Write a short line (no wrap) and move to start of next line.
+    feed(&mut t, b"hello\r\n");
+    assert_eq!(t.grid().cursor().line(), 1);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+
+    // BS at col 0: previous line was NOT soft-wrapped, so no-op.
+    feed(&mut t, b"\x08");
+    assert_eq!(t.grid().cursor().line(), 1);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+#[test]
+fn reverse_wrap_disabled_does_not_wrap() {
+    let mut t = Term::new(24, 10, 0, Theme::default(), crate::event::VoidListener);
+    // Do NOT enable mode 45.
+
+    // Fill first line and force wrap.
+    feed(&mut t, b"1234567890X");
+    assert_eq!(t.grid().cursor().line(), 1);
+
+    // Move to col 0.
+    feed(&mut t, b"\r");
+    assert_eq!(t.grid().cursor().col(), Column(0));
+
+    // BS should stay at col 0 (normal behavior, no reverse wrap).
+    feed(&mut t, b"\x08");
+    assert_eq!(t.grid().cursor().line(), 1);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+// --- XTSAVE/XTRESTORE ---
+
+#[test]
+fn xtsave_xtrestore_saves_and_restores_mode() {
+    let mut t = term();
+    // Verify cursor is visible (default).
+    assert!(t.mode().contains(TermMode::SHOW_CURSOR));
+
+    // Save mode 25 (show cursor).
+    feed(&mut t, b"\x1b[?25s");
+
+    // Clear mode 25.
+    feed(&mut t, b"\x1b[?25l");
+    assert!(!t.mode().contains(TermMode::SHOW_CURSOR));
+
+    // Restore mode 25 — should re-enable.
+    feed(&mut t, b"\x1b[?25r");
+    assert!(t.mode().contains(TermMode::SHOW_CURSOR));
+}
+
+#[test]
+fn xtrestore_without_save_is_noop() {
+    let mut t = term();
+    let before = t.mode();
+    // Restore mode 25 without saving — should be no-op.
+    feed(&mut t, b"\x1b[?25r");
+    assert_eq!(t.mode(), before);
+}
+
+#[test]
+fn xtsave_xtrestore_multiple_modes_independently() {
+    let mut t = term();
+    // Enable bracketed paste.
+    feed(&mut t, b"\x1b[?2004h");
+    assert!(t.mode().contains(TermMode::BRACKETED_PASTE));
+
+    // Save modes 25 and 2004.
+    feed(&mut t, b"\x1b[?25;2004s");
+
+    // Disable both.
+    feed(&mut t, b"\x1b[?25l\x1b[?2004l");
+    assert!(!t.mode().contains(TermMode::SHOW_CURSOR));
+    assert!(!t.mode().contains(TermMode::BRACKETED_PASTE));
+
+    // Restore both.
+    feed(&mut t, b"\x1b[?25;2004r");
+    assert!(t.mode().contains(TermMode::SHOW_CURSOR));
+    assert!(t.mode().contains(TermMode::BRACKETED_PASTE));
+}
+
+#[test]
+fn ris_clears_saved_private_modes() {
+    let mut t = term();
+    // Save mode 25.
+    feed(&mut t, b"\x1b[?25s");
+    // Disable mode 25.
+    feed(&mut t, b"\x1b[?25l");
+
+    // Full reset.
+    feed(&mut t, b"\x1bc");
+
+    // Restore should be no-op (saved modes cleared by RIS).
+    // Mode 25 is set by default after RIS.
+    assert!(t.mode().contains(TermMode::SHOW_CURSOR));
+
+    // Disable it again.
+    feed(&mut t, b"\x1b[?25l");
+    assert!(!t.mode().contains(TermMode::SHOW_CURSOR));
+
+    // Restore — should still be no-op.
+    feed(&mut t, b"\x1b[?25r");
+    assert!(!t.mode().contains(TermMode::SHOW_CURSOR));
 }

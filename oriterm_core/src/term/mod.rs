@@ -5,6 +5,7 @@
 //! `vte::ansi::Handler` trait. Generic over `EventListener` for decoupling
 //! from the UI layer.
 
+mod alt_screen;
 pub mod charset;
 mod handler;
 pub mod mode;
@@ -15,7 +16,7 @@ pub use charset::CharsetState;
 pub use mode::TermMode;
 pub use renderable::{DamageLine, RenderableCell, RenderableContent, RenderableCursor, TermDamage};
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use vte::ansi::KeyboardModes;
 
@@ -150,6 +151,8 @@ pub struct Term<T: EventListener> {
     has_explicit_title: bool,
     /// Title dirty flag — set when CWD or explicit title changes.
     title_dirty: bool,
+    /// XTSAVE/XTRESTORE: saved private mode values (single save per mode).
+    saved_private_modes: HashMap<u16, bool>,
 }
 
 impl<T: EventListener> Term<T> {
@@ -181,6 +184,7 @@ impl<T: EventListener> Term<T> {
             last_command_duration: None,
             has_explicit_title: false,
             title_dirty: false,
+            saved_private_modes: HashMap::new(),
         }
     }
 
@@ -467,30 +471,8 @@ impl<T: EventListener> Term<T> {
         self.selection_dirty = true;
     }
 
-    /// Switch between primary and alternate screen.
-    ///
-    /// Saves/restores cursor, toggles `TermMode::ALT_SCREEN`, swaps keyboard
-    /// mode stacks, and marks all lines dirty. Also marks selection as dirty
-    /// since screen content changes completely.
-    pub fn swap_alt(&mut self) {
-        self.selection_dirty = true;
-        if self.mode.contains(TermMode::ALT_SCREEN) {
-            // Switching back to primary: save alt cursor, restore primary cursor.
-            self.alt_grid.save_cursor();
-            self.grid.restore_cursor();
-        } else {
-            // Switching to alt: save primary cursor, restore alt cursor.
-            self.grid.save_cursor();
-            self.alt_grid.restore_cursor();
-        }
-
-        self.mode.toggle(TermMode::ALT_SCREEN);
-        std::mem::swap(
-            &mut self.keyboard_mode_stack,
-            &mut self.inactive_keyboard_mode_stack,
-        );
-        self.grid_mut().dirty_mut().mark_all();
-    }
+    // Alt screen swap methods (swap_alt, swap_alt_no_cursor, swap_alt_clear)
+    // are in `alt_screen.rs`.
 }
 
 /// Extract the last path component from a CWD path for tab display.

@@ -179,6 +179,20 @@ fn encode_utf8(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
     cursor.position() as usize
 }
 
+/// Encode a mouse event in URXVT format.
+///
+/// Format: `\x1b[Cb;Cx;CyM` where Cb = 32 + button code,
+/// Cx/Cy are 1-indexed decimal. No press/release distinction
+/// (all events use `M` suffix).
+fn encode_urxvt(buf: &mut [u8], code: u8, col: usize, line: usize) -> usize {
+    let cb = 32 + u32::from(code);
+    let mut cursor = Cursor::new(buf);
+    let Ok(()) = write!(cursor, "\x1b[{cb};{};{}M", col + 1, line + 1) else {
+        return 0;
+    };
+    cursor.position() as usize
+}
+
 /// Encode a mouse event in Normal (X10) format.
 ///
 /// Format: `\x1b[M` + 3 bytes (button, col, line).
@@ -217,7 +231,8 @@ pub(crate) struct MouseEvent {
 
 /// Encode a mouse event, selecting the format based on terminal mode.
 ///
-/// Priority: SGR > UTF-8 > Normal. Returns the encoded bytes in the buffer.
+/// Priority: SGR > URXVT > UTF-8 > Normal. Returns the encoded bytes in
+/// the buffer.
 pub(crate) fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf {
     let mut buf = MouseReportBuf::new();
     let code = apply_modifiers(button_code(event.button, event.kind), event.mods);
@@ -225,6 +240,8 @@ pub(crate) fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseRep
 
     buf.len = if mode.contains(TermMode::MOUSE_SGR) {
         encode_sgr(&mut buf.data, code, event.col, event.line, pressed)
+    } else if mode.contains(TermMode::MOUSE_URXVT) {
+        encode_urxvt(&mut buf.data, code, event.col, event.line)
     } else if mode.contains(TermMode::MOUSE_UTF8) {
         encode_utf8(&mut buf.data, code, event.col, event.line)
     } else {

@@ -125,3 +125,23 @@ fn keyboard_modes_no_mode_converts_to_empty() {
     let term_mode = TermMode::from(KeyboardModes::NO_MODE);
     assert!(!term_mode.intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
 }
+
+#[test]
+fn any_mouse_encoding_is_union_of_encoding_modes() {
+    let expected = TermMode::MOUSE_SGR | TermMode::MOUSE_UTF8 | TermMode::MOUSE_URXVT;
+    assert_eq!(TermMode::ANY_MOUSE_ENCODING, expected);
+}
+
+#[test]
+fn new_flags_are_distinct() {
+    assert!(TermMode::REVERSE_WRAP.bits().is_power_of_two());
+    assert!(TermMode::MOUSE_URXVT.bits().is_power_of_two());
+    assert_ne!(TermMode::REVERSE_WRAP, TermMode::MOUSE_URXVT);
+}
+
+#[test]
+fn default_does_not_have_new_modes() {
+    let mode = TermMode::default();
+    assert!(!mode.contains(TermMode::REVERSE_WRAP));
+    assert!(!mode.contains(TermMode::MOUSE_URXVT));
+}

@@ -62,11 +62,19 @@ bitflags! {
         const REPORT_ASSOCIATED_TEXT  = 1 << 22;
         /// Mode 1007 — alternate scroll (wheel sends arrow keys in alt screen).
         const ALTERNATE_SCROLL       = 1 << 23;
+        /// Mode 45 — reverse wraparound (BS wraps to previous line).
+        const REVERSE_WRAP           = 1 << 24;
+        /// Mode 1015 — URXVT mouse encoding.
+        const MOUSE_URXVT            = 1 << 25;
 
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()
                         | Self::MOUSE_DRAG.bits()
                         | Self::MOUSE_MOTION.bits();
+        /// Computed: any mouse encoding mode is active.
+        const ANY_MOUSE_ENCODING = Self::MOUSE_SGR.bits()
+                                 | Self::MOUSE_UTF8.bits()
+                                 | Self::MOUSE_URXVT.bits();
         /// Computed: all Kitty keyboard protocol flags.
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()

@@ -652,6 +652,12 @@ pub trait Handler {
     /// DECRPM - report private mode.
     fn report_private_mode(&mut self, _mode: PrivateMode) {}
 
+    /// XTSAVE — save private mode values.
+    fn save_private_mode_values(&mut self, _modes: &[u16]) {}
+
+    /// XTRESTORE — restore private mode values.
+    fn restore_private_mode_values(&mut self, _modes: &[u16]) {}
+
     /// DECSTBM - Set the terminal scrolling region.
     fn set_scrolling_region(&mut self, _top: usize, _bottom: Option<usize>) {}
 
@@ -904,7 +910,8 @@ pub enum PrivateMode {
 }
 
 impl PrivateMode {
-    fn new(mode: u16) -> Self {
+    /// Map a mode number to a named or unknown private mode.
+    pub fn new(mode: u16) -> Self {
         match mode {
             1 => Self::Named(NamedPrivateMode::CursorKeys),
             3 => Self::Named(NamedPrivateMode::ColumnMode),
@@ -912,6 +919,8 @@ impl PrivateMode {
             7 => Self::Named(NamedPrivateMode::LineWrap),
             12 => Self::Named(NamedPrivateMode::BlinkingCursor),
             25 => Self::Named(NamedPrivateMode::ShowCursor),
+            45 => Self::Named(NamedPrivateMode::ReverseWraparound),
+            47 => Self::Named(NamedPrivateMode::AltScreen),
             1000 => Self::Named(NamedPrivateMode::ReportMouseClicks),
             1002 => Self::Named(NamedPrivateMode::ReportCellMouseMotion),
             1003 => Self::Named(NamedPrivateMode::ReportAllMouseMotion),
@@ -919,7 +928,10 @@ impl PrivateMode {
             1005 => Self::Named(NamedPrivateMode::Utf8Mouse),
             1006 => Self::Named(NamedPrivateMode::SgrMouse),
             1007 => Self::Named(NamedPrivateMode::AlternateScroll),
+            1015 => Self::Named(NamedPrivateMode::UrxvtMouse),
             1042 => Self::Named(NamedPrivateMode::UrgencyHints),
+            1047 => Self::Named(NamedPrivateMode::AltScreenOpt),
+            1048 => Self::Named(NamedPrivateMode::SaveCursor),
             1049 => Self::Named(NamedPrivateMode::SwapScreenAndSetRestoreCursor),
             2004 => Self::Named(NamedPrivateMode::BracketedPaste),
             2026 => Self::Named(NamedPrivateMode::SyncUpdate),
@@ -962,6 +974,10 @@ pub enum NamedPrivateMode {
     LineWrap = 7,
     BlinkingCursor = 12,
     ShowCursor = 25,
+    /// DECAWM reverse wraparound — BS at column 0 wraps to previous line.
+    ReverseWraparound = 45,
+    /// Legacy alt screen (no cursor save/restore).
+    AltScreen = 47,
     ReportMouseClicks = 1000,
     ReportCellMouseMotion = 1002,
     ReportAllMouseMotion = 1003,
@@ -969,7 +985,13 @@ pub enum NamedPrivateMode {
     Utf8Mouse = 1005,
     SgrMouse = 1006,
     AlternateScroll = 1007,
+    /// URXVT-style mouse encoding (`ESC[Cb;Cx;CyM`).
+    UrxvtMouse = 1015,
     UrgencyHints = 1042,
+    /// Alt screen with clear on enter (no cursor save/restore).
+    AltScreenOpt = 1047,
+    /// Save/restore cursor (standalone, no screen swap).
+    SaveCursor = 1048,
     SwapScreenAndSetRestoreCursor = 1049,
     BracketedPaste = 2004,
     /// The mode is handled automatically by [`Processor`].
@@ -1773,8 +1795,18 @@ where
 
                 handler.set_scrolling_region(top, bottom);
             },
+            ('r', [b'?']) => {
+                // XTRESTORE: restore saved private mode values.
+                let modes: Vec<u16> = params_iter.map(|p| p[0]).collect();
+                handler.restore_private_mode_values(&modes);
+            },
             ('S', []) => handler.scroll_up(next_param_or(1) as usize),
             ('s', []) => handler.save_cursor_position(),
+            ('s', [b'?']) => {
+                // XTSAVE: save private mode values.
+                let modes: Vec<u16> = params_iter.map(|p| p[0]).collect();
+                handler.save_private_mode_values(&modes);
+            },
             ('T', []) => handler.scroll_down(next_param_or(1) as usize),
             ('t', []) => match next_param_or(1) as usize {
                 14 => handler.text_area_size_pixels(),

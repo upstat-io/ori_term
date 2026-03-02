@@ -969,3 +969,55 @@ fn all_modifier_combinations_all_buttons() {
         }
     }
 }
+
+// --- URXVT encoding ---
+
+#[test]
+fn urxvt_left_click_at_origin() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT;
+    let e = event(MouseButton::Left, MouseEventKind::Press, 0, 0);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Button code = 32 + 0 = 32, col = 1, line = 1.
+    assert_eq!(bytes, b"\x1b[32;1;1M");
+}
+
+#[test]
+fn urxvt_right_click_at_large_coords() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT;
+    let e = event(MouseButton::Right, MouseEventKind::Press, 500, 300);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Button code = 32 + 2 = 34, col = 501, line = 301.
+    assert_eq!(bytes, b"\x1b[34;501;301M");
+}
+
+#[test]
+fn urxvt_scroll_up() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT;
+    let e = event(MouseButton::ScrollUp, MouseEventKind::Press, 5, 10);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Button code = 32 + 64 = 96, col = 6, line = 11.
+    assert_eq!(bytes, b"\x1b[96;6;11M");
+}
+
+#[test]
+fn urxvt_has_higher_priority_than_utf8() {
+    // When both URXVT and UTF-8 are set, URXVT wins.
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT | TermMode::MOUSE_UTF8;
+    let e = event(MouseButton::Left, MouseEventKind::Press, 0, 0);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Should be URXVT format, not UTF-8.
+    assert_eq!(bytes, b"\x1b[32;1;1M");
+}
+
+#[test]
+fn sgr_has_higher_priority_than_urxvt() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_SGR | TermMode::MOUSE_URXVT;
+    let e = event(MouseButton::Left, MouseEventKind::Press, 0, 0);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Should be SGR format.
+    let s = std::str::from_utf8(&bytes).unwrap();
+    assert!(
+        s.starts_with("\x1b[<"),
+        "SGR should take priority over URXVT"
+    );
+}
