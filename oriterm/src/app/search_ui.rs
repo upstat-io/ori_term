@@ -7,7 +7,7 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, NamedKey};
 
 use super::App;
-use crate::pane::Pane;
+use oriterm_mux::pane::Pane;
 
 impl App {
     /// Open the search bar for the active pane.

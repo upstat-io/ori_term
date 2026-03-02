@@ -5,7 +5,7 @@ use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side};
 
 use super::motion::{self, AbsCursor, GridBounds};
 use super::{extend_or_create_selection, select_all};
-use crate::pane::MarkCursor;
+use oriterm_mux::pane::MarkCursor;
 
 // ---------------------------------------------------------------------------
 // GridBounds helpers
@@ -992,14 +992,14 @@ fn word_right_at_buffer_end_clamps_with_grid() {
 // ---------------------------------------------------------------------------
 
 /// Create a Pane with default settings and a live PTY.
-fn make_pane(rows: u16, cols: u16) -> crate::pane::Pane {
+fn make_pane(rows: u16, cols: u16) -> oriterm_mux::pane::Pane {
     use std::sync::Arc;
 
     use oriterm_mux::domain::SpawnConfig;
     use oriterm_mux::{DomainId, PaneId};
 
-    use crate::domain::LocalDomain;
-    use crate::mux_event::MuxEvent;
+    use oriterm_mux::domain::LocalDomain;
+    use oriterm_mux::mux_event::MuxEvent;
 
     let domain = LocalDomain::new(DomainId::from_raw(0));
     let (mux_tx, _mux_rx) = std::sync::mpsc::channel::<MuxEvent>();

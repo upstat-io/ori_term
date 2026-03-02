@@ -216,7 +216,7 @@ pub fn spawn_pty(config: &PtyConfig) -> io::Result<PtyHandle> {
 }
 
 /// Build a `CommandBuilder` with shell detection and environment variables.
-pub(crate) fn build_command(config: &PtyConfig) -> CommandBuilder {
+pub fn build_command(config: &PtyConfig) -> CommandBuilder {
     let shell = config.shell.as_deref().unwrap_or_else(|| default_shell());
 
     let mut cmd = CommandBuilder::new(shell);
@@ -305,7 +305,7 @@ fn build_wslenv(cmd: &mut CommandBuilder, config: &PtyConfig) {
 ///
 /// Returns `None` if all keys are already present (nothing to add).
 #[cfg(any(windows, test))]
-pub(crate) fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<String> {
+pub fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<String> {
     use std::collections::HashSet;
 
     // Collect keys already present in WSLENV. Each entry is `KEY` or `KEY/flags`.
@@ -354,13 +354,13 @@ pub(crate) fn compute_wslenv(existing: &str, user_keys: &[&str]) -> Option<Strin
 /// On Windows, returns `cmd.exe`. On Unix, reads the `SHELL` environment
 /// variable and falls back to `/bin/sh`.
 #[cfg(windows)]
-pub(crate) fn default_shell() -> &'static str {
+pub fn default_shell() -> &'static str {
     "cmd.exe"
 }
 
 /// Returns the default shell for the current platform.
 #[cfg(not(windows))]
-pub(crate) fn default_shell() -> &'static str {
+pub fn default_shell() -> &'static str {
     // Leak a static reference from the environment variable.
     // Called once at startup, so the small allocation is acceptable.
     static SHELL: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();

@@ -21,10 +21,10 @@ use oriterm_core::{
     Event, EventListener, FairMutex, SearchState, Selection, SelectionPoint, StableRowIndex, Term,
 };
 
-pub(crate) use crate::pane::MarkCursor;
+pub(crate) use oriterm_mux::pane::MarkCursor;
 
 use crate::event::TermEvent;
-use crate::pty::{Msg, PtyConfig, PtyControl, PtyEventLoop, PtyHandle, spawn_pty};
+use oriterm_mux::pty::{Msg, PtyConfig, PtyControl, PtyEventLoop, PtyHandle, spawn_pty};
 
 /// Unique identifier for a tab.
 ///

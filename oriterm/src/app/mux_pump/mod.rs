@@ -10,8 +10,8 @@ use std::time::Duration;
 use oriterm_mux::{PaneId, WindowId as MuxWindowId};
 
 use crate::config::NotifyOnCommandFinish;
-use crate::mux_event::MuxNotification;
 use crate::platform::notify;
+use oriterm_mux::mux_event::MuxNotification;
 
 use super::App;
 

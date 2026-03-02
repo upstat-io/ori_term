@@ -1,13 +1,13 @@
 ---
 section: 44
 title: Multi-Process Window Architecture
-status: not-started
+status: in-progress
 tier: 0
 goal: Each window is a separate OS process. A mux daemon owns all PTY sessions. Tabs migrate between window processes with zero session loss — same running shell, scrollback, cursor, everything. Like Chrome's process-per-window model.
 sections:
   - id: "44.1"
     title: Mux Daemon Binary
-    status: not-started
+    status: in-progress
   - id: "44.2"
     title: IPC Protocol (Minimal Viable)
     status: not-started
@@ -108,42 +108,42 @@ A separate `oriterm-mux` binary that runs as a background daemon. Owns all PTY s
 - WezTerm: `wezterm-mux-server-impl/src/sessionhandler.rs` — per-client session handler
 - tmux: `server.c` — server event loop, client connections, session ownership
 
-- [ ] `oriterm-mux` binary:
-  - [ ] Minimal binary in `oriterm_mux/src/bin/oriterm_mux.rs`
-  - [ ] `--daemon` flag: fork/detach on Unix, `CREATE_NEW_PROCESS_GROUP` on Windows
-  - [ ] `--foreground` flag: stay in foreground (for debugging)
-  - [ ] Write PID file: `$XDG_RUNTIME_DIR/oriterm-mux.pid` (Linux), `%LOCALAPPDATA%\oriterm\oriterm-mux.pid` (Windows)
-  - [ ] Graceful shutdown: `SIGTERM`/`SIGINT` → close all PTYs, remove PID file and socket
-- [ ] `MuxServer` struct:
-  - [ ] `mux: InProcessMux` — the actual mux state (all panes, tabs, windows)
-  - [ ] `listener: IpcListener` — platform-specific IPC listener
-  - [ ] `connections: HashMap<ClientId, ClientConnection>` — connected window processes
-  - [ ] `subscriptions: HashMap<PaneId, Vec<ClientId>>` — which clients want output for which panes
+- [x] `oriterm-mux` binary:
+  - [x] Minimal binary in `oriterm_mux/src/bin/oriterm_mux.rs`
+  - [x] `--daemon` flag: fork/detach on Unix, `CREATE_NEW_PROCESS_GROUP` on Windows
+  - [x] `--foreground` flag: stay in foreground (for debugging)
+  - [x] Write PID file: `$XDG_RUNTIME_DIR/oriterm-mux.pid` (Linux), `%LOCALAPPDATA%\oriterm\oriterm-mux.pid` (Windows)
+  - [x] Graceful shutdown: `SIGTERM`/`SIGINT` → close all PTYs, remove PID file and socket
+- [x] `MuxServer` struct:
+  - [x] `mux: InProcessMux` — the actual mux state (all panes, tabs, windows)
+  - [x] `listener: IpcListener` — platform-specific IPC listener
+  - [x] `connections: HashMap<ClientId, ClientConnection>` — connected window processes
+  - [x] `subscriptions: HashMap<PaneId, Vec<ClientId>>` — which clients want output for which panes
 - [ ] Server event loop (single-threaded, `mio`-based):
-  - [ ] Accept new connections from window processes
-  - [ ] Read incoming requests (create tab, close tab, input, resize, etc.)
-  - [ ] Dispatch to `InProcessMux` methods
-  - [ ] Drain `MuxEvent` channel from PTY reader threads
-  - [ ] Push `MuxNotification` to subscribed clients
+  - [x] Accept new connections from window processes
+  - [ ] Read incoming requests (create tab, close tab, input, resize, etc.)  <!-- blocked-by:44.2 -->
+  - [ ] Dispatch to `InProcessMux` methods  <!-- blocked-by:44.2 -->
+  - [ ] Drain `MuxEvent` channel from PTY reader threads  <!-- blocked-by:44.2 -->
+  - [ ] Push `MuxNotification` to subscribed clients  <!-- blocked-by:44.2 -->
 - [ ] Connection lifecycle:
-  - [ ] Client connects → version handshake → assigns `ClientId`
-  - [ ] Client declares which mux `WindowId` it's rendering (one window per client)
-  - [ ] Client subscribes to panes in its window → receives output notifications
-  - [ ] Client disconnects → unsubscribe, but panes stay alive
-  - [ ] Last client disconnects → daemon keeps running (sessions persist)
-- [ ] Daemon exit conditions:
-  - [ ] All panes have exited AND no clients connected → exit
-  - [ ] Explicit `--stop` command sent via IPC
-  - [ ] SIGTERM/SIGINT
+  - [ ] Client connects → version handshake → assigns `ClientId`  <!-- blocked-by:44.2 -->
+  - [ ] Client declares which mux `WindowId` it's rendering (one window per client)  <!-- blocked-by:44.2 -->
+  - [ ] Client subscribes to panes in its window → receives output notifications  <!-- blocked-by:44.2 -->
+  - [ ] Client disconnects → unsubscribe, but panes stay alive  <!-- blocked-by:44.2 -->
+  - [x] Last client disconnects → daemon keeps running (sessions persist)
+- [x] Daemon exit conditions:
+  - [x] All panes have exited AND no clients connected → exit
+  - [ ] Explicit `--stop` command sent via IPC  <!-- blocked-by:44.2 -->
+  - [x] SIGTERM/SIGINT
 
 **Tests:**
-- [ ] Daemon starts, creates PID file, listens on socket/pipe
-- [ ] Client connects, version handshake succeeds
-- [ ] Client sends SpawnPane → pane created, PaneId returned
-- [ ] Client subscribes → receives output notifications
-- [ ] Client disconnects → panes stay alive
-- [ ] New client connects → can list and subscribe to existing panes
-- [ ] All panes exit + no clients → daemon exits, cleans up PID file
+- [x] Daemon starts, creates PID file, listens on socket/pipe
+- [ ] Client connects, version handshake succeeds  <!-- blocked-by:44.2 -->
+- [ ] Client sends SpawnPane → pane created, PaneId returned  <!-- blocked-by:44.2 -->
+- [ ] Client subscribes → receives output notifications  <!-- blocked-by:44.2 -->
+- [ ] Client disconnects → panes stay alive  <!-- blocked-by:44.2 -->
+- [ ] New client connects → can list and subscribe to existing panes  <!-- blocked-by:44.2 -->
+- [ ] All panes exit + no clients → daemon exits, cleans up PID file  <!-- blocked-by:44.2 -->
 
 ---
 

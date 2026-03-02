@@ -18,13 +18,13 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
+use crate::{DomainId, PaneId};
 use oriterm_core::term::cwd_short_path;
 use oriterm_core::{
     FairMutex, SearchState, Selection, SelectionMode, SelectionPoint, Side, StableRowIndex, Term,
 };
-use oriterm_mux::{DomainId, PaneId};
 
-pub(crate) use mark_cursor::MarkCursor;
+pub use mark_cursor::MarkCursor;
 
 use crate::mux_event::MuxEventProxy;
 use crate::pty::{Msg, PtyControl, PtyHandle};
@@ -33,7 +33,7 @@ use crate::pty::{Msg, PtyControl, PtyHandle};
 ///
 /// Duplicated from `tab::Notifier` to keep `pane` independent of `tab`.
 /// Unified when Tab is replaced in Section 31/32.
-pub(crate) struct PaneNotifier {
+pub struct PaneNotifier {
     /// Direct PTY writer — bypasses the reader thread's command channel.
     writer: std::sync::Mutex<Box<dyn io::Write + Send>>,
     /// Channel sender for commands (shutdown) to the reader thread.
@@ -42,7 +42,7 @@ pub(crate) struct PaneNotifier {
 
 impl PaneNotifier {
     /// Create a new notifier with a direct PTY writer and command channel.
-    pub(crate) fn new(writer: Box<dyn io::Write + Send>, tx: mpsc::Sender<Msg>) -> Self {
+    pub fn new(writer: Box<dyn io::Write + Send>, tx: mpsc::Sender<Msg>) -> Self {
         Self {
             writer: std::sync::Mutex::new(writer),
             tx,
@@ -50,7 +50,7 @@ impl PaneNotifier {
     }
 
     /// Send raw bytes to the PTY (keyboard input, escape responses).
-    pub(crate) fn notify(&self, bytes: &[u8]) {
+    pub fn notify(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
@@ -63,7 +63,7 @@ impl PaneNotifier {
     }
 
     /// Request the reader thread to shut down.
-    pub(crate) fn shutdown(&self) {
+    pub fn shutdown(&self) {
         let _ = self.tx.send(Msg::Shutdown);
     }
 }
@@ -72,34 +72,34 @@ impl PaneNotifier {
 ///
 /// Groups all parameters for `Pane::from_parts` to stay under the clippy
 /// argument limit. Produced by `LocalDomain::spawn_pane`.
-pub(crate) struct PaneParts {
+pub struct PaneParts {
     /// Unique pane identifier.
-    pub(crate) id: PaneId,
+    pub id: PaneId,
     /// Which domain spawned this pane.
-    pub(crate) domain_id: DomainId,
+    pub domain_id: DomainId,
     /// Shared terminal state.
-    pub(crate) terminal: Arc<FairMutex<Term<MuxEventProxy>>>,
+    pub terminal: Arc<FairMutex<Term<MuxEventProxy>>>,
     /// Input/shutdown sender.
-    pub(crate) notifier: PaneNotifier,
+    pub notifier: PaneNotifier,
     /// PTY control handle for resize.
-    pub(crate) pty_control: PtyControl,
+    pub pty_control: PtyControl,
     /// Reader thread join handle.
-    pub(crate) reader_thread: JoinHandle<()>,
+    pub reader_thread: JoinHandle<()>,
     /// PTY handle (child lifecycle).
-    pub(crate) pty: PtyHandle,
+    pub pty: PtyHandle,
     /// Grid dirty flag (lock-free).
-    pub(crate) grid_dirty: Arc<AtomicBool>,
+    pub grid_dirty: Arc<AtomicBool>,
     /// Wakeup coalescing flag (lock-free).
-    pub(crate) wakeup_pending: Arc<AtomicBool>,
+    pub wakeup_pending: Arc<AtomicBool>,
     /// Mode bits cache (lock-free).
-    pub(crate) mode_cache: Arc<AtomicU32>,
+    pub mode_cache: Arc<AtomicU32>,
 }
 
 /// Owns all per-shell-session state: terminal, PTY handles, reader thread.
 ///
 /// The atomic `Pane` unit in the mux model — one shell process, one grid,
 /// one PTY connection. Created by `LocalDomain::spawn_pane`.
-pub(crate) struct Pane {
+pub struct Pane {
     /// Unique pane identifier (from mux allocator).
     id: PaneId,
     /// Which domain spawned this pane.
@@ -146,7 +146,7 @@ impl Pane {
     /// Construct a pane from pre-built parts.
     ///
     /// Called by `LocalDomain::spawn_pane` after setting up the PTY pipeline.
-    pub(crate) fn from_parts(parts: PaneParts) -> Self {
+    pub fn from_parts(parts: PaneParts) -> Self {
         Self {
             id: parts.id,
             domain_id: parts.domain_id,
@@ -174,30 +174,30 @@ impl Pane {
 
     /// Pane identity.
     #[allow(dead_code, reason = "used when pane CRUD is fully wired to App")]
-    pub(crate) fn id(&self) -> PaneId {
+    pub fn id(&self) -> PaneId {
         self.id
     }
 
     /// Which domain spawned this pane.
     #[allow(dead_code, reason = "used when multi-domain routing is wired to App")]
-    pub(crate) fn domain_id(&self) -> DomainId {
+    pub fn domain_id(&self) -> DomainId {
         self.domain_id
     }
 
     // -- Lock-free accessors --
 
     /// Whether the pane's grid has new content to render.
-    pub(crate) fn grid_dirty(&self) -> bool {
+    pub fn grid_dirty(&self) -> bool {
         self.grid_dirty.load(Ordering::Acquire)
     }
 
     /// Clear the grid dirty flag after rendering.
-    pub(crate) fn clear_grid_dirty(&self) {
+    pub fn clear_grid_dirty(&self) {
         self.grid_dirty.store(false, Ordering::Release);
     }
 
     /// Clear the wakeup pending flag after processing.
-    pub(crate) fn clear_wakeup(&self) {
+    pub fn clear_wakeup(&self) {
         self.wakeup_pending.store(false, Ordering::Release);
     }
 
@@ -205,32 +205,32 @@ impl Pane {
     ///
     /// Updated by the reader thread after each VTE chunk; read by the main
     /// thread for mouse reporting and cursor style without locking the terminal.
-    pub(crate) fn mode(&self) -> u32 {
+    pub fn mode(&self) -> u32 {
         self.mode_cache.load(Ordering::Acquire)
     }
 
     // -- Terminal access --
 
     /// Shared terminal state for rendering.
-    pub(crate) fn terminal(&self) -> &Arc<FairMutex<Term<MuxEventProxy>>> {
+    pub fn terminal(&self) -> &Arc<FairMutex<Term<MuxEventProxy>>> {
         &self.terminal
     }
 
     // -- Title / CWD / Bell --
 
     /// Set the pane title (from OSC 0/2 via `MuxEvent::PaneTitleChanged`).
-    pub(crate) fn set_title(&mut self, title: String) {
+    pub fn set_title(&mut self, title: String) {
         self.has_explicit_title = !title.is_empty();
         self.title = title;
     }
 
     /// Icon name (from OSC 0/1) for tab icon detection.
-    pub(crate) fn icon_name(&self) -> Option<&str> {
+    pub fn icon_name(&self) -> Option<&str> {
         self.icon_name.as_deref()
     }
 
     /// Set the icon name.
-    pub(crate) fn set_icon_name(&mut self, name: String) {
+    pub fn set_icon_name(&mut self, name: String) {
         if name.is_empty() {
             self.icon_name = None;
         } else {
@@ -242,7 +242,7 @@ impl Pane {
     /// 1. Explicit title from OSC 0/2.
     /// 2. Short path from CWD (last component).
     /// 3. Fallback to raw title (may be empty).
-    pub(crate) fn effective_title(&self) -> &str {
+    pub fn effective_title(&self) -> &str {
         if self.has_explicit_title {
             return &self.title;
         }
@@ -253,12 +253,12 @@ impl Pane {
     }
 
     /// Current working directory (from OSC 7).
-    pub(crate) fn cwd(&self) -> Option<&str> {
+    pub fn cwd(&self) -> Option<&str> {
         self.cwd.as_deref()
     }
 
     /// Set the current working directory (clears explicit title flag).
-    pub(crate) fn set_cwd(&mut self, cwd: String) {
+    pub fn set_cwd(&mut self, cwd: String) {
         self.has_explicit_title = false;
         self.cwd = Some(cwd);
     }
@@ -268,58 +268,58 @@ impl Pane {
         dead_code,
         reason = "read when command notification UI is wired to App"
     )]
-    pub(crate) fn last_command_duration(&self) -> Option<std::time::Duration> {
+    pub fn last_command_duration(&self) -> Option<std::time::Duration> {
         self.last_command_duration
     }
 
     /// Store the duration of a completed command.
-    pub(crate) fn set_last_command_duration(&mut self, duration: std::time::Duration) {
+    pub fn set_last_command_duration(&mut self, duration: std::time::Duration) {
         self.last_command_duration = Some(duration);
     }
 
     /// Whether the bell has fired since the pane was last focused.
     #[allow(dead_code, reason = "used when bell indicator is wired to App")]
-    pub(crate) fn has_bell(&self) -> bool {
+    pub fn has_bell(&self) -> bool {
         self.has_bell
     }
 
     /// Clear the bell indicator (call when the pane gains focus).
     #[allow(dead_code, reason = "used when bell indicator is wired to App")]
-    pub(crate) fn clear_bell(&mut self) {
+    pub fn clear_bell(&mut self) {
         self.has_bell = false;
     }
 
     /// Set the bell indicator.
-    pub(crate) fn set_bell(&mut self) {
+    pub fn set_bell(&mut self) {
         self.has_bell = true;
     }
 
     // -- Selection --
 
     /// Active text selection, if any.
-    pub(crate) fn selection(&self) -> Option<&Selection> {
+    pub fn selection(&self) -> Option<&Selection> {
         self.selection.as_ref()
     }
 
     /// Replace the active selection.
-    pub(crate) fn set_selection(&mut self, selection: Selection) {
+    pub fn set_selection(&mut self, selection: Selection) {
         self.selection = Some(selection);
     }
 
     /// Clear the active selection.
-    pub(crate) fn clear_selection(&mut self) {
+    pub fn clear_selection(&mut self) {
         self.selection = None;
     }
 
     /// Update the endpoint of an active selection during drag.
-    pub(crate) fn update_selection_end(&mut self, end: SelectionPoint) {
+    pub fn update_selection_end(&mut self, end: SelectionPoint) {
         if let Some(sel) = &mut self.selection {
             sel.end = end;
         }
     }
 
     /// Check whether terminal output has invalidated the selection.
-    pub(crate) fn check_selection_invalidation(&mut self) {
+    pub fn check_selection_invalidation(&mut self) {
         if self.selection.is_none() {
             let mut term = self.terminal.lock();
             if term.is_selection_dirty() {
@@ -338,17 +338,17 @@ impl Pane {
     // -- Mark cursor --
 
     /// Whether mark mode is active.
-    pub(crate) fn is_mark_mode(&self) -> bool {
+    pub fn is_mark_mode(&self) -> bool {
         self.mark_cursor.is_some()
     }
 
     /// Current mark cursor position.
-    pub(crate) fn mark_cursor(&self) -> Option<MarkCursor> {
+    pub fn mark_cursor(&self) -> Option<MarkCursor> {
         self.mark_cursor
     }
 
     /// Enter mark mode at the terminal cursor position.
-    pub(crate) fn enter_mark_mode(&mut self) {
+    pub fn enter_mark_mode(&mut self) {
         if self.mark_cursor.is_some() {
             return;
         }
@@ -368,53 +368,53 @@ impl Pane {
     }
 
     /// Exit mark mode.
-    pub(crate) fn exit_mark_mode(&mut self) {
+    pub fn exit_mark_mode(&mut self) {
         self.mark_cursor = None;
     }
 
     /// Update the mark cursor position.
-    pub(crate) fn set_mark_cursor(&mut self, cursor: MarkCursor) {
+    pub fn set_mark_cursor(&mut self, cursor: MarkCursor) {
         self.mark_cursor = Some(cursor);
     }
 
     // -- Search --
 
     /// Active search state, if any.
-    pub(crate) fn search(&self) -> Option<&SearchState> {
+    pub fn search(&self) -> Option<&SearchState> {
         self.search.as_ref()
     }
 
     /// Mutable access to the active search state.
-    pub(crate) fn search_mut(&mut self) -> Option<&mut SearchState> {
+    pub fn search_mut(&mut self) -> Option<&mut SearchState> {
         self.search.as_mut()
     }
 
     /// Activate search.
-    pub(crate) fn open_search(&mut self) {
+    pub fn open_search(&mut self) {
         if self.search.is_none() {
             self.search = Some(SearchState::new());
         }
     }
 
     /// Close search.
-    pub(crate) fn close_search(&mut self) {
+    pub fn close_search(&mut self) {
         self.search = None;
     }
 
     /// Whether search is currently active.
-    pub(crate) fn is_search_active(&self) -> bool {
+    pub fn is_search_active(&self) -> bool {
         self.search.is_some()
     }
 
     // -- I/O operations --
 
     /// Send raw bytes to the PTY.
-    pub(crate) fn write_input(&self, bytes: &[u8]) {
+    pub fn write_input(&self, bytes: &[u8]) {
         self.notifier.notify(bytes);
     }
 
     /// Scroll to the live terminal position.
-    pub(crate) fn scroll_to_bottom(&self) {
+    pub fn scroll_to_bottom(&self) {
         let mut term = self.terminal.lock();
         if term.grid().display_offset() > 0 {
             term.grid_mut().scroll_display(isize::MIN);
@@ -422,17 +422,17 @@ impl Pane {
     }
 
     /// Scroll the viewport by `delta` lines.
-    pub(crate) fn scroll_display(&self, delta: isize) {
+    pub fn scroll_display(&self, delta: isize) {
         self.terminal.lock().grid_mut().scroll_display(delta);
     }
 
     /// Resize the terminal grids (with reflow). Does NOT resize the PTY.
-    pub(crate) fn resize_grid(&self, rows: u16, cols: u16) {
+    pub fn resize_grid(&self, rows: u16, cols: u16) {
         self.terminal.lock().resize(rows as usize, cols as usize);
     }
 
     /// Resize the OS PTY handle, sending SIGWINCH to the shell.
-    pub(crate) fn resize_pty(&self, rows: u16, cols: u16) {
+    pub fn resize_pty(&self, rows: u16, cols: u16) {
         if let Err(e) = self.pty_control.resize(rows, cols) {
             log::warn!("PTY resize failed: {e}");
         }
@@ -443,21 +443,21 @@ impl Pane {
     /// Scroll to the nearest prompt above the current viewport.
     ///
     /// Returns `true` if the viewport was scrolled.
-    pub(crate) fn scroll_to_previous_prompt(&self) -> bool {
+    pub fn scroll_to_previous_prompt(&self) -> bool {
         self.terminal.lock().scroll_to_previous_prompt()
     }
 
     /// Scroll to the nearest prompt below the current viewport.
     ///
     /// Returns `true` if the viewport was scrolled.
-    pub(crate) fn scroll_to_next_prompt(&self) -> bool {
+    pub fn scroll_to_next_prompt(&self) -> bool {
         self.terminal.lock().scroll_to_next_prompt()
     }
 
     /// Select command output for the prompt nearest to the viewport center.
     ///
     /// Returns `true` if a selection was created.
-    pub(crate) fn select_command_output(&mut self) -> bool {
+    pub fn select_command_output(&mut self) -> bool {
         let sel = self.build_zone_selection(Term::command_output_range);
         if let Some(s) = sel {
             self.selection = Some(s);
@@ -470,7 +470,7 @@ impl Pane {
     /// Select command input for the prompt nearest to the viewport center.
     ///
     /// Returns `true` if a selection was created.
-    pub(crate) fn select_command_input(&mut self) -> bool {
+    pub fn select_command_input(&mut self) -> bool {
         let sel = self.build_zone_selection(Term::command_input_range);
         if let Some(s) = sel {
             self.selection = Some(s);

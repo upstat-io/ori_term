@@ -2,14 +2,31 @@
 name = "oriterm_mux"
 version = "0.1.0-alpha.3"
 edition = "2024"
-description = "Multiplexing data structures: split trees, floating layers, layout computation, and spatial navigation for oriterm"
+description = "Multiplexer for oriterm: data structures, PTY management, daemon server, and IPC protocol"
 license = "MIT"
 
 [features]
 serde = ["dep:serde"]
 
 [dependencies]
+log = "0.4"
+oriterm_core = { path = "../oriterm_core" }
+parking_lot = "0.12"
+portable-pty = "0.9.0"
 serde = { version = "1", features = ["derive"], optional = true }
+vte = { version = "0.15.0", features = ["ansi"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+mio = { version = "1", features = ["os-poll", "net", "os-ext"] }
+signal-hook = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "oriterm-mux"
+path = "src/bin/oriterm_mux.rs"
 
 [lints]
 workspace = true

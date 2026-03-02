@@ -16,8 +16,8 @@ use oriterm_core::{
 };
 
 use crate::font::CellMetrics;
-use crate::pane::Pane;
 use crate::widgets::terminal_grid::TerminalGridWidget;
+use oriterm_mux::pane::Pane;
 
 /// Compact bitfield tracking which mouse buttons are currently pressed.
 #[derive(Debug, Clone, Copy, Default)]

@@ -13,13 +13,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
 use oriterm_core::{ClipboardType, Event, EventListener};
-use oriterm_mux::{PaneId, TabId, WindowId};
+
+use crate::{PaneId, TabId, WindowId};
 
 /// Events from pane PTY reader threads to the mux layer.
 ///
 /// Sent over `mpsc::Sender<MuxEvent>`. The mux processes these on the main
 /// thread after a winit wakeup.
-pub(crate) enum MuxEvent {
+pub enum MuxEvent {
     /// Pane has new terminal output — grid is dirty.
     PaneOutput(PaneId),
     /// PTY process exited.
@@ -129,7 +130,7 @@ impl fmt::Debug for MuxEvent {
 /// `Term<MuxEventProxy>`. On each event, maps it to a [`MuxEvent`] and
 /// sends it over mpsc. Wakeup events are coalesced via an atomic flag to
 /// avoid flooding the channel.
-pub(crate) struct MuxEventProxy {
+pub struct MuxEventProxy {
     /// Identity of the pane this proxy serves.
     pane_id: PaneId,
     /// Channel sender to the mux event processor.
@@ -144,7 +145,7 @@ pub(crate) struct MuxEventProxy {
 
 impl MuxEventProxy {
     /// Create a new event proxy for a pane.
-    pub(crate) fn new(
+    pub fn new(
         pane_id: PaneId,
         tx: mpsc::Sender<MuxEvent>,
         wakeup_pending: Arc<AtomicBool>,
@@ -255,7 +256,7 @@ impl EventListener for MuxEventProxy {
 ///
 /// These flow from the mux to the winit event loop after the mux has
 /// processed incoming [`MuxEvent`]s and updated its state.
-pub(crate) enum MuxNotification {
+pub enum MuxNotification {
     /// A pane's title or icon name changed — re-sync tab bar.
     PaneTitleChanged(PaneId),
     /// A pane has new content to render.

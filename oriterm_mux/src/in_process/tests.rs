@@ -5,12 +5,12 @@
 //! and build tab/window state to test close, split-tree, and event pump
 //! behaviour in isolation.
 
-use oriterm_mux::layout::Rect;
-use oriterm_mux::layout::floating::FloatingPane;
-use oriterm_mux::layout::{SplitDirection, SplitTree};
-use oriterm_mux::registry::PaneEntry;
-use oriterm_mux::session::{MuxTab, MuxWindow};
-use oriterm_mux::{PaneId, TabId, WindowId};
+use crate::layout::Rect;
+use crate::layout::floating::FloatingPane;
+use crate::layout::{SplitDirection, SplitTree};
+use crate::registry::PaneEntry;
+use crate::session::{MuxTab, MuxWindow};
+use crate::{PaneId, TabId, WindowId};
 
 use super::{ClosePaneResult, InProcessMux, MuxNotification};
 use crate::mux_event::MuxEvent;
@@ -3019,8 +3019,8 @@ fn close_after_undo_cascades_to_last_window() {
 
 #[test]
 fn geometry_tiled_panes_cover_full_area_after_undo() {
-    use oriterm_mux::layout::compute::{LayoutDescriptor, compute_layout};
-    use oriterm_mux::layout::floating::FloatingLayer;
+    use crate::layout::compute::{LayoutDescriptor, compute_layout};
+    use crate::layout::floating::FloatingLayer;
 
     let p1 = PaneId::from_raw(1);
     let p2 = PaneId::from_raw(2);
@@ -3162,8 +3162,8 @@ fn concurrent_pane_exit_then_undo_skips_dead_entry() {
 /// 4-pane 2×2 grid: navigate all 4 directions, verify correct focus.
 #[test]
 fn integration_navigation_4_pane_grid_all_directions() {
-    use oriterm_mux::layout::{LayoutDescriptor, compute_layout};
-    use oriterm_mux::nav::{self, Direction};
+    use crate::layout::{LayoutDescriptor, compute_layout};
+    use crate::nav::{self, Direction};
 
     let mut mux = InProcessMux::new();
     let did = mux.default_domain();

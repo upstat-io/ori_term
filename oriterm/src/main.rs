@@ -11,19 +11,13 @@ mod app;
 mod cli;
 mod clipboard;
 mod config;
-mod domain;
 mod event;
 mod font;
 mod gpu;
 mod key_encoding;
 mod keybindings;
-mod mux;
-mod mux_event;
-mod pane;
 mod platform;
-mod pty;
 mod scheme;
-mod shell_integration;
 mod tab;
 mod url_detect;
 mod widgets;
@@ -47,7 +41,7 @@ fn main() {
     install_panic_hook();
 
     #[cfg(unix)]
-    if let Err(e) = pty::signal::init() {
+    if let Err(e) = oriterm_mux::pty::signal::init() {
         log::warn!("failed to register SIGCHLD handler: {e}");
     }
 

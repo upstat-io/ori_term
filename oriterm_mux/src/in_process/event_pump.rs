@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use oriterm_mux::domain::Domain;
-use oriterm_mux::{DomainId, MuxWindow, PaneId, SessionRegistry, TabId, WindowId};
+use crate::domain::Domain;
+use crate::{DomainId, MuxWindow, PaneId, SessionRegistry, TabId, WindowId};
 
 use super::InProcessMux;
 use crate::mux_event::{MuxEvent, MuxNotification};
@@ -20,7 +20,7 @@ impl InProcessMux {
     /// Called from the App's event loop every iteration. The `panes` map is
     /// passed so the mux can update pane metadata (title, CWD) and write
     /// PTY responses without the App needing to know event internals.
-    pub(crate) fn poll_events(&mut self, panes: &mut HashMap<PaneId, Pane>) {
+    pub fn poll_events(&mut self, panes: &mut HashMap<PaneId, Pane>) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
                 MuxEvent::PaneOutput(id) => {
@@ -100,7 +100,7 @@ impl InProcessMux {
     /// Swaps the internal and caller buffers so both retain their heap
     /// allocations across frames (double-buffer pattern). The caller's
     /// buffer is cleared before receiving the new notifications.
-    pub(crate) fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
+    pub fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
         out.clear();
         std::mem::swap(&mut self.notifications, out);
     }
@@ -108,7 +108,7 @@ impl InProcessMux {
     // -- Accessors --
 
     /// Active tab ID for a given window.
-    pub(crate) fn active_tab_id(&self, window_id: WindowId) -> Option<TabId> {
+    pub fn active_tab_id(&self, window_id: WindowId) -> Option<TabId> {
         self.session.get_window(window_id)?.active_tab()
     }
 
@@ -116,7 +116,7 @@ impl InProcessMux {
     ///
     /// Returns `true` if the active pane was changed, `false` if the tab
     /// was not found.
-    pub(crate) fn set_active_pane(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
+    pub fn set_active_pane(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
         if let Some(tab) = self.session.get_tab_mut(tab_id) {
             tab.set_active_pane(pane_id);
             true
@@ -126,7 +126,7 @@ impl InProcessMux {
     }
 
     /// Immutable access to the session registry.
-    pub(crate) fn session(&self) -> &SessionRegistry {
+    pub fn session(&self) -> &SessionRegistry {
         &self.session
     }
 
@@ -136,7 +136,7 @@ impl InProcessMux {
     ///
     /// Returns `true` if the switch was performed, `false` if the window
     /// or tab was not found.
-    pub(crate) fn switch_active_tab(&mut self, window_id: WindowId, tab_id: TabId) -> bool {
+    pub fn switch_active_tab(&mut self, window_id: WindowId, tab_id: TabId) -> bool {
         let Some(win) = self.session.get_window_mut(window_id) else {
             return false;
         };
@@ -152,7 +152,7 @@ impl InProcessMux {
     /// `delta` is typically +1 (next) or -1 (previous); wraps around.
     /// Returns the newly active `TabId`, or `None` if the window was not
     /// found or has fewer than 2 tabs.
-    pub(crate) fn cycle_active_tab(&mut self, window_id: WindowId, delta: isize) -> Option<TabId> {
+    pub fn cycle_active_tab(&mut self, window_id: WindowId, delta: isize) -> Option<TabId> {
         let win = self.session.get_window_mut(window_id)?;
         let count = win.tabs().len();
         if count <= 1 {
@@ -167,7 +167,7 @@ impl InProcessMux {
     /// Reorder a tab within a window.
     ///
     /// Returns `true` if the move was performed.
-    pub(crate) fn reorder_tab(&mut self, window_id: WindowId, from: usize, to: usize) -> bool {
+    pub fn reorder_tab(&mut self, window_id: WindowId, from: usize, to: usize) -> bool {
         let Some(win) = self.session.get_window_mut(window_id) else {
             return false;
         };
@@ -186,7 +186,7 @@ impl InProcessMux {
     /// a `WindowClosed` (or `LastWindowClosed`) notification is emitted.
     ///
     /// Returns `true` if the move was performed.
-    pub(crate) fn move_tab_to_window(&mut self, tab_id: TabId, dest_window_id: WindowId) -> bool {
+    pub fn move_tab_to_window(&mut self, tab_id: TabId, dest_window_id: WindowId) -> bool {
         self.move_tab_impl(tab_id, dest_window_id, |dest, id| {
             dest.add_tab(id);
         })
@@ -199,7 +199,7 @@ impl InProcessMux {
     /// `dest_index` instead of appending. The tab becomes the active tab in
     /// the destination window.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub(crate) fn move_tab_to_window_at(
+    pub fn move_tab_to_window_at(
         &mut self,
         tab_id: TabId,
         dest_window_id: WindowId,
@@ -271,19 +271,19 @@ impl InProcessMux {
 
     /// Immutable access to the pane registry.
     #[allow(dead_code, reason = "used when pane registry queries are wired to App")]
-    pub(crate) fn pane_registry(&self) -> &oriterm_mux::registry::PaneRegistry {
+    pub fn pane_registry(&self) -> &crate::registry::PaneRegistry {
         &self.pane_registry
     }
 
     /// Clone of the event sender for spawning new panes.
     #[allow(dead_code, reason = "used when dynamic pane spawning is wired to App")]
-    pub(crate) fn event_tx(&self) -> &std::sync::mpsc::Sender<MuxEvent> {
+    pub fn event_tx(&self) -> &std::sync::mpsc::Sender<MuxEvent> {
         &self.event_tx
     }
 
     /// Default domain ID for spawning.
     #[allow(dead_code, reason = "used when multi-domain spawning is wired to App")]
-    pub(crate) fn default_domain(&self) -> DomainId {
+    pub fn default_domain(&self) -> DomainId {
         self.local_domain.id()
     }
 }

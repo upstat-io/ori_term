@@ -53,9 +53,9 @@ use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
 use crate::gpu::{GpuRenderer, GpuState};
 use crate::keybindings::{self, KeyBinding};
-use crate::mux::InProcessMux;
-use crate::mux_event::MuxNotification;
-use crate::pane::Pane;
+use oriterm_mux::in_process::InProcessMux;
+use oriterm_mux::mux_event::MuxNotification;
+use oriterm_mux::pane::Pane;
 
 use oriterm_ui::theme::UiTheme;
 

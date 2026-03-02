@@ -14,7 +14,7 @@ use oriterm_core::selection::word_boundaries;
 use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side, StableRowIndex};
 
 use self::motion::{AbsCursor, GridBounds, WordContext};
-use crate::pane::{MarkCursor, Pane};
+use oriterm_mux::pane::{MarkCursor, Pane};
 
 /// Result of processing a key event in mark mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

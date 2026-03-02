@@ -15,12 +15,12 @@ use std::io;
 use std::sync::Arc;
 use std::sync::mpsc;
 
+use crate::domain::{Domain, SpawnConfig};
+use crate::layout::SplitDirection;
+use crate::registry::{PaneEntry, PaneRegistry};
+use crate::session::{MuxTab, MuxWindow};
+use crate::{DomainId, IdAllocator, PaneId, SessionRegistry, TabId, WindowId};
 use oriterm_core::Theme;
-use oriterm_mux::domain::{Domain, SpawnConfig};
-use oriterm_mux::layout::SplitDirection;
-use oriterm_mux::registry::{PaneEntry, PaneRegistry};
-use oriterm_mux::session::{MuxTab, MuxWindow};
-use oriterm_mux::{DomainId, IdAllocator, PaneId, SessionRegistry, TabId, WindowId};
 
 use crate::domain::LocalDomain;
 use crate::mux_event::{MuxEvent, MuxNotification};
@@ -28,7 +28,7 @@ use crate::pane::Pane;
 
 /// Result of closing a single pane.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum ClosePaneResult {
+pub enum ClosePaneResult {
     /// Pane removed; its tab still has other panes.
     PaneRemoved,
     /// Last pane in the tab — tab was closed too.
@@ -47,7 +47,7 @@ pub(crate) enum ClosePaneResult {
 /// Orchestrates pane/tab/window CRUD, owns registries and ID allocators,
 /// and bridges PTY events to GUI notifications. All operations run on the
 /// main thread — no daemon, no IPC.
-pub(crate) struct InProcessMux {
+pub struct InProcessMux {
     // Registries.
     pane_registry: PaneRegistry,
     session: SessionRegistry,
@@ -72,9 +72,15 @@ pub(crate) struct InProcessMux {
     notifications: Vec<MuxNotification>,
 }
 
+impl Default for InProcessMux {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InProcessMux {
     /// Create a new in-process mux with a local domain.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let (event_tx, event_rx) = mpsc::channel();
         let mut domain_alloc: IdAllocator<DomainId> = IdAllocator::new();
         let local_id = domain_alloc.alloc();
@@ -100,7 +106,7 @@ impl InProcessMux {
     ///
     /// Returns `(PaneId, Pane)` — the caller stores the `Pane` in its own map.
     /// The mux registers the pane's metadata in the pane registry.
-    pub(crate) fn spawn_pane(
+    pub fn spawn_pane(
         &mut self,
         tab_id: TabId,
         config: &SpawnConfig,
@@ -129,7 +135,7 @@ impl InProcessMux {
     /// Close a pane, updating the split tree and registries.
     ///
     /// The caller is responsible for dropping the `Pane` struct from its map.
-    pub(crate) fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
+    pub fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
         let entry = match self.pane_registry.unregister(pane_id) {
             Some(e) => e,
             None => return ClosePaneResult::NotFound,
@@ -222,12 +228,12 @@ impl InProcessMux {
     }
 
     /// True when this pane is the only pane in the entire session.
-    pub(crate) fn is_last_pane(&self, pane_id: PaneId) -> bool {
+    pub fn is_last_pane(&self, pane_id: PaneId) -> bool {
         self.session.is_last_pane(pane_id)
     }
 
     /// Look up a pane's metadata entry.
-    pub(crate) fn get_pane_entry(&self, pane_id: PaneId) -> Option<&PaneEntry> {
+    pub fn get_pane_entry(&self, pane_id: PaneId) -> Option<&PaneEntry> {
         self.pane_registry.get(pane_id)
     }
 
@@ -236,7 +242,7 @@ impl InProcessMux {
     /// Create a new tab with a single pane in the given window.
     ///
     /// Returns `(TabId, PaneId, Pane)` — the caller stores the `Pane`.
-    pub(crate) fn create_tab(
+    pub fn create_tab(
         &mut self,
         window_id: WindowId,
         config: &SpawnConfig,
@@ -264,7 +270,7 @@ impl InProcessMux {
     /// Close a tab and all its panes.
     ///
     /// Returns the list of `PaneId`s that the caller should drop from its map.
-    pub(crate) fn close_tab(&mut self, tab_id: TabId) -> Vec<PaneId> {
+    pub fn close_tab(&mut self, tab_id: TabId) -> Vec<PaneId> {
         let pane_ids = match self.session.get_tab(tab_id) {
             Some(tab) => tab.all_panes(),
             None => return Vec::new(),
@@ -300,7 +306,7 @@ impl InProcessMux {
         clippy::too_many_arguments,
         reason = "split requires source pane + direction on top of spawn params"
     )]
-    pub(crate) fn split_pane(
+    pub fn split_pane(
         &mut self,
         tab_id: TabId,
         source_pane: PaneId,
@@ -330,7 +336,7 @@ impl InProcessMux {
     ///
     /// The divider is the split where `first` contains `pane_before` and
     /// `second` contains `pane_after`. Emits `TabLayoutChanged`.
-    pub(crate) fn set_divider_ratio(
+    pub fn set_divider_ratio(
         &mut self,
         tab_id: TabId,
         pane_before: PaneId,
@@ -360,7 +366,7 @@ impl InProcessMux {
         clippy::too_many_arguments,
         reason = "resize requires tab + pane + axis + side + delta"
     )]
-    pub(crate) fn resize_pane(
+    pub fn resize_pane(
         &mut self,
         tab_id: TabId,
         pane_id: PaneId,
@@ -384,7 +390,7 @@ impl InProcessMux {
     /// Toggle zoom on the active pane in a tab.
     ///
     /// If already zoomed, unzooms. Otherwise zooms the active pane.
-    pub(crate) fn toggle_zoom(&mut self, tab_id: TabId) {
+    pub fn toggle_zoom(&mut self, tab_id: TabId) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
@@ -402,7 +408,7 @@ impl InProcessMux {
     /// Emits `TabLayoutChanged` when zoom was active. For callers that will
     /// emit their own notification, use [`unzoom_silent`] instead.
     #[cfg(test)]
-    pub(crate) fn unzoom(&mut self, tab_id: TabId) {
+    pub fn unzoom(&mut self, tab_id: TabId) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
@@ -417,7 +423,7 @@ impl InProcessMux {
     ///
     /// Used by operations that will emit their own layout notification
     /// after the subsequent mutation, avoiding a redundant recomputation.
-    pub(crate) fn unzoom_silent(&mut self, tab_id: TabId) {
+    pub fn unzoom_silent(&mut self, tab_id: TabId) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
@@ -427,7 +433,7 @@ impl InProcessMux {
     }
 
     /// Reset all split ratios to 0.5 (equal sizing).
-    pub(crate) fn equalize_panes(&mut self, tab_id: TabId) {
+    pub fn equalize_panes(&mut self, tab_id: TabId) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
@@ -442,7 +448,7 @@ impl InProcessMux {
     /// Undo the last split tree mutation on the given tab.
     ///
     /// Returns `true` if an undo was applied.
-    pub(crate) fn undo_split(
+    pub fn undo_split(
         &mut self,
         tab_id: TabId,
         live_panes: &std::collections::HashSet<PaneId>,
@@ -462,7 +468,7 @@ impl InProcessMux {
     /// Redo the last undone split tree mutation on the given tab.
     ///
     /// Returns `true` if a redo was applied.
-    pub(crate) fn redo_split(
+    pub fn redo_split(
         &mut self,
         tab_id: TabId,
         live_panes: &std::collections::HashSet<PaneId>,
@@ -510,7 +516,7 @@ impl InProcessMux {
     // -- Window operations --
 
     /// Create a new empty mux window.
-    pub(crate) fn create_window(&mut self) -> WindowId {
+    pub fn create_window(&mut self) -> WindowId {
         let id = self.window_alloc.alloc();
         self.session.add_window(MuxWindow::new(id));
         id
@@ -519,7 +525,7 @@ impl InProcessMux {
     /// Close a window and all its tabs/panes.
     ///
     /// Returns the list of `PaneId`s that the caller should drop.
-    pub(crate) fn close_window(&mut self, window_id: WindowId) -> Vec<PaneId> {
+    pub fn close_window(&mut self, window_id: WindowId) -> Vec<PaneId> {
         let tab_ids = match self.session.get_window(window_id) {
             Some(win) => win.tabs().to_vec(),
             None => return Vec::new(),

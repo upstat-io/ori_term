@@ -15,7 +15,7 @@ pub(crate) enum TermEvent {
     ConfigReload,
     /// The mux layer has events to process.
     ///
-    /// Sent by [`MuxEventProxy`](crate::mux_event::MuxEventProxy) to wake
+    /// Sent by [`MuxEventProxy`](oriterm_mux::mux_event::MuxEventProxy) to wake
     /// the winit event loop when pane events arrive over the mpsc channel.
     MuxWakeup,
 }

@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
 use oriterm_core::{Event, EventListener};
-use oriterm_mux::PaneId;
+
+use crate::PaneId;
 
 use super::{MuxEvent, MuxEventProxy};
 
@@ -315,7 +316,8 @@ fn mux_event_debug_all_variants() {
 #[test]
 fn mux_notification_debug_all_variants() {
     use super::MuxNotification;
-    use oriterm_mux::{TabId, WindowId};
+
+    use crate::{TabId, WindowId};
 
     let pid = PaneId::from_raw(1);
     let tid = TabId::from_raw(2);

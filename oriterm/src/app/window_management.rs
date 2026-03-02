@@ -282,7 +282,7 @@ impl App {
             reason = "drain preserves Vec capacity; into_iter drops it"
         )]
         for notification in notifications.drain(..) {
-            if let crate::mux_event::MuxNotification::PaneClosed(id) = notification {
+            if let oriterm_mux::mux_event::MuxNotification::PaneClosed(id) = notification {
                 // Panes already removed above — just clean up caches.
                 if let Some(pane) = self.panes.remove(&id) {
                     std::thread::spawn(move || drop(pane));

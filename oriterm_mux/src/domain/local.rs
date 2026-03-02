@@ -6,8 +6,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::mpsc;
 
 use oriterm_core::{FairMutex, Term, Theme};
-use oriterm_mux::domain::{Domain, DomainState, SpawnConfig};
-use oriterm_mux::{DomainId, PaneId};
+
+use crate::{DomainId, PaneId};
+
+use super::{Domain, DomainState, SpawnConfig};
 
 use crate::mux_event::{MuxEvent, MuxEventProxy};
 use crate::pane::{Pane, PaneNotifier, PaneParts};
@@ -18,7 +20,7 @@ use crate::pty::{PtyConfig, PtyEventLoop, spawn_pty};
 /// The simplest domain — creates a PTY via `portable-pty`, wires up
 /// `MuxEventProxy` as the event listener, and returns a fully assembled
 /// `Pane`.
-pub(crate) struct LocalDomain {
+pub struct LocalDomain {
     /// Domain identity.
     id: DomainId,
     /// Lifecycle state.
@@ -49,7 +51,7 @@ impl Domain for LocalDomain {
 
 impl LocalDomain {
     /// Create a new local domain.
-    pub(crate) fn new(id: DomainId) -> Self {
+    pub fn new(id: DomainId) -> Self {
         Self {
             id,
             state: DomainState::Attached,
@@ -65,7 +67,7 @@ impl LocalDomain {
         reason = "all six parameters are required to assemble a Pane; \
                   grouped into a struct when Section 31 wires this into App"
     )]
-    pub(crate) fn spawn_pane(
+    pub fn spawn_pane(
         &self,
         pane_id: PaneId,
         config: &SpawnConfig,

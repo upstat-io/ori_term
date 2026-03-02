@@ -1,14 +1,20 @@
-//! Domain trait and spawn configuration.
+//! Domain trait, spawn configuration, and concrete domain implementations.
 //!
 //! A domain represents an environment where shells can be spawned: the local
 //! machine, a WSL distro, an SSH host, or a serial port. The [`Domain`] trait
-//! provides identity and metadata; actual spawning is a concrete method on
-//! each domain implementation (in the binary crate) since it requires I/O
-//! types that this no-I/O crate cannot depend on.
+//! provides identity and metadata. Concrete implementations ([`LocalDomain`])
+//! handle actual PTY spawning.
+
+pub(crate) mod local;
+pub(crate) mod wsl;
 
 use std::path::PathBuf;
 
 use crate::id::DomainId;
+
+pub use local::LocalDomain;
+#[allow(unused_imports, reason = "used when WSL domain is wired in Section 35")]
+pub use wsl::WslDomain;
 
 /// Lifecycle state of a domain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -11,9 +11,9 @@ use super::{App, DEFAULT_DPI};
 use crate::app::config_reload;
 use crate::font::{FontCollection, FontSet, GlyphFormat, HintingMode};
 use crate::gpu::{GpuRenderer, GpuState};
-use crate::mux::InProcessMux;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 use crate::window::TermWindow;
+use oriterm_mux::in_process::InProcessMux;
 
 impl App {
     /// Run the one-shot startup sequence: window → GPU → fonts → renderer → tab.

@@ -11,7 +11,7 @@ use oriterm_core::{Column, Event, EventListener, Line, Theme};
 
 use super::{EventProxy, Notifier, Tab, TabId};
 use crate::event::TermEvent;
-use crate::pty::Msg;
+use oriterm_mux::pty::Msg;
 
 // ---------------------------------------------------------------------------
 // TabId

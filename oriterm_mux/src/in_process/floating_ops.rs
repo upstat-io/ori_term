@@ -6,11 +6,11 @@
 use std::io;
 use std::sync::Arc;
 
+use crate::domain::SpawnConfig;
+use crate::layout::Rect;
+use crate::layout::floating::FloatingPane;
+use crate::{PaneId, TabId};
 use oriterm_core::Theme;
-use oriterm_mux::domain::SpawnConfig;
-use oriterm_mux::layout::Rect;
-use oriterm_mux::layout::floating::FloatingPane;
-use oriterm_mux::{PaneId, TabId};
 
 use super::InProcessMux;
 use crate::mux_event::MuxNotification;
@@ -24,7 +24,7 @@ impl InProcessMux {
         clippy::too_many_arguments,
         reason = "floating spawn requires tab + config + theme + proxy + available rect"
     )]
-    pub(crate) fn spawn_floating_pane(
+    pub fn spawn_floating_pane(
         &mut self,
         tab_id: TabId,
         config: &SpawnConfig,
@@ -63,7 +63,7 @@ impl InProcessMux {
     /// Removes the pane from the split tree and inserts it as a centered
     /// floating pane. Fails silently if the pane is the last tiled pane
     /// (must keep at least one in the tree).
-    pub(crate) fn move_pane_to_floating(
+    pub fn move_pane_to_floating(
         &mut self,
         tab_id: TabId,
         pane_id: PaneId,
@@ -105,7 +105,7 @@ impl InProcessMux {
     ///
     /// Removes the pane from the floating layer and inserts it as a sibling
     /// of the given tiled pane (or the first tiled pane if none specified).
-    pub(crate) fn move_pane_to_tiled(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
+    pub fn move_pane_to_tiled(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return false;
         };
@@ -121,7 +121,7 @@ impl InProcessMux {
         let anchor = tab.tree().first_pane();
         let new_tree = tab.tree().split_at(
             anchor,
-            oriterm_mux::layout::SplitDirection::Vertical,
+            crate::layout::SplitDirection::Vertical,
             pane_id,
             0.5,
         );
@@ -137,7 +137,7 @@ impl InProcessMux {
     ///
     /// Uses in-place mutation and emits `FloatingPaneChanged` (lightweight,
     /// no PTY resize) instead of `TabLayoutChanged`.
-    pub(crate) fn move_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId, x: f32, y: f32) {
+    pub fn move_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId, x: f32, y: f32) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
@@ -151,7 +151,7 @@ impl InProcessMux {
     /// Uses in-place mutation and emits `FloatingPaneChanged` (lightweight,
     /// no PTY resize) instead of `TabLayoutChanged`. PTY resize is deferred
     /// to drag finish.
-    pub(crate) fn resize_floating_pane(
+    pub fn resize_floating_pane(
         &mut self,
         tab_id: TabId,
         pane_id: PaneId,
@@ -170,7 +170,7 @@ impl InProcessMux {
     ///
     /// Used during edge/corner resize drags where both position and size
     /// change. Avoids emitting two separate notifications per mouse move.
-    pub(crate) fn set_floating_pane_rect(&mut self, tab_id: TabId, pane_id: PaneId, rect: Rect) {
+    pub fn set_floating_pane_rect(&mut self, tab_id: TabId, pane_id: PaneId, rect: Rect) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };
@@ -180,7 +180,7 @@ impl InProcessMux {
     }
 
     /// Bring a floating pane to the front (highest z-order).
-    pub(crate) fn raise_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId) {
+    pub fn raise_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId) {
         let Some(tab) = self.session.get_tab_mut(tab_id) else {
             return;
         };

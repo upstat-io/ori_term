@@ -1845,7 +1845,16 @@ dependencies = [
 name = "oriterm_mux"
 version = "0.1.0-alpha.3"
 dependencies = [
+ "libc",
+ "log",
+ "mio",
+ "oriterm_core",
+ "parking_lot",
+ "portable-pty",
  "serde",
+ "signal-hook",
+ "tempfile",
+ "vte",
 ]
 
 [[package]]
