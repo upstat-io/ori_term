@@ -5,7 +5,8 @@ use std::io::Cursor;
 use super::codec::{DecodeError, DecodedFrame, ProtocolCodec};
 use super::messages::{MsgType, MuxPdu};
 use super::snapshot::{
-    MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireCell, WireColor, WireCursor, WireRgb,
+    MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireCell, WireColor, WireCursor, WireCursorShape,
+    WireRgb,
 };
 use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
 use crate::id::{ClientId, PaneId, TabId, WindowId};
@@ -148,6 +149,7 @@ fn roundtrip_create_tab() {
             window_id: WindowId::from_raw(1),
             shell: Some("/bin/bash".into()),
             cwd: Some("/home/user".into()),
+            theme: Some("dark".into()),
         },
     );
 }
@@ -160,6 +162,7 @@ fn roundtrip_create_tab_defaults() {
             window_id: WindowId::from_raw(1),
             shell: None,
             cwd: None,
+            theme: None,
         },
     );
 }
@@ -271,6 +274,7 @@ fn roundtrip_split_pane() {
             direction: SplitDirection::Vertical,
             shell: None,
             cwd: None,
+            theme: None,
         },
     );
 }
@@ -388,7 +392,6 @@ fn roundtrip_pane_split() {
 fn roundtrip_notify_pane_output() {
     let pdu = MuxPdu::NotifyPaneOutput {
         pane_id: PaneId::from_raw(1),
-        dirty_rows: vec![0, 5, 23],
     };
     assert!(pdu.is_notification());
     roundtrip(0, pdu);
@@ -482,7 +485,7 @@ fn sample_snapshot() -> PaneSnapshot {
         cursor: WireCursor {
             col: 5,
             row: 0,
-            shape: 0,
+            shape: WireCursorShape::Block,
             visible: true,
         },
         palette: (0..270).map(|i| [(i % 256) as u8, 0, 0]).collect(),
@@ -546,7 +549,7 @@ fn snapshot_with_cjk_emoji_combining() {
         cursor: WireCursor {
             col: 0,
             row: 0,
-            shape: 2,
+            shape: WireCursorShape::Bar,
             visible: true,
         },
         palette: vec![[0, 0, 0]; 270],
@@ -631,7 +634,6 @@ fn notification_delivery() {
     let notifications = vec![
         MuxPdu::NotifyPaneOutput {
             pane_id: PaneId::from_raw(1),
-            dirty_rows: vec![0, 1, 2],
         },
         MuxPdu::NotifyPaneExited {
             pane_id: PaneId::from_raw(2),
@@ -737,6 +739,7 @@ fn multiple_frames_sequential() {
                 window_id: WindowId::from_raw(1),
                 shell: None,
                 cwd: None,
+                theme: None,
             },
         ),
         (

@@ -38,7 +38,7 @@ pub use nav::Direction;
 pub use pane::Pane;
 pub use protocol::{
     DecodeError, DecodedFrame, FrameHeader, MsgType, MuxPdu, MuxTabInfo, MuxWindowInfo,
-    PaneSnapshot, ProtocolCodec, WireCell, WireColor, WireCursor, WireRgb,
+    PaneSnapshot, ProtocolCodec, WireCell, WireColor, WireCursor, WireCursorShape, WireRgb,
 };
 pub use pty::{ExitStatus, PtyConfig, PtyControl, PtyHandle, spawn_pty};
 pub use registry::{PaneEntry, PaneRegistry, SessionRegistry};

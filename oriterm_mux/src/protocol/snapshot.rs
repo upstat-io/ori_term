@@ -52,6 +52,24 @@ pub struct WireCell {
     pub zerowidth: Vec<char>,
 }
 
+/// Cursor shape on the wire.
+///
+/// Stable `#[repr(u8)]` encoding decoupled from `oriterm_core::CursorShape`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum WireCursorShape {
+    /// Filled block cursor.
+    Block = 0,
+    /// Underline cursor.
+    Underline = 1,
+    /// Vertical bar cursor.
+    Bar = 2,
+    /// Hollow (outline) block cursor.
+    HollowBlock = 3,
+    /// Cursor hidden.
+    Hidden = 4,
+}
+
 /// Cursor state on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireCursor {
@@ -59,8 +77,8 @@ pub struct WireCursor {
     pub col: u16,
     /// Row (0-indexed, within viewport).
     pub row: u16,
-    /// Cursor shape: 0 = Block, 1 = Underline, 2 = Bar, 3 = `HollowBlock`, 4 = Hidden.
-    pub shape: u8,
+    /// Cursor shape.
+    pub shape: WireCursorShape,
     /// Whether the cursor is visible.
     pub visible: bool,
 }
@@ -79,7 +97,39 @@ pub struct PaneSnapshot {
     pub palette: Vec<[u8; 3]>,
     /// Pane title (from OSC 0/2).
     pub title: String,
-    /// Terminal mode flags as raw bits (maps to `TermMode`).
+    /// Terminal mode flags as raw bits.
+    ///
+    /// # Wire format
+    ///
+    /// | Bit | Mode |
+    /// |-----|------|
+    /// | 0   | `SHOW_CURSOR` (DECTCEM) |
+    /// | 1   | `APP_CURSOR` (DECCKM) |
+    /// | 2   | `APP_KEYPAD` (DECKPAM/DECKPNM) |
+    /// | 3   | `MOUSE_REPORT_CLICK` (mode 1000) |
+    /// | 4   | `MOUSE_DRAG` (mode 1002) |
+    /// | 5   | `MOUSE_MOTION` (mode 1003) |
+    /// | 6   | `MOUSE_SGR` (mode 1006) |
+    /// | 7   | `MOUSE_UTF8` (mode 1005) |
+    /// | 8   | `ALT_SCREEN` (mode 1049) |
+    /// | 9   | `LINE_WRAP` (DECAWM) |
+    /// | 10  | `ORIGIN` (DECOM) |
+    /// | 11  | `INSERT` (IRM) |
+    /// | 12  | `FOCUS_IN_OUT` (mode 1004) |
+    /// | 13  | `BRACKETED_PASTE` (mode 2004) |
+    /// | 14  | `SYNC_UPDATE` (mode 2026) |
+    /// | 15  | `URGENCY_HINTS` (mode 1042) |
+    /// | 16  | `CURSOR_BLINKING` (ATT610) |
+    /// | 17  | `LINE_FEED_NEW_LINE` (LNM) |
+    /// | 18  | `DISAMBIGUATE_ESC_CODES` (Kitty) |
+    /// | 19  | `REPORT_EVENT_TYPES` (Kitty) |
+    /// | 20  | `REPORT_ALTERNATE_KEYS` (Kitty) |
+    /// | 21  | `REPORT_ALL_KEYS_AS_ESC` (Kitty) |
+    /// | 22  | `REPORT_ASSOCIATED_TEXT` (Kitty) |
+    /// | 23  | `ALTERNATE_SCROLL` (mode 1007) |
+    /// | 24  | `REVERSE_WRAP` (mode 45) |
+    /// | 25  | `MOUSE_URXVT` (mode 1015) |
+    /// | 26  | `MOUSE_X10` (mode 9) |
     pub modes: u32,
     /// Number of scrollback rows above the viewport.
     pub scrollback_len: u32,

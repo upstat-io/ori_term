@@ -55,7 +55,11 @@ impl FrameReader {
             return None;
         }
 
-        let header = FrameHeader::decode(self.buf[..HEADER_LEN].try_into().unwrap());
+        let header = FrameHeader::decode(
+            self.buf[..HEADER_LEN]
+                .try_into()
+                .expect("checked length >= HEADER_LEN"),
+        );
 
         // Validate payload size.
         if header.payload_len > MAX_PAYLOAD {

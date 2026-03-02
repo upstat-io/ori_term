@@ -130,6 +130,8 @@ pub enum MuxPdu {
         shell: Option<String>,
         /// Working directory override (uses current dir if `None`).
         cwd: Option<String>,
+        /// Color theme: `"dark"`, `"light"`, or `None` for server default.
+        theme: Option<String>,
     },
 
     /// Close a tab and all its panes.
@@ -209,6 +211,8 @@ pub enum MuxPdu {
         shell: Option<String>,
         /// Working directory override.
         cwd: Option<String>,
+        /// Color theme: `"dark"`, `"light"`, or `None` for server default.
+        theme: Option<String>,
     },
 
     /// Cycle the active tab in a window.
@@ -303,12 +307,10 @@ pub enum MuxPdu {
     },
 
     // -- Push notifications (daemon → window) --
-    /// Pane has new output — grid rows are dirty.
+    /// Pane has new output — the client should re-fetch the snapshot.
     NotifyPaneOutput {
         /// Pane with new output.
         pane_id: PaneId,
-        /// Which viewport rows changed (0-indexed).
-        dirty_rows: Vec<u16>,
     },
 
     /// Pane's shell process exited.

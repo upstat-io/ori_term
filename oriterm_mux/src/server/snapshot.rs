@@ -13,7 +13,7 @@ use crate::pane::Pane;
 use crate::registry::PaneRegistry;
 use crate::{
     MuxTabInfo, MuxWindowInfo, PaneId, PaneSnapshot, SessionRegistry, WindowId, WireCell,
-    WireColor, WireCursor, WireRgb,
+    WireColor, WireCursor, WireCursorShape, WireRgb,
 };
 
 /// Build a full snapshot of a pane's visible state.
@@ -46,7 +46,7 @@ pub fn build_snapshot(pane: &Pane) -> PaneSnapshot {
     let wire_cursor = WireCursor {
         col: cursor.col().0 as u16,
         row: cursor.line() as u16,
-        shape: cursor_shape_to_u8(cursor_shape),
+        shape: cursor_shape_to_wire(cursor_shape),
         visible: cursor_visible,
     };
 
@@ -100,14 +100,14 @@ fn color_to_wire(color: Color) -> WireColor {
     }
 }
 
-/// Map `CursorShape` enum to wire `u8`.
-fn cursor_shape_to_u8(shape: oriterm_core::CursorShape) -> u8 {
+/// Map `CursorShape` enum to [`WireCursorShape`].
+fn cursor_shape_to_wire(shape: oriterm_core::CursorShape) -> WireCursorShape {
     match shape {
-        oriterm_core::CursorShape::Block => 0,
-        oriterm_core::CursorShape::Underline => 1,
-        oriterm_core::CursorShape::Bar => 2,
-        oriterm_core::CursorShape::HollowBlock => 3,
-        oriterm_core::CursorShape::Hidden => 4,
+        oriterm_core::CursorShape::Block => WireCursorShape::Block,
+        oriterm_core::CursorShape::Underline => WireCursorShape::Underline,
+        oriterm_core::CursorShape::Bar => WireCursorShape::Bar,
+        oriterm_core::CursorShape::HollowBlock => WireCursorShape::HollowBlock,
+        oriterm_core::CursorShape::Hidden => WireCursorShape::Hidden,
     }
 }
 

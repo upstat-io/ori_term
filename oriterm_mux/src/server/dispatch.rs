@@ -52,17 +52,15 @@ pub fn dispatch_request(
             window_id,
             shell,
             cwd,
+            theme,
         } => {
             let config = SpawnConfig {
-                cols: 80,
-                rows: 24,
                 shell,
                 cwd: cwd.map(PathBuf::from),
-                env: Vec::new(),
-                scrollback: 10_000,
-                shell_integration: true,
+                ..SpawnConfig::default()
             };
-            match mux.create_tab(window_id, &config, Theme::Dark, wakeup) {
+            let theme = parse_theme(theme.as_deref());
+            match mux.create_tab(window_id, &config, theme, wakeup) {
                 Ok((tab_id, pane_id, pane)) => {
                     panes.insert(pane_id, pane);
                     log::debug!("created {tab_id} with {pane_id} in {window_id}");
@@ -169,17 +167,15 @@ pub fn dispatch_request(
             direction,
             shell,
             cwd,
+            theme,
         } => {
             let config = SpawnConfig {
-                cols: 80,
-                rows: 24,
                 shell,
                 cwd: cwd.map(PathBuf::from),
-                env: Vec::new(),
-                scrollback: 10_000,
-                shell_integration: true,
+                ..SpawnConfig::default()
             };
-            match mux.split_pane(tab_id, pane_id, direction, &config, Theme::Dark, wakeup) {
+            let theme = parse_theme(theme.as_deref());
+            match mux.split_pane(tab_id, pane_id, direction, &config, theme, wakeup) {
                 Ok((new_pane_id, pane)) => {
                     panes.insert(new_pane_id, pane);
                     log::debug!("split {pane_id} -> {new_pane_id}");
@@ -221,6 +217,16 @@ pub fn dispatch_request(
                 message: "unexpected PDU type from client".to_string(),
             })
         }
+    }
+}
+
+/// Parse a wire theme string into a [`Theme`].
+///
+/// `None` or unrecognized strings default to [`Theme::Dark`].
+fn parse_theme(s: Option<&str>) -> Theme {
+    match s {
+        Some("light") => Theme::Light,
+        _ => Theme::Dark,
     }
 }
 

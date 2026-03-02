@@ -89,6 +89,10 @@ pub struct MuxServer {
     had_client: bool,
     /// Reusable buffer for draining notifications.
     notification_buf: Vec<MuxNotification>,
+    /// Reusable scratch buffer for collecting client IDs during dispatch.
+    scratch_clients: Vec<ClientId>,
+    /// Reusable scratch buffer for collecting pane IDs during dispatch.
+    scratch_panes: Vec<PaneId>,
 }
 
 impl MuxServer {
@@ -133,6 +137,8 @@ impl MuxServer {
             start_time: Instant::now(),
             had_client: false,
             notification_buf: Vec::new(),
+            scratch_clients: Vec::new(),
+            scratch_panes: Vec::new(),
         })
     }
 
@@ -332,9 +338,9 @@ impl MuxServer {
                     let Some(subs) = self.subscriptions.get(&pane_id) else {
                         continue;
                     };
-                    // Clone the subscriber list to avoid borrow conflict.
-                    let sub_ids: Vec<ClientId> = subs.clone();
-                    for cid in sub_ids {
+                    self.scratch_clients.clear();
+                    self.scratch_clients.extend_from_slice(subs);
+                    for &cid in &self.scratch_clients {
                         if let Some(conn) = self.connections.get_mut(&cid) {
                             if let Err(e) = send_frame(conn.stream_mut(), 0, &pdu) {
                                 log::warn!("notification write error to {cid}: {e}");
@@ -398,9 +404,11 @@ impl MuxServer {
             }
         }
         // Remove entries where the client unsubscribed.
-        let subscribed = conn.subscribed_panes().clone();
+        self.scratch_panes.clear();
+        self.scratch_panes
+            .extend(conn.subscribed_panes().iter().copied());
         self.subscriptions.retain(|pane_id, subs| {
-            if !subscribed.contains(pane_id) {
+            if !self.scratch_panes.contains(pane_id) {
                 subs.retain(|&c| c != client_id);
             }
             !subs.is_empty()

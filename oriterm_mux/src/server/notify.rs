@@ -27,10 +27,7 @@ pub fn notification_to_pdu(
     match notif {
         MuxNotification::PaneDirty(pane_id) => Some((
             TargetClients::PaneSubscribers(*pane_id),
-            MuxPdu::NotifyPaneOutput {
-                pane_id: *pane_id,
-                dirty_rows: Vec::new(),
-            },
+            MuxPdu::NotifyPaneOutput { pane_id: *pane_id },
         )),
 
         MuxNotification::PaneClosed(pane_id) => Some((
