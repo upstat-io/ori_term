@@ -385,3 +385,195 @@ fn all_separators_menu_navigate_returns_false() {
     // Should still be handled (not ignored).
     assert!(r.response.is_handled());
 }
+
+// --- Non-left mouse button tests ---
+
+#[test]
+fn right_click_ignored() {
+    let mut menu = MenuWidget::new(sample_entries());
+    let bounds = Rect::new(0.0, 0.0, 200.0, menu.total_height());
+    let ctx = event_ctx(bounds);
+
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Right),
+        pos: Point::new(50.0, 20.0),
+        modifiers: Modifiers::NONE,
+    };
+    let r = menu.handle_mouse(&down, &ctx);
+    assert_eq!(r, WidgetResponse::ignored());
+}
+
+// --- Out-of-bounds mouse Y tests ---
+
+#[test]
+fn mouse_y_above_padding_clears_hover() {
+    let mut menu = MenuWidget::new(sample_entries());
+    let s = MenuStyle::default();
+    let bounds = Rect::new(0.0, 0.0, 200.0, menu.total_height());
+    let ctx = event_ctx(bounds);
+
+    // Hover the first item.
+    let item_y = s.padding_y + s.item_height / 2.0;
+    menu.handle_mouse(&mouse_move(50.0, item_y), &ctx);
+    assert_eq!(menu.hovered(), Some(0));
+
+    // Move into top padding (y=1.0 is above first item at y=4.0).
+    menu.handle_mouse(&mouse_move(50.0, 1.0), &ctx);
+    assert_eq!(menu.hovered(), None);
+}
+
+#[test]
+fn mouse_y_below_entries_clears_hover() {
+    let mut menu = MenuWidget::new(sample_entries());
+    let s = MenuStyle::default();
+    let bounds = Rect::new(0.0, 0.0, 200.0, menu.total_height());
+    let ctx = event_ctx(bounds);
+
+    // Hover the first item.
+    let item_y = s.padding_y + s.item_height / 2.0;
+    menu.handle_mouse(&mouse_move(50.0, item_y), &ctx);
+    assert_eq!(menu.hovered(), Some(0));
+
+    // Move into bottom padding (past all entries).
+    let below_y = menu.total_height() - 1.0;
+    menu.handle_mouse(&mouse_move(50.0, below_y), &ctx);
+    assert_eq!(menu.hovered(), None);
+}
+
+// --- Hybrid keyboard/mouse interaction ---
+
+#[test]
+fn keyboard_then_mouse_hover_follows_mouse() {
+    let mut menu = MenuWidget::new(sample_entries());
+    let s = MenuStyle::default();
+    let bounds = Rect::new(0.0, 0.0, 200.0, menu.total_height());
+    let ctx = event_ctx(bounds);
+
+    // Keyboard nav to first item.
+    menu.handle_key(key_event(Key::ArrowDown), &ctx);
+    assert_eq!(menu.hovered(), Some(0));
+
+    // Mouse move to second item overrides keyboard hover.
+    let item2_y = s.padding_y + s.item_height + s.item_height / 2.0;
+    menu.handle_mouse(&mouse_move(50.0, item2_y), &ctx);
+    assert_eq!(menu.hovered(), Some(1));
+}
+
+// --- Space key activation ---
+
+#[test]
+fn space_key_activates() {
+    let mut menu = MenuWidget::new(sample_entries());
+    let ctx = event_ctx(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    menu.handle_key(key_event(Key::ArrowDown), &ctx);
+    let r = menu.handle_key(key_event(Key::Space), &ctx);
+    assert_eq!(
+        r.action,
+        Some(WidgetAction::Selected {
+            id: menu.id(),
+            index: 0
+        })
+    );
+}
+
+// --- Check item click ---
+
+#[test]
+fn click_check_item_emits_selected() {
+    let entries = vec![
+        MenuEntry::Check {
+            label: "Option A".into(),
+            checked: false,
+        },
+        MenuEntry::Check {
+            label: "Option B".into(),
+            checked: true,
+        },
+    ];
+    let mut menu = MenuWidget::new(entries);
+    let s = MenuStyle::default();
+    let bounds = Rect::new(0.0, 0.0, 200.0, menu.total_height());
+    let ctx = event_ctx(bounds);
+
+    // Click on second check item.
+    let item2_y = s.padding_y + s.item_height + s.item_height / 2.0;
+    menu.handle_mouse(&mouse_move(50.0, item2_y), &ctx);
+    assert_eq!(menu.hovered(), Some(1));
+
+    menu.handle_mouse(&mouse_down(50.0, item2_y), &ctx);
+    let r = menu.handle_mouse(&mouse_up(50.0, item2_y), &ctx);
+    assert_eq!(
+        r.action,
+        Some(WidgetAction::Selected {
+            id: menu.id(),
+            index: 1
+        })
+    );
+}
+
+// --- Boundary: single item menu ---
+
+#[test]
+fn single_item_menu_works() {
+    let mut menu = MenuWidget::new(vec![MenuEntry::Item {
+        label: "Only".into(),
+    }]);
+    let ctx = event_ctx(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    // Arrow down selects the only item.
+    menu.handle_key(key_event(Key::ArrowDown), &ctx);
+    assert_eq!(menu.hovered(), Some(0));
+
+    // Arrow down again wraps back to same item.
+    menu.handle_key(key_event(Key::ArrowDown), &ctx);
+    assert_eq!(menu.hovered(), Some(0));
+
+    // Enter activates.
+    let r = menu.handle_key(key_event(Key::Enter), &ctx);
+    assert_eq!(
+        r.action,
+        Some(WidgetAction::Selected {
+            id: menu.id(),
+            index: 0
+        })
+    );
+}
+
+// --- Consecutive separators ---
+
+#[test]
+fn consecutive_separators_skipped() {
+    let entries = vec![
+        MenuEntry::Item { label: "A".into() },
+        MenuEntry::Separator,
+        MenuEntry::Separator,
+        MenuEntry::Item { label: "B".into() },
+    ];
+    let mut menu = MenuWidget::new(entries);
+    let ctx = event_ctx(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    // Arrow down → first item (index 0).
+    menu.handle_key(key_event(Key::ArrowDown), &ctx);
+    assert_eq!(menu.hovered(), Some(0));
+
+    // Arrow down → skips two separators, lands on index 3.
+    menu.handle_key(key_event(Key::ArrowDown), &ctx);
+    assert_eq!(menu.hovered(), Some(3));
+}
+
+// --- Fresh instance contract ---
+
+#[test]
+fn new_menu_starts_with_no_hover() {
+    let mut menu = MenuWidget::new(sample_entries());
+    let ctx = event_ctx(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    // Use the first menu — navigate to an item.
+    menu.handle_key(key_event(Key::ArrowDown), &ctx);
+    assert_eq!(menu.hovered(), Some(0));
+
+    // New menu instance starts with no hover.
+    let menu2 = MenuWidget::new(sample_entries());
+    assert_eq!(menu2.hovered(), None);
+}
