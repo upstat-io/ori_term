@@ -152,6 +152,76 @@ pub(crate) struct App {
 }
 
 impl App {
+    /// Create a new application instance in daemon mode.
+    ///
+    /// Instead of an embedded mux, connects to a running `oriterm-mux`
+    /// daemon at `socket_path`. If `window_id` is provided, claims an
+    /// existing mux window; otherwise creates a new one during init.
+    #[cfg(unix)]
+    pub(crate) fn new_daemon(
+        event_proxy: EventLoopProxy<TermEvent>,
+        config: Config,
+        socket_path: &std::path::Path,
+        window_id: Option<u64>,
+    ) -> Self {
+        let bindings = keybindings::merge_bindings(&config.keybind);
+        let monitor = ConfigMonitor::new(event_proxy.clone());
+        let blink_interval = Duration::from_millis(config.terminal.cursor_blink_interval_ms);
+        let ui_theme = resolve_ui_theme(&config);
+        let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = event_proxy.send_event(TermEvent::MuxWakeup);
+        });
+
+        let mux: Option<Box<dyn MuxBackend>> =
+            match oriterm_mux::MuxClient::connect(socket_path, mux_wakeup) {
+                Ok(client) => {
+                    log::info!("daemon mode: connected to {}", socket_path.display());
+                    Some(Box::new(client))
+                }
+                Err(e) => {
+                    log::error!(
+                        "failed to connect to daemon at {}: {e}",
+                        socket_path.display()
+                    );
+                    None
+                }
+            };
+
+        let mut app = Self {
+            gpu: None,
+            renderer: None,
+            windows: HashMap::new(),
+            focused_window_id: None,
+            mux,
+            active_window: None,
+            notification_buf: Vec::new(),
+            modifiers: ModifiersState::empty(),
+            cursor_blink: CursorBlink::new(blink_interval),
+            blinking_active: false,
+            mouse: MouseState::new(),
+            clipboard: Clipboard::new(),
+            config,
+            bindings,
+            _config_monitor: monitor,
+            ime: ImeState::new(),
+            ui_theme,
+            pending_new_window: false,
+            pending_move_tab_to_window: None,
+            #[cfg(target_os = "windows")]
+            torn_off_pending: None,
+            merge_drag_suppress_release: false,
+            last_render: Instant::now(),
+            perf: PerfStats::new(),
+        };
+
+        // Store the claimed window ID so init can use it instead of creating one.
+        if let Some(wid) = window_id {
+            app.active_window = Some(oriterm_mux::WindowId::from_raw(wid));
+        }
+
+        app
+    }
+
     /// Create a new application instance.
     ///
     /// All GPU/window/tab state is `None` until [`resumed`] is called by

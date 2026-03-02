@@ -309,5 +309,52 @@ impl InProcessMux {
     }
 }
 
+// -- Test helpers --
+
+#[cfg(test)]
+impl InProcessMux {
+    /// Inject a window + tab + pane without spawning a PTY.
+    ///
+    /// Use raw IDs starting at 100+ to avoid collision with the allocator.
+    /// Drains any notifications emitted during setup.
+    pub(crate) fn inject_test_tab(&mut self, wid: WindowId, tid: TabId, pid: PaneId) {
+        use crate::session::{MuxTab, MuxWindow};
+
+        if self.session.get_window(wid).is_none() {
+            self.session.add_window(MuxWindow::new(wid));
+        }
+        self.session.get_window_mut(wid).unwrap().add_tab(tid);
+        self.session.add_tab(MuxTab::new(tid, pid));
+        self.pane_registry.register(PaneEntry {
+            pane: pid,
+            tab: tid,
+            domain: self.local_domain.id(),
+        });
+        self.notifications.clear();
+    }
+
+    /// Inject a second pane into an existing tab via a split.
+    ///
+    /// Modifies the tab's split tree to include `new_pid` alongside the
+    /// existing root pane.
+    pub(crate) fn inject_split(
+        &mut self,
+        tid: TabId,
+        new_pid: PaneId,
+        dir: crate::layout::SplitDirection,
+    ) {
+        let tab = self.session.get_tab_mut(tid).unwrap();
+        let root = tab.tree().first_pane();
+        let tree = tab.tree().split_at(root, dir, new_pid, 0.5);
+        tab.set_tree(tree);
+        self.pane_registry.register(PaneEntry {
+            pane: new_pid,
+            tab: tid,
+            domain: self.local_domain.id(),
+        });
+        self.notifications.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests;

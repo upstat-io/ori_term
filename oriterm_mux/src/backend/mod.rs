@@ -218,4 +218,11 @@ pub trait MuxBackend {
 
     /// Default domain ID for spawning.
     fn default_domain(&self) -> DomainId;
+
+    /// Whether this backend is running in daemon (IPC client) mode.
+    ///
+    /// Embedded mode returns `false`. Client mode returns `true`.
+    /// The App uses this to choose between in-process window creation
+    /// and cross-process tab migration.
+    fn is_daemon_mode(&self) -> bool;
 }

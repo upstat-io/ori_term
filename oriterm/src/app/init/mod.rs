@@ -48,9 +48,15 @@ impl App {
         let t_gpu = t_gpu_start.elapsed();
 
         // 4. Allocate a mux window early (ID needed by TermWindow for mapping).
-        //    The mux backend was already created in App::new().
+        //    In daemon mode, the window may already be claimed via `--window`.
         let mux = self.mux.as_mut().expect("mux backend must exist at init");
-        let mux_window_id = mux.create_window();
+        let is_daemon = mux.is_daemon_mode();
+        let mux_window_id = if let Some(claimed) = self.active_window {
+            // Daemon mode with a pre-claimed window ID.
+            claimed
+        } else {
+            mux.create_window()
+        };
 
         // 5. Wrap the same window into TermWindow (creates surface, applies effects).
         let window = TermWindow::from_window(window_arc, &window_config, &gpu, mux_window_id)?;
@@ -113,9 +119,13 @@ impl App {
             rows as f32 * cell.height,
         ));
 
-        // 13. Create initial tab + pane in the pre-allocated mux window.
+        // 13. Create initial tab + pane (skip if daemon mode with a claimed window
+        //     — the daemon already owns the tabs).
         let t_mux_start = std::time::Instant::now();
-        self.create_initial_tab(mux_window_id, rows as u16, cols as u16)?;
+        let is_claimed = is_daemon && self.active_window.is_some();
+        if !is_claimed {
+            self.create_initial_tab(mux_window_id, rows as u16, cols as u16)?;
+        }
         let t_mux = t_mux_start.elapsed();
 
         let t_total = t_start.elapsed();

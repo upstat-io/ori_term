@@ -72,7 +72,9 @@ impl App {
         // Pane structs (ConPTY safety on Windows).
         let is_last = mux.session().tab_count() <= 1;
 
-        mux.close_tab(tab_id);
+        // Pane cleanup is deferred to `PaneClosed` notifications in
+        // `pump_mux_events` — the returned IDs are intentionally unused here.
+        let _pane_ids = mux.close_tab(tab_id);
 
         if is_last {
             log::info!("last tab closed, shutting down");
@@ -241,8 +243,12 @@ impl App {
 
     /// Move a tab to a new window.
     ///
-    /// Creates a new window, then moves the tab there. Refuses if the tab
-    /// is the last tab in the last window (would leave zero windows).
+    /// In embedded mode: creates a new OS window in this process, moves
+    /// the tab there. In daemon mode: creates a new mux window via the
+    /// daemon, moves the tab, then spawns a new `oriterm` process with
+    /// `--connect` + `--window` to render it.
+    ///
+    /// Refuses if the tab is the last tab in the last window.
     #[allow(dead_code, reason = "superseded by tear_off_tab in Section 17.2")]
     pub(super) fn move_tab_to_new_window(
         &mut self,
@@ -259,6 +265,70 @@ impl App {
             return;
         }
 
+        let is_daemon = self.mux.as_ref().is_some_and(|m| m.is_daemon_mode());
+
+        if is_daemon {
+            self.move_tab_to_new_window_daemon(tab_id);
+        } else {
+            self.move_tab_to_new_window_embedded(tab_id, event_loop);
+        }
+    }
+
+    /// Daemon-mode: create window via daemon, move tab, spawn new process.
+    fn move_tab_to_new_window_daemon(&mut self, tab_id: TabId) {
+        let Some(mux) = &mut self.mux else { return };
+
+        // Create a new empty window in the daemon.
+        let new_window_id = mux.create_window();
+        if new_window_id.raw() == 0 {
+            log::error!("move_tab_to_new_window_daemon: failed to create window");
+            return;
+        }
+
+        // Move the tab to the new window.
+        if !mux.move_tab_to_window(tab_id, new_window_id) {
+            log::error!("move_tab_to_new_window_daemon: failed to move tab");
+            return;
+        }
+
+        // Spawn a new oriterm process to render the new window.
+        // It connects to the same daemon socket and claims the window ID.
+        #[cfg(unix)]
+        {
+            let socket_path = oriterm_mux::server::socket_path();
+            match std::process::Command::new(std::env::current_exe().unwrap_or_default())
+                .arg("--connect")
+                .arg(&socket_path)
+                .arg("--window")
+                .arg(new_window_id.raw().to_string())
+                .spawn()
+            {
+                Ok(child) => {
+                    log::info!(
+                        "spawned new window process (pid={}) for {new_window_id}",
+                        child.id()
+                    );
+                }
+                Err(e) => {
+                    log::error!("failed to spawn new window process: {e}");
+                }
+            }
+        }
+
+        // Sync tab bars for the source window.
+        self.release_tab_width_lock();
+        self.sync_tab_bar_from_mux();
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
+    }
+
+    /// Embedded-mode: create in-process window, move tab there.
+    fn move_tab_to_new_window_embedded(
+        &mut self,
+        tab_id: TabId,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) {
         // Create new window (GPU, surface, chrome, initial tab).
         let Some(new_winit_id) = self.create_window(event_loop) else {
             return;
@@ -266,9 +336,6 @@ impl App {
 
         // The new window got a fresh initial tab. Find the mux window ID,
         // then move the requested tab there BEFORE closing the initial tab.
-        // Order matters: close_tab removes empty windows from the mux
-        // session synchronously, so closing first would destroy the
-        // destination before the move can land.
         let Some(ctx) = self.windows.get(&new_winit_id) else {
             return;
         };
@@ -294,9 +361,6 @@ impl App {
         }
 
         // Sync tab bars: old window lost a tab, new window gained one.
-        // The old window is still focused here, so marking it dirty ensures
-        // it renders with the updated tab bar before focus naturally shifts
-        // to the new window via winit's Focused event.
         self.sync_tab_bar_from_mux();
         self.sync_tab_bar_for_window(new_winit_id);
         if let Some(ctx) = self.focused_ctx_mut() {
@@ -417,40 +481,7 @@ impl App {
             return;
         };
 
-        // Collect entries without borrowing self mutably.
-        let active_idx = win.active_tab_idx();
-        let entries: Vec<oriterm_ui::widgets::tab_bar::TabEntry> = win
-            .tabs()
-            .iter()
-            .map(|&tab_id| {
-                let tab = mux.session().get_tab(tab_id);
-                let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-                let pane = pane_id.and_then(|pid| mux.pane(pid));
-                let mut title = pane
-                    .map(|p| p.effective_title().to_owned())
-                    .unwrap_or_default();
-                let icon = pane
-                    .and_then(|p| p.icon_name())
-                    .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
-                // Strip leading emoji from title when it matches the icon
-                // (OSC 0 sets both title and icon_name to the same string).
-                if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
-                    let stripped = title
-                        .strip_prefix(e.as_str())
-                        .map(|r| r.trim_start().to_owned());
-                    if let Some(s) = stripped {
-                        title = s;
-                    }
-                }
-                let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());
-                let display = if is_zoomed {
-                    format!("{title} [Z]")
-                } else {
-                    title
-                };
-                oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon)
-            })
-            .collect();
+        let (entries, active_idx) = build_tab_entries(mux.as_ref(), win);
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.tab_bar.set_tabs(entries);
@@ -478,45 +509,57 @@ impl App {
             return;
         };
 
-        let active_idx = win.active_tab_idx();
-        let entries: Vec<oriterm_ui::widgets::tab_bar::TabEntry> = win
-            .tabs()
-            .iter()
-            .map(|&tab_id| {
-                let tab = mux.session().get_tab(tab_id);
-                let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-                let pane = pane_id.and_then(|pid| mux.pane(pid));
-                let mut title = pane
-                    .map(|p| p.effective_title().to_owned())
-                    .unwrap_or_default();
-                let icon = pane
-                    .and_then(|p| p.icon_name())
-                    .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
-                // Strip leading emoji from title when it matches the icon
-                // (OSC 0 sets both title and icon_name to the same string).
-                if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
-                    let stripped = title
-                        .strip_prefix(e.as_str())
-                        .map(|r| r.trim_start().to_owned());
-                    if let Some(s) = stripped {
-                        title = s;
-                    }
-                }
-                let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());
-                let display = if is_zoomed {
-                    format!("{title} [Z]")
-                } else {
-                    title
-                };
-                oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon)
-            })
-            .collect();
+        let (entries, active_idx) = build_tab_entries(mux.as_ref(), win);
 
         if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.tab_bar.set_tabs(entries);
             ctx.tab_bar.set_active_index(active_idx);
         }
     }
+}
+
+/// Build tab bar entries from a mux window's tab list.
+///
+/// Returns `(entries, active_tab_index)`. Shared by both
+/// `sync_tab_bar_from_mux` and `sync_tab_bar_for_window`.
+fn build_tab_entries(
+    mux: &dyn oriterm_mux::backend::MuxBackend,
+    win: &oriterm_mux::session::MuxWindow,
+) -> (Vec<oriterm_ui::widgets::tab_bar::TabEntry>, usize) {
+    let active_idx = win.active_tab_idx();
+    let entries = win
+        .tabs()
+        .iter()
+        .map(|&tab_id| {
+            let tab = mux.session().get_tab(tab_id);
+            let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
+            let pane = pane_id.and_then(|pid| mux.pane(pid));
+            let mut title = pane
+                .map(|p| p.effective_title().to_owned())
+                .unwrap_or_default();
+            let icon = pane
+                .and_then(|p| p.icon_name())
+                .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
+            // Strip leading emoji from title when it matches the icon
+            // (OSC 0 sets both title and icon_name to the same string).
+            if let Some(oriterm_ui::widgets::tab_bar::TabIcon::Emoji(ref e)) = icon {
+                let stripped = title
+                    .strip_prefix(e.as_str())
+                    .map(|r| r.trim_start().to_owned());
+                if let Some(s) = stripped {
+                    title = s;
+                }
+            }
+            let is_zoomed = tab.is_some_and(|t| t.zoomed_pane().is_some());
+            let display = if is_zoomed {
+                format!("{title} [Z]")
+            } else {
+                title
+            };
+            oriterm_ui::widgets::tab_bar::TabEntry::new(display).with_icon(icon)
+        })
+        .collect();
+    (entries, active_idx)
 }
 
 /// Wrapping index arithmetic for tab cycling.

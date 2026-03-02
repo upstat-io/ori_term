@@ -22,6 +22,22 @@ pub(crate) struct Cli {
     /// Subcommand to run (omit to launch the terminal).
     #[command(subcommand)]
     pub command: Option<SubCommand>,
+
+    /// Connect to a running mux daemon at this socket path.
+    ///
+    /// Instead of running an embedded mux, the terminal connects to
+    /// an existing `oriterm-mux` daemon for multiplexer state. Used
+    /// together with `--window` for cross-process tab migration.
+    #[arg(long)]
+    pub connect: Option<std::path::PathBuf>,
+
+    /// Claim an existing mux window ID (used with `--connect`).
+    ///
+    /// When connecting to a daemon that already has a window allocated,
+    /// pass its numeric ID here. The terminal will render that window
+    /// instead of creating a new one.
+    #[arg(long, requires = "connect")]
+    pub window: Option<u64>,
 }
 
 /// Diagnostic subcommands that run headlessly.

@@ -48,7 +48,21 @@ fn main() {
     let proxy = event_loop.create_proxy();
 
     let config = Config::load();
-    let mut app = app::App::new(proxy, config);
+
+    #[cfg(unix)]
+    let mut app = if let Some(ref socket) = args.connect {
+        app::App::new_daemon(proxy, config, socket, args.window)
+    } else {
+        app::App::new(proxy, config)
+    };
+
+    #[cfg(not(unix))]
+    let mut app = {
+        if args.connect.is_some() {
+            log::error!("--connect is not supported on this platform");
+        }
+        app::App::new(proxy, config)
+    };
 
     if let Err(e) = event_loop.run_app(&mut app) {
         log::error!("event loop error: {e}");

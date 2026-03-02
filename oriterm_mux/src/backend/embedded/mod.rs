@@ -42,17 +42,6 @@ impl EmbeddedMux {
             wakeup,
         }
     }
-
-    /// Apply a function to a pane by ID.
-    ///
-    /// Convenience for callers that need temporary pane access without
-    /// going through the trait (e.g., palette application during init).
-    pub fn with_pane<F, R>(&self, pane_id: PaneId, f: F) -> Option<R>
-    where
-        F: FnOnce(&Pane) -> R,
-    {
-        self.panes.get(&pane_id).map(f)
-    }
 }
 
 impl MuxBackend for EmbeddedMux {
@@ -247,6 +236,10 @@ impl MuxBackend for EmbeddedMux {
 
     fn default_domain(&self) -> DomainId {
         self.mux.default_domain()
+    }
+
+    fn is_daemon_mode(&self) -> bool {
+        false
     }
 }
 
