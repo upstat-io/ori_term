@@ -1021,3 +1021,54 @@ fn sgr_has_higher_priority_than_urxvt() {
         "SGR should take priority over URXVT"
     );
 }
+
+#[test]
+fn urxvt_with_shift_modifier() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT;
+    let e = MouseEvent {
+        button: MouseButton::Left,
+        kind: MouseEventKind::Press,
+        col: 5,
+        line: 3,
+        mods: MouseModifiers {
+            shift: true,
+            alt: false,
+            ctrl: false,
+        },
+    };
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Button code = 32 + 0 + 4 (shift) = 36, col = 6, line = 4.
+    assert_eq!(bytes, b"\x1b[36;6;4M");
+}
+
+#[test]
+fn urxvt_with_ctrl_modifier() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT;
+    let e = MouseEvent {
+        button: MouseButton::Left,
+        kind: MouseEventKind::Press,
+        col: 0,
+        line: 0,
+        mods: MouseModifiers {
+            shift: false,
+            alt: false,
+            ctrl: true,
+        },
+    };
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Button code = 32 + 0 + 16 (ctrl) = 48.
+    assert_eq!(bytes, b"\x1b[48;1;1M");
+}
+
+#[test]
+fn urxvt_release_uses_m_suffix() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_URXVT;
+    let e = event(MouseButton::Left, MouseEventKind::Release, 5, 3);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    let s = std::str::from_utf8(&bytes).unwrap();
+    // URXVT always uses 'M' suffix — no press/release distinction.
+    assert!(
+        s.ends_with('M'),
+        "URXVT release should use M suffix, got: {s}"
+    );
+}

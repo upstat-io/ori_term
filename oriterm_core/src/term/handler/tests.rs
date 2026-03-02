@@ -4643,3 +4643,193 @@ fn ris_clears_saved_private_modes() {
     feed(&mut t, b"\x1b[?25r");
     assert!(!t.mode().contains(TermMode::SHOW_CURSOR));
 }
+
+// --- Alt screen + scroll region interaction ---
+
+#[test]
+fn alt_screen_with_scroll_region() {
+    let mut t = term();
+    // Write something on primary.
+    feed(&mut t, b"PRIMARY");
+    // Enter alt screen (1049).
+    feed(&mut t, b"\x1b[?1049h");
+    assert!(t.mode().contains(TermMode::ALT_SCREEN));
+
+    // Set scroll region (lines 2-5).
+    feed(&mut t, b"\x1b[2;5r");
+    // Move into the scroll region and scroll.
+    feed(&mut t, b"\x1b[3;1H");
+    feed(&mut t, b"SCROLL");
+
+    // Exit alt screen.
+    feed(&mut t, b"\x1b[?1049l");
+    assert!(!t.mode().contains(TermMode::ALT_SCREEN));
+
+    // Primary screen content should be restored.
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'P');
+}
+
+// --- DECRST mouse tracking does not reactivate previous mode ---
+
+#[test]
+fn decrst_mouse_tracking_does_not_reactivate_previous() {
+    let mut t = term();
+    // Set mode 1000 (clicks).
+    feed(&mut t, b"\x1b[?1000h");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+
+    // Set mode 1003 (all motion) — clears 1000.
+    feed(&mut t, b"\x1b[?1003h");
+    assert!(t.mode().contains(TermMode::MOUSE_MOTION));
+    assert!(!t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+
+    // Unset mode 1003.
+    feed(&mut t, b"\x1b[?1003l");
+    // 1000 should NOT auto-reactivate. No mouse mode should be active.
+    assert!(!t.mode().contains(TermMode::MOUSE_MOTION));
+    assert!(!t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+    assert!(!t.mode().contains(TermMode::MOUSE_DRAG));
+    assert!(!t.mode().intersects(TermMode::ANY_MOUSE));
+}
+
+// --- Reverse wraparound at line 0 (boundary) ---
+
+#[test]
+fn reverse_wrap_at_line_0_is_noop() {
+    let mut t = Term::new(24, 10, 0, Theme::default(), crate::event::VoidListener);
+    // Enable reverse wraparound.
+    feed(&mut t, b"\x1b[?45h");
+
+    // Cursor starts at (0, 0). BS should be no-op — can't wrap above top.
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+
+    feed(&mut t, b"\x08");
+    assert_eq!(t.grid().cursor().line(), 0);
+    assert_eq!(t.grid().cursor().col(), Column(0));
+}
+
+// --- XTSAVE overwrite (last-write-wins) ---
+
+#[test]
+fn xtsave_overwrite_uses_latest_value() {
+    let mut t = term();
+    // Mode 25 (show cursor) is set by default.
+    assert!(t.mode().contains(TermMode::SHOW_CURSOR));
+
+    // Save mode 25 (currently set).
+    feed(&mut t, b"\x1b[?25s");
+
+    // Disable mode 25 and save again (now reset).
+    feed(&mut t, b"\x1b[?25l");
+    feed(&mut t, b"\x1b[?25s");
+
+    // Re-enable mode 25.
+    feed(&mut t, b"\x1b[?25h");
+    assert!(t.mode().contains(TermMode::SHOW_CURSOR));
+
+    // Restore — should restore to "reset" (the LATEST save), not "set".
+    feed(&mut t, b"\x1b[?25r");
+    assert!(
+        !t.mode().contains(TermMode::SHOW_CURSOR),
+        "XTSAVE should use last-write-wins, not first save"
+    );
+}
+
+// --- Alt screen mode 47 double-enter is no-op ---
+
+#[test]
+fn mode_47_double_enter_is_noop() {
+    let mut t = term();
+    // Write on primary.
+    feed(&mut t, b"hello");
+
+    // Enter alt screen (mode 47).
+    feed(&mut t, b"\x1b[?47h");
+    assert!(t.mode().contains(TermMode::ALT_SCREEN));
+
+    // Write on alt.
+    feed(&mut t, b"ALT");
+
+    // Enter again — should be no-op (already in alt screen).
+    feed(&mut t, b"\x1b[?47h");
+    assert!(t.mode().contains(TermMode::ALT_SCREEN));
+
+    // Exit once should return to primary.
+    feed(&mut t, b"\x1b[?47l");
+    assert!(!t.mode().contains(TermMode::ALT_SCREEN));
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'h');
+}
+
+// --- RIS clears all mouse tracking and encoding modes ---
+
+#[test]
+fn ris_clears_all_mouse_modes() {
+    let mut t = term();
+    // Set mouse tracking and encoding.
+    feed(&mut t, b"\x1b[?1003h"); // all motion
+    feed(&mut t, b"\x1b[?1006h"); // SGR encoding
+    assert!(t.mode().contains(TermMode::MOUSE_MOTION));
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+
+    // Full reset.
+    feed(&mut t, b"\x1bc");
+
+    assert!(!t.mode().intersects(TermMode::ANY_MOUSE));
+    assert!(!t.mode().intersects(TermMode::ANY_MOUSE_ENCODING));
+}
+
+// --- Mode 1049 enter then 47 exit ---
+
+#[test]
+fn mode_1049_enter_then_47_exit() {
+    let mut t = term();
+    // Move cursor to (3, 5).
+    feed(&mut t, b"\x1b[4;6H");
+    assert_eq!(t.grid().cursor().line(), 3);
+    assert_eq!(t.grid().cursor().col(), Column(5));
+
+    // Enter alt screen via mode 1049 (saves cursor).
+    feed(&mut t, b"\x1b[?1049h");
+    assert!(t.mode().contains(TermMode::ALT_SCREEN));
+
+    // Move cursor in alt screen.
+    feed(&mut t, b"\x1b[1;1H");
+
+    // Exit alt screen via mode 47 (no cursor restore — uses swap_alt_no_cursor).
+    feed(&mut t, b"\x1b[?47l");
+    assert!(!t.mode().contains(TermMode::ALT_SCREEN));
+    // We simply verify the swap happened cleanly; cursor state depends on
+    // which grid's cursor was active.
+}
+
+// --- XTSAVE/XTRESTORE with unknown mode number ---
+
+#[test]
+fn xtsave_xtrestore_unknown_mode_is_noop() {
+    let mut t = term();
+    let before = t.mode();
+
+    // Save and restore an unknown mode number.
+    feed(&mut t, b"\x1b[?99999s");
+    feed(&mut t, b"\x1b[?99999r");
+
+    // Mode should be unchanged.
+    assert_eq!(t.mode(), before);
+}
+
+// --- Encoding mode 1005 clears when setting 1015 (reverse direction) ---
+
+#[test]
+fn mouse_encoding_1005_clears_when_setting_1015() {
+    let mut t = term();
+    // Set UTF-8 mouse (1005).
+    feed(&mut t, b"\x1b[?1005h");
+    assert!(t.mode().contains(TermMode::MOUSE_UTF8));
+
+    // Set URXVT mouse (1015) — should clear 1005.
+    feed(&mut t, b"\x1b[?1015h");
+    assert!(t.mode().contains(TermMode::MOUSE_URXVT));
+    assert!(!t.mode().contains(TermMode::MOUSE_UTF8));
+    assert!(!t.mode().contains(TermMode::MOUSE_SGR));
+}
