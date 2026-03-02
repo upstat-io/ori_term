@@ -1186,3 +1186,72 @@ fn x10_mode_scroll_release_is_suppressed() {
     let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
     assert!(bytes.is_empty(), "X10 mode should suppress scroll releases");
 }
+
+// -- Dispatch-level coordinate boundary tests --
+//
+// These test the full encode_mouse_event dispatch path at Normal mode's
+// 222/223 boundary (fencepost) to verify no off-by-one in dispatch.
+
+#[test]
+fn dispatch_normal_boundary_at_max_coord_succeeds() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    // col=222 is the max encodable coordinate in Normal mode.
+    let e = event(MouseButton::Left, MouseEventKind::Press, 222, 222);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(bytes.len(), 6, "col=222 should encode successfully");
+    assert_eq!(bytes[4], 255); // 32 + 1 + 222 = 255
+    assert_eq!(bytes[5], 255);
+}
+
+#[test]
+fn dispatch_normal_boundary_one_past_max_drops() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    // col=223 exceeds Normal's limit — full dispatch should drop.
+    let e = event(MouseButton::Left, MouseEventKind::Press, 223, 0);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(bytes.is_empty(), "col=223 should be dropped via dispatch");
+}
+
+#[test]
+fn dispatch_normal_boundary_line_past_max_drops() {
+    let mode = TermMode::MOUSE_REPORT_CLICK;
+    // line=223 also exceeds the limit.
+    let e = event(MouseButton::Left, MouseEventKind::Press, 0, 223);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(bytes.is_empty(), "line=223 should be dropped via dispatch");
+}
+
+#[test]
+fn dispatch_utf8_boundary_at_max_coord_succeeds() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    // pos=2014: val = 32 + 1 + 2014 = 2047 = 0x7FF — max for 2-byte UTF-8.
+    let e = event(MouseButton::Left, MouseEventKind::Press, 2014, 2014);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(!bytes.is_empty(), "pos=2014 should encode via dispatch");
+}
+
+#[test]
+fn dispatch_utf8_boundary_one_past_max_drops() {
+    let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_UTF8;
+    // pos=2015: val = 32 + 1 + 2015 = 2048 > 0x7FF — out of range.
+    let e = event(MouseButton::Left, MouseEventKind::Press, 2015, 0);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(
+        bytes.is_empty(),
+        "pos=2015 should be dropped via UTF-8 dispatch"
+    );
+}
+
+// -- App-level scenarios (documented, not unit-testable) --
+//
+// The following scenarios require the full App context and cannot be tested
+// at the encoding layer:
+//
+// - Same-cell motion deduplication: App::report_mouse_motion skips reporting
+//   when mouse.last_reported_cell() matches the current cell. The dedup
+//   happens before encode_mouse_event is ever called.
+//
+// - Focus-loss button release synthesis: When the window loses focus with
+//   buttons held, the app should synthesize release events for all held
+//   buttons. This prevents apps (vim, tmux) from thinking buttons are still
+//   held after focus returns.

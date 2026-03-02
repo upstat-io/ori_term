@@ -4833,3 +4833,111 @@ fn mouse_encoding_1005_clears_when_setting_1015() {
     assert!(!t.mode().contains(TermMode::MOUSE_UTF8));
     assert!(!t.mode().contains(TermMode::MOUSE_SGR));
 }
+
+// --- DECRST encoding mode reverts to Normal format ---
+
+#[test]
+fn decrst_encoding_reverts_to_no_encoding() {
+    let mut t = term();
+    // Set SGR encoding (1006).
+    feed(&mut t, b"\x1b[?1006h");
+    assert!(t.mode().contains(TermMode::MOUSE_SGR));
+
+    // Disable SGR encoding.
+    feed(&mut t, b"\x1b[?1006l");
+
+    // No encoding flags should remain — events fall through to Normal format.
+    assert!(!t.mode().intersects(TermMode::ANY_MOUSE_ENCODING));
+}
+
+#[test]
+fn decrst_utf8_encoding_reverts_to_no_encoding() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1005h");
+    assert!(t.mode().contains(TermMode::MOUSE_UTF8));
+
+    feed(&mut t, b"\x1b[?1005l");
+    assert!(!t.mode().intersects(TermMode::ANY_MOUSE_ENCODING));
+}
+
+#[test]
+fn decrst_urxvt_encoding_reverts_to_no_encoding() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1015h");
+    assert!(t.mode().contains(TermMode::MOUSE_URXVT));
+
+    feed(&mut t, b"\x1b[?1015l");
+    assert!(!t.mode().intersects(TermMode::ANY_MOUSE_ENCODING));
+}
+
+// --- DECRST targeted clear: only clears the specified mode ---
+
+#[test]
+fn decrst_1000_preserves_active_1003() {
+    let mut t = term();
+    // Set mode 1003 (all motion).
+    feed(&mut t, b"\x1b[?1003h");
+    assert!(t.mode().contains(TermMode::MOUSE_MOTION));
+
+    // DECRST 1000 (clicks) — mode 1003 should remain active.
+    feed(&mut t, b"\x1b[?1000l");
+    assert!(
+        t.mode().contains(TermMode::MOUSE_MOTION),
+        "DECRST 1000 should not clear 1003"
+    );
+    assert!(t.mode().intersects(TermMode::ANY_MOUSE));
+}
+
+#[test]
+fn decrst_1002_preserves_active_1003() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1003h");
+    assert!(t.mode().contains(TermMode::MOUSE_MOTION));
+
+    // DECRST 1002 (drag) — mode 1003 should remain active.
+    feed(&mut t, b"\x1b[?1002l");
+    assert!(t.mode().contains(TermMode::MOUSE_MOTION));
+}
+
+#[test]
+fn decrst_9_preserves_active_1000() {
+    let mut t = term();
+    feed(&mut t, b"\x1b[?1000h");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+
+    // DECRST 9 (X10) — mode 1000 should remain active.
+    feed(&mut t, b"\x1b[?9l");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+}
+
+// --- Unknown DECSET/DECRST mode is silently ignored ---
+
+#[test]
+fn unknown_decset_mode_is_silently_ignored() {
+    let mut t = term();
+    let before = t.mode();
+
+    // Feed an unknown private mode via DECSET.
+    feed(&mut t, b"\x1b[?9999h");
+
+    // Mode should be unchanged, no panic.
+    assert_eq!(t.mode(), before);
+
+    // Terminal still functional.
+    feed(&mut t, b"ok");
+    assert_eq!(t.grid()[crate::index::Line(0)][Column(0)].ch, 'o');
+}
+
+#[test]
+fn unknown_decrst_mode_is_silently_ignored() {
+    let mut t = term();
+    // Set a known mode first.
+    feed(&mut t, b"\x1b[?1000h");
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+
+    // DECRST with unknown mode number.
+    feed(&mut t, b"\x1b[?9999l");
+
+    // Known mode should be unaffected.
+    assert!(t.mode().contains(TermMode::MOUSE_REPORT_CLICK));
+}

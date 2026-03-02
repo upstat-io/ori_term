@@ -157,3 +157,11 @@ fn default_does_not_have_new_modes() {
     assert!(!mode.contains(TermMode::MOUSE_URXVT));
     assert!(!mode.contains(TermMode::MOUSE_X10));
 }
+
+#[test]
+fn term_mode_size_is_4_bytes() {
+    // Structural regression guard: TermMode is a u32 bitflags.
+    // If this assertion breaks, a flag was added that doesn't fit in u32
+    // or the representation was changed — both require explicit review.
+    assert_eq!(size_of::<TermMode>(), 4, "TermMode should be 4 bytes (u32)");
+}
