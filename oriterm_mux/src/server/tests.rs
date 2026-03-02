@@ -544,3 +544,229 @@ fn poll_and_dispatch(server: &mut MuxServer) {
     }
     server.drain_mux_events();
 }
+
+// -- Duplicate Hello handling --
+
+#[test]
+fn duplicate_hello_returns_second_ack() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // First Hello.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 42 });
+    poll_and_dispatch(&mut server);
+    let (_, first_resp) = recv_pdu(&mut client);
+    let first_id = match first_resp {
+        MuxPdu::HelloAck { client_id } => client_id,
+        other => panic!("expected HelloAck, got {other:?}"),
+    };
+
+    // Second Hello from the same client.
+    send_pdu(&mut client, 2, &MuxPdu::Hello { pid: 42 });
+    poll_and_dispatch(&mut server);
+    let (seq, second_resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+
+    // The second HelloAck should return the same client ID (idempotent).
+    match second_resp {
+        MuxPdu::HelloAck { client_id } => {
+            assert_eq!(
+                client_id, first_id,
+                "duplicate Hello should return the same client ID"
+            );
+        }
+        other => panic!("expected HelloAck, got {other:?}"),
+    }
+}
+
+// -- ListTabs for non-existent window --
+
+#[test]
+fn list_tabs_nonexistent_window_returns_empty() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // List tabs for a window that doesn't exist.
+    send_pdu(
+        &mut client,
+        2,
+        &MuxPdu::ListTabs {
+            window_id: crate::WindowId::from_raw(999),
+        },
+    );
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+    match resp {
+        MuxPdu::TabList { tabs } => {
+            assert!(
+                tabs.is_empty(),
+                "non-existent window should return empty tab list"
+            );
+        }
+        other => panic!("expected TabList, got {other:?}"),
+    }
+}
+
+// -- Unsubscribe from never-subscribed pane --
+
+#[test]
+fn unsubscribe_without_subscribe_succeeds() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Unsubscribe from a pane we never subscribed to.
+    send_pdu(
+        &mut client,
+        2,
+        &MuxPdu::Unsubscribe {
+            pane_id: crate::PaneId::from_raw(999),
+        },
+    );
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+    assert_eq!(resp, MuxPdu::Unsubscribed);
+}
+
+// -- FrameReader byte-by-byte feeding --
+
+#[test]
+fn frame_reader_byte_by_byte() {
+    let mut reader = FrameReader::new();
+
+    let pdu = MuxPdu::Hello { pid: 77 };
+    let mut full = Vec::new();
+    ProtocolCodec::encode_frame(&mut full, 3, &pdu).unwrap();
+
+    // Feed one byte at a time.
+    for (i, &byte) in full.iter().enumerate() {
+        reader.extend(&[byte]);
+        if i < full.len() - 1 {
+            assert!(
+                reader.try_decode().is_none(),
+                "should not decode until all bytes received (byte {i})"
+            );
+        }
+    }
+
+    // Now the full frame is in the buffer.
+    let frame = reader.try_decode().unwrap().unwrap();
+    assert_eq!(frame.seq, 3);
+    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 77 });
+    assert!(reader.try_decode().is_none());
+}
+
+// -- FrameReader recovery after PayloadTooLarge --
+
+#[test]
+fn frame_reader_recovers_after_payload_too_large() {
+    use crate::protocol::MAX_PAYLOAD;
+    use crate::{FrameHeader, MsgType};
+
+    let mut reader = FrameReader::new();
+
+    // First: a bad frame with payload_len > MAX_PAYLOAD.
+    let bad_header = FrameHeader {
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: MAX_PAYLOAD + 1,
+    };
+    reader.extend(&bad_header.encode());
+
+    // Should produce PayloadTooLarge error.
+    let result = reader.try_decode().unwrap();
+    assert!(result.is_err(), "expected error for oversized payload");
+
+    // Second: a valid frame immediately after.
+    let good_pdu = MuxPdu::CreateWindow;
+    let mut good_buf = Vec::new();
+    ProtocolCodec::encode_frame(&mut good_buf, 2, &good_pdu).unwrap();
+    reader.extend(&good_buf);
+
+    // Should decode the good frame successfully.
+    let frame = reader.try_decode().unwrap().unwrap();
+    assert_eq!(frame.seq, 2);
+    assert_eq!(frame.pdu, MuxPdu::CreateWindow);
+}
+
+// -- Server auto-exit conditions --
+
+#[test]
+fn server_does_not_exit_during_grace_period() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock_path = dir.path().join("grace.sock");
+    let pid_path = dir.path().join("grace.pid");
+
+    let server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
+
+    // Server just started with no clients — should NOT want to exit
+    // because of the startup grace period.
+    assert!(
+        !server.should_exit(),
+        "should not exit during startup grace period"
+    );
+}
+
+#[test]
+fn server_does_not_exit_before_first_client() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock_path = dir.path().join("noclient.sock");
+    let pid_path = dir.path().join("noclient.pid");
+
+    let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
+
+    // Hack: fast-forward past the grace period by replacing start_time.
+    server.start_time = std::time::Instant::now() - std::time::Duration::from_secs(10);
+
+    // No client has ever connected — should not exit.
+    assert!(
+        !server.should_exit(),
+        "should not exit until at least one client has connected"
+    );
+}
+
+#[test]
+fn server_exits_after_client_disconnects_and_no_windows() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock_path = dir.path().join("exit.sock");
+    let pid_path = dir.path().join("exit.pid");
+
+    let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
+
+    // Connect a client.
+    let client = UnixStream::connect(&sock_path).unwrap();
+    let mut events = mio::Events::with_capacity(16);
+    server
+        .poll
+        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
+        .unwrap();
+    server.accept_connections().unwrap();
+    assert_eq!(server.client_count(), 1);
+
+    // Disconnect the client.
+    drop(client);
+    poll_and_dispatch(&mut server);
+    assert_eq!(server.client_count(), 0);
+
+    // Fast-forward past grace period.
+    server.start_time = std::time::Instant::now() - std::time::Duration::from_secs(10);
+
+    // No windows, no clients, had_client=true → should exit.
+    assert!(
+        server.should_exit(),
+        "should exit when no clients and no windows after grace"
+    );
+}

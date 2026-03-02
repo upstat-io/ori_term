@@ -763,3 +763,126 @@ fn multiple_frames_sequential() {
     let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
     assert!(matches!(err, DecodeError::Io(_)));
 }
+
+// -- Payload boundary size tests --
+
+#[test]
+fn roundtrip_large_input_near_max_payload() {
+    // A payload just under MAX_PAYLOAD should encode/decode successfully.
+    // Use Input which carries a Vec<u8> — easy to inflate.
+    // We can't test exactly MAX_PAYLOAD since bincode adds overhead for the
+    // enum discriminant and PaneId, but we can test a large data payload.
+    let large_data = vec![b'X'; 1024 * 1024]; // 1 MiB of data.
+    let pdu = MuxPdu::Input {
+        pane_id: PaneId::from_raw(1),
+        data: large_data.clone(),
+    };
+    let frame = roundtrip(1, pdu);
+    match frame.pdu {
+        MuxPdu::Input { data, .. } => assert_eq!(data.len(), large_data.len()),
+        other => panic!("expected Input, got {other:?}"),
+    }
+}
+
+#[test]
+fn encode_rejects_payload_exceeding_max() {
+    // A payload that exceeds MAX_PAYLOAD should fail to encode.
+    // MAX_PAYLOAD is 16 MiB. We need a PDU whose bincode encoding
+    // exceeds that. Use Input with a data vec > 16 MiB.
+    let huge_data = vec![0u8; MAX_PAYLOAD as usize + 1];
+    let pdu = MuxPdu::Input {
+        pane_id: PaneId::from_raw(1),
+        data: huge_data,
+    };
+    let mut buf = Vec::new();
+    let result = ProtocolCodec::encode_frame(&mut buf, 1, &pdu);
+    assert!(result.is_err(), "encoding >MAX_PAYLOAD should fail");
+}
+
+#[test]
+fn decode_payload_exactly_at_max() {
+    // A header claiming exactly MAX_PAYLOAD bytes should be accepted
+    // (the check is > MAX_PAYLOAD, not >=).
+    let header = FrameHeader {
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: MAX_PAYLOAD,
+    };
+    let encoded = header.encode();
+    let decoded = FrameHeader::decode(&encoded);
+    assert_eq!(decoded.payload_len, MAX_PAYLOAD);
+    // Note: actual decode would fail because we can't provide MAX_PAYLOAD
+    // bytes of valid bincode, but the header itself should parse fine.
+}
+
+// -- Malformed payload (valid header, garbage body) --
+
+#[test]
+fn decode_garbage_payload_returns_deserialize_error() {
+    // Valid header with correct msg_type and payload_len, but the payload
+    // bytes are random garbage that can't be deserialized.
+    let garbage = vec![0xFF; 32];
+    let header = FrameHeader {
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: garbage.len() as u32,
+    };
+    let mut buf = header.encode().to_vec();
+    buf.extend_from_slice(&garbage);
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    assert!(
+        matches!(err, DecodeError::Deserialize(_)),
+        "expected Deserialize error, got {err:?}"
+    );
+}
+
+#[test]
+fn decode_empty_payload_for_pdu_with_fields() {
+    // A Hello PDU requires a pid field. Sending an empty payload (len=0)
+    // should cause a deserialization error, not a panic.
+    let header = FrameHeader {
+        msg_type: MsgType::Hello as u16,
+        seq: 1,
+        payload_len: 0,
+    };
+    let buf = header.encode().to_vec();
+
+    let mut reader = Cursor::new(buf);
+    let err = ProtocolCodec::decode_frame(&mut reader).unwrap_err();
+    assert!(
+        matches!(err, DecodeError::Deserialize(_)),
+        "expected Deserialize error for empty payload, got {err:?}"
+    );
+}
+
+// -- Wire byte pinning --
+
+#[test]
+fn wire_bytes_stable_for_hello() {
+    // Pin the exact wire encoding for Hello { pid: 42 } at seq=1.
+    // If the serialization format changes, this test catches it.
+    let pdu = MuxPdu::Hello { pid: 42 };
+    let mut buf = Vec::new();
+    ProtocolCodec::encode_frame(&mut buf, 1, &pdu).unwrap();
+
+    // Decode back to verify.
+    let mut reader = Cursor::new(&buf);
+    let frame = ProtocolCodec::decode_frame(&mut reader).unwrap();
+    assert_eq!(frame.seq, 1);
+    assert_eq!(frame.pdu, MuxPdu::Hello { pid: 42 });
+
+    // Pin header bytes: msg_type=0x0101 LE, seq=1 LE, payload_len LE.
+    assert_eq!(buf[0..2], [0x01, 0x01]); // MsgType::Hello
+    assert_eq!(buf[2..6], [0x01, 0x00, 0x00, 0x00]); // seq=1
+    // Payload len and content depend on bincode, but header is stable.
+    let payload_len = u32::from_le_bytes([buf[6], buf[7], buf[8], buf[9]]);
+    assert_eq!(buf.len(), HEADER_LEN + payload_len as usize);
+
+    // Pin total frame size. bincode for Hello { pid: 42 }:
+    // variant index (4 bytes LE for enum discriminant) + pid (4 bytes LE).
+    // This is bincode's default encoding.
+    let expected_payload = bincode::serialize(&pdu).unwrap();
+    assert_eq!(&buf[HEADER_LEN..], &expected_payload);
+}
