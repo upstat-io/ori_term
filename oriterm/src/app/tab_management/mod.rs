@@ -264,16 +264,26 @@ impl App {
         };
 
         // The new window got a fresh initial tab. Find the mux window ID,
-        // then close that initial tab and move the requested tab there.
+        // then move the requested tab there BEFORE closing the initial tab.
+        // Order matters: close_tab removes empty windows from the mux
+        // session synchronously, so closing first would destroy the
+        // destination before the move can land.
         let Some(ctx) = self.windows.get(&new_winit_id) else {
             return;
         };
         let new_mux_id = ctx.window.mux_window_id();
 
-        // Close the initial (empty) tab that `create_window` spawned.
-        if let Some(mux) = &mut self.mux {
-            if let Some(initial_tab) = mux.active_tab_id(new_mux_id) {
-                let pane_ids = mux.close_tab(initial_tab);
+        // Capture the initial tab ID before moving (the move changes active tab).
+        let initial_tab = self.mux.as_ref().and_then(|m| m.active_tab_id(new_mux_id));
+
+        // Move the requested tab to the new window (now has 2 tabs).
+        self.move_tab_to_window(tab_id, new_mux_id);
+
+        // Close the initial (empty) tab that `create_window` spawned
+        // (window now has 1 tab — the moved one).
+        if let Some(initial) = initial_tab {
+            if let Some(mux) = &mut self.mux {
+                let pane_ids = mux.close_tab(initial);
                 for pid in pane_ids {
                     if let Some(pane) = self.panes.remove(&pid) {
                         std::thread::spawn(move || drop(pane));
@@ -282,12 +292,15 @@ impl App {
             }
         }
 
-        // Move the requested tab to the new window.
-        self.move_tab_to_window(tab_id, new_mux_id);
-
-        // Focus the new window.
-        self.focused_window_id = Some(new_winit_id);
-        self.active_window = Some(new_mux_id);
+        // Sync tab bars: old window lost a tab, new window gained one.
+        // The old window is still focused here, so marking it dirty ensures
+        // it renders with the updated tab bar before focus naturally shifts
+        // to the new window via winit's Focused event.
+        self.sync_tab_bar_from_mux();
+        self.sync_tab_bar_for_window(new_winit_id);
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
+        }
     }
 
     /// Reorder a tab within the active window (with animation).

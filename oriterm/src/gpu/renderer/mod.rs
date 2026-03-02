@@ -142,6 +142,10 @@ pub struct GpuRenderer {
     ui_fg_buffer: Option<Buffer>,
     ui_subpixel_fg_buffer: Option<Buffer>,
     ui_color_fg_buffer: Option<Buffer>,
+    overlay_rect_buffer: Option<Buffer>,
+    overlay_fg_buffer: Option<Buffer>,
+    overlay_subpixel_fg_buffer: Option<Buffer>,
+    overlay_color_fg_buffer: Option<Buffer>,
 }
 
 impl GpuRenderer {
@@ -227,6 +231,10 @@ impl GpuRenderer {
             ui_fg_buffer: None,
             ui_subpixel_fg_buffer: None,
             ui_color_fg_buffer: None,
+            overlay_rect_buffer: None,
+            overlay_fg_buffer: None,
+            overlay_subpixel_fg_buffer: None,
+            overlay_color_fg_buffer: None,
         }
     }
 
@@ -418,6 +426,60 @@ impl GpuRenderer {
         );
     }
 
+    /// Append overlay draw commands **with text** into the overlay tier.
+    ///
+    /// Identical to [`append_ui_draw_list_with_text`](Self::append_ui_draw_list_with_text)
+    /// but writes to the overlay buffers (draws 10–13) instead of the chrome
+    /// buffers (draws 6–9). This ensures overlay content renders ON TOP of
+    /// all chrome text (tab bar titles), not behind it.
+    pub fn append_overlay_draw_list_with_text(
+        &mut self,
+        draw_list: &oriterm_ui::draw::DrawList,
+        scale: f32,
+        opacity: f32,
+        gpu: &GpuState,
+    ) {
+        let ui_fc = self
+            .ui_font_collection
+            .as_mut()
+            .unwrap_or(&mut self.font_collection);
+        let size_q6 = crate::font::size_key(ui_fc.size_px());
+        let hinted = ui_fc.hinting_mode().hint_flag();
+
+        let keys = ui_text_raster_keys(draw_list, size_q6, hinted, scale);
+        ensure_glyphs_cached(
+            keys.into_iter(),
+            &mut self.atlas,
+            &mut self.subpixel_atlas,
+            &mut self.color_atlas,
+            &mut self.empty_keys,
+            ui_fc,
+            &gpu.queue,
+        );
+
+        let bridge = CombinedAtlasLookup {
+            mono: &self.atlas,
+            subpixel: &self.subpixel_atlas,
+            color: &self.color_atlas,
+        };
+
+        let mut text_ctx = super::draw_list_convert::TextContext {
+            atlas: &bridge,
+            mono_writer: &mut self.prepared.overlay_glyphs,
+            subpixel_writer: &mut self.prepared.overlay_subpixel_glyphs,
+            color_writer: &mut self.prepared.overlay_color_glyphs,
+            size_q6,
+            hinted,
+        };
+        super::draw_list_convert::convert_draw_list(
+            draw_list,
+            &mut self.prepared.overlay_rects,
+            Some(&mut text_ctx),
+            scale,
+            opacity,
+        );
+    }
+
     // ── Render phase ──
 
     /// Upload the stored prepared frame to the GPU and execute draw calls.
@@ -535,95 +597,161 @@ impl GpuRenderer {
             self.prepared.ui_color_glyphs.as_bytes(),
             "ui_color_fg_instance_buffer",
         );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.overlay_rect_buffer,
+            self.prepared.overlay_rects.as_bytes(),
+            "overlay_rect_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.overlay_fg_buffer,
+            self.prepared.overlay_glyphs.as_bytes(),
+            "overlay_fg_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.overlay_subpixel_fg_buffer,
+            self.prepared.overlay_subpixel_glyphs.as_bytes(),
+            "overlay_subpixel_fg_instance_buffer",
+        );
+        upload_buffer(
+            device,
+            queue,
+            &mut self.overlay_color_fg_buffer,
+            self.prepared.overlay_color_glyphs.as_bytes(),
+            "overlay_color_fg_instance_buffer",
+        );
     }
 
-    /// Record the nine draw passes into the render pass.
+    /// Record the thirteen draw passes into the render pass.
+    ///
+    /// Three tiers in painter's order:
+    /// - Terminal (draws 1–5): cell backgrounds, glyphs, cursors
+    /// - Chrome (draws 6–9): UI rects + chrome text (tab bar, search bar)
+    /// - Overlay (draws 10–13): overlay rects + overlay text (context menus)
+    #[expect(
+        clippy::too_many_lines,
+        reason = "GPU draw dispatch table: 13 sequential record_draw calls across 3 tiers"
+    )]
     fn record_draw_passes<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
-        let uniform_bg = self.uniform_buffer.bind_group();
-        let mono_atlas = Some(self.atlas_bind_group.bind_group());
-        let subpixel_atlas = Some(self.subpixel_atlas_bind_group.bind_group());
-        let color_atlas = Some(self.color_atlas_bind_group.bind_group());
+        let bg = self.uniform_buffer.bind_group();
+        let mono = Some(self.atlas_bind_group.bind_group());
+        let sub = Some(self.subpixel_atlas_bind_group.bind_group());
+        let color = Some(self.color_atlas_bind_group.bind_group());
+        let p = &self.prepared;
 
-        // Draw 1: Backgrounds (solid-color cell rects).
+        // Terminal tier (draws 1–5).
         record_draw(
             pass,
             &self.bg_pipeline,
-            uniform_bg,
+            bg,
             None,
             self.bg_buffer.as_ref(),
-            self.prepared.backgrounds.len() as u32,
+            p.backgrounds.len() as u32,
         );
-        // Draw 2: Monochrome glyphs (R8Unorm atlas, tinted by `fg_color`).
         record_draw(
             pass,
             &self.fg_pipeline,
-            uniform_bg,
-            mono_atlas,
+            bg,
+            mono,
             self.fg_buffer.as_ref(),
-            self.prepared.glyphs.len() as u32,
+            p.glyphs.len() as u32,
         );
-        // Draw 3: Subpixel glyphs (Rgba8Unorm atlas, per-channel blend).
         record_draw(
             pass,
             &self.subpixel_fg_pipeline,
-            uniform_bg,
-            subpixel_atlas,
+            bg,
+            sub,
             self.subpixel_fg_buffer.as_ref(),
-            self.prepared.subpixel_glyphs.len() as u32,
+            p.subpixel_glyphs.len() as u32,
         );
-        // Draw 4: Color glyphs (Rgba8Unorm atlas, rendered as-is).
         record_draw(
             pass,
             &self.color_fg_pipeline,
-            uniform_bg,
-            color_atlas,
+            bg,
+            color,
             self.color_fg_buffer.as_ref(),
-            self.prepared.color_glyphs.len() as u32,
+            p.color_glyphs.len() as u32,
         );
-        // Draw 5: Cursors (solid-color rects via bg pipeline).
         record_draw(
             pass,
             &self.bg_pipeline,
-            uniform_bg,
+            bg,
             None,
             self.cursor_buffer.as_ref(),
-            self.prepared.cursors.len() as u32,
+            p.cursors.len() as u32,
         );
-        // Draw 6: UI rects (SDF rounded rectangles via ui_rect pipeline).
+
+        // Chrome tier (draws 6–9).
         record_draw(
             pass,
             &self.ui_rect_pipeline,
-            uniform_bg,
+            bg,
             None,
             self.ui_rect_buffer.as_ref(),
-            self.prepared.ui_rects.len() as u32,
+            p.ui_rects.len() as u32,
         );
-        // Draw 7: UI monochrome glyphs (overlay/dialog text, after UI rects).
         record_draw(
             pass,
             &self.fg_pipeline,
-            uniform_bg,
-            mono_atlas,
+            bg,
+            mono,
             self.ui_fg_buffer.as_ref(),
-            self.prepared.ui_glyphs.len() as u32,
+            p.ui_glyphs.len() as u32,
         );
-        // Draw 8: UI subpixel glyphs (overlay/dialog text, after UI rects).
         record_draw(
             pass,
             &self.subpixel_fg_pipeline,
-            uniform_bg,
-            subpixel_atlas,
+            bg,
+            sub,
             self.ui_subpixel_fg_buffer.as_ref(),
-            self.prepared.ui_subpixel_glyphs.len() as u32,
+            p.ui_subpixel_glyphs.len() as u32,
         );
-        // Draw 9: UI color glyphs (overlay/dialog text, after UI rects).
         record_draw(
             pass,
             &self.color_fg_pipeline,
-            uniform_bg,
-            color_atlas,
+            bg,
+            color,
             self.ui_color_fg_buffer.as_ref(),
-            self.prepared.ui_color_glyphs.len() as u32,
+            p.ui_color_glyphs.len() as u32,
+        );
+
+        // Overlay tier (draws 10–13).
+        record_draw(
+            pass,
+            &self.ui_rect_pipeline,
+            bg,
+            None,
+            self.overlay_rect_buffer.as_ref(),
+            p.overlay_rects.len() as u32,
+        );
+        record_draw(
+            pass,
+            &self.fg_pipeline,
+            bg,
+            mono,
+            self.overlay_fg_buffer.as_ref(),
+            p.overlay_glyphs.len() as u32,
+        );
+        record_draw(
+            pass,
+            &self.subpixel_fg_pipeline,
+            bg,
+            sub,
+            self.overlay_subpixel_fg_buffer.as_ref(),
+            p.overlay_subpixel_glyphs.len() as u32,
+        );
+        record_draw(
+            pass,
+            &self.color_fg_pipeline,
+            bg,
+            color,
+            self.overlay_color_fg_buffer.as_ref(),
+            p.overlay_color_glyphs.len() as u32,
         );
     }
 

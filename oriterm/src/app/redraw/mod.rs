@@ -441,7 +441,9 @@ impl App {
             }
 
             // measurer (immutable borrow on renderer) is dropped here by NLL.
-            renderer.append_ui_draw_list_with_text(draw_list, scale, opacity, gpu);
+            // Overlays write to the overlay tier (draws 10–13) so their
+            // backgrounds render ON TOP of chrome text (draws 7–9).
+            renderer.append_overlay_draw_list_with_text(draw_list, scale, opacity, gpu);
         }
 
         animating || animations_running.get()

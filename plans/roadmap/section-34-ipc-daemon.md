@@ -22,14 +22,16 @@ sections:
     status: not-started
 ---
 
-# Section 34: IPC Protocol + Daemon Mode
+# Section 34: IPC Protocol Hardening + Advanced Coalescing
 
 **Status:** Not Started
-**Goal:** Define the wire protocol for mux server/client communication. Implement the `oriterm-mux` daemon that keeps terminal sessions alive across GUI restarts. Implement push-based output coalescing for sub-millisecond rendering latency. Build the `MuxClient` that the GUI uses to connect to the daemon.
+**Goal:** Harden the IPC protocol established in Section 44 with compression, version negotiation, advanced output coalescing, and forward compatibility. This is polish on top of the working daemon built in Section 44.
+
+**NOTE:** The core daemon, IPC protocol, MuxClient, MuxBackend trait, and cross-process tab migration are built in **Section 44 (Multi-Process Window Architecture)**. This section adds production hardening: zstd compression for large payloads, version negotiation for forward compatibility, tiered output coalescing for optimal rendering latency, and reconnection resilience.
 
 **Crate:** `oriterm_mux` (protocol, server, client), `oriterm` (client integration)
-**Dependencies:** Section 32 (tab/window management working)
-**Prerequisite:** Section 32 complete.
+**Dependencies:** Section 44 (multi-process window architecture working)
+**Prerequisite:** Section 44 complete.
 
 **Inspired by:**
 - WezTerm: mux server with SSH domains, codec protocol, poll-based rendering (140ms — we beat this)

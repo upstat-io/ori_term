@@ -181,6 +181,8 @@ Window creation, resize, DPI changes, and destruction. All operations coordinate
 
 ## 32.4 Cross-Window Operations
 
+**SUPERSEDED by Section 44 (Multi-Process Window Architecture).** The in-process cross-window tab movement implemented here works for single-process mode (embedded/fallback), but the primary multi-window model is now multi-process with daemon-mediated tab migration. See Section 44.
+
 Move tabs between windows. Tab identity (TabId) preserved — same panes, same layout tree, different window.
 
 **File:** `oriterm/src/app/window_management.rs`

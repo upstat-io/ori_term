@@ -16,7 +16,8 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 
 | Priority | Section | Reason |
 |----------|---------|--------|
-| ~~1~~ | ~~43 — Compositor Layer System~~ | ~~Complete~~ |
+| **1** | **44 — Multi-Process Window Architecture** | **BLOCKER — current single-process multi-window model is fundamentally broken. Must complete before any other work.** |
+| ~~2~~ | ~~43 — Compositor Layer System~~ | ~~Complete~~ |
 
 ---
 
@@ -706,6 +707,26 @@ session serialization, workspace presets, broadcast input
 
 ---
 
+### Section 44: Multi-Process Window Architecture
+**File:** `section-44-multi-process-windows.md` | **Tier:** 0 (BLOCKER) | **Status:** Not Started
+
+```
+multi-process, process-per-window, window process, daemon, mux daemon
+oriterm-mux, oriterm-mux binary, daemon binary, server binary
+IPC, IPC protocol, wire protocol, named pipe, Unix socket, bincode
+MuxClient, MuxBackend, MuxServer, client connection, server connection
+cross-process tab migration, tab migration, move tab, tab transfer
+tab tear-off, tear off across processes, spawn process, new process
+auto-start daemon, daemon discovery, PID file, health check, reconnect
+MuxBackend trait, embedded mode, daemon mode, process_model config
+PaneSnapshot, snapshot, cells, cursor, palette, terminal state transfer
+push notification, PaneOutput, PaneExited, WindowTabsChanged, TabMoved
+Chrome model, process isolation, crash isolation, session persistence
+--connect, --window, --daemon, --embedded, --foreground, --position
+```
+
+---
+
 ### Section 29: Mux Crate + Layout Engine
 **File:** `section-29-mux-layout-engine.md` | **Tier:** 4M | **Status:** Not Started
 
@@ -935,12 +956,13 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 37 | TUI Client | `section-37-tui-client.md` | 7A | Not Started |
 | 42 | Expose / Overview Mode | `section-42-expose-overview.md` | 5 | Not Started |
 | 43 | Compositor Layer System + Animation Architecture | `section-43-compositor-layers.md` | 5 | Not Started |
+| **44** | **Multi-Process Window Architecture** | **`section-44-multi-process-windows.md`** | **0 (BLOCKER)** | **Not Started** |
 
 ## Tier Summary
 
 | Tier | Sections | Theme |
 |------|----------|-------|
-| 0 | 01-03 | Core library + cross-platform architecture |
+| **0** | **01-03, 44** | **Core library + cross-platform architecture + multi-process window model (44 is BLOCKER)** |
 | 1 | 04 | Process layer (PTY, threads) |
 | 2 | 05, 05B, 06-07 | Rendering foundation (window, GPU, fonts, UI framework) |
 | 3 | 08-14, 40-41 | Interaction (keyboard, mouse, selection, search, config, vi mode, hints) |
@@ -1004,19 +1026,25 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
                |                        |
                └────────────┬───────────┘
                             |
-                       34 IPC Protocol + Daemon Mode
-                            |     (depends on 32)
-                            |
-                       35 Session Persistence + Remote Domains
-                            |     (depends on 34)
-                            |
-                       36 Remote Attach + Network Transport
-                            |     (depends on 34; benefits from 35)
-                            |
-                       37 TUI Client (oriterm-tui)
-                                  (depends on 36; can connect locally via 34)
+  ┌─────────────────────────┤
+  |                         |
+  44 Multi-Process Windows  |   *** BLOCKER — do this FIRST ***
+  |  (depends on 30, 32)    |
+  |  (supersedes 32.4)      |
+  |                         |
+  34 IPC Protocol Hardening  |   (depends on 44 — adds compression, versioning, coalescing)
+  |                         |
+  35 Session Persistence + Remote Domains
+  |                         |     (depends on 44)
+  |                         |
+  36 Remote Attach + Network Transport
+  |                         |     (depends on 44; benefits from 35)
+  |                         |
+  37 TUI Client (oriterm-tui)
+       (depends on 36; can connect locally via 44)
 
   ~~15~~ Tab Struct           -> SUPERSEDED by 30, 32
   ~~18~~ Multi-Window         -> SUPERSEDED by 32
   ~~26~~ Split Panes          -> SUPERSEDED by 29, 31, 33
+  ~~32.4~~ Cross-Window Ops   -> SUPERSEDED by 44
 ```
