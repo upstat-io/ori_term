@@ -299,6 +299,20 @@ impl MuxWindow {
             self.active_tab_idx = idx.min(self.tabs.len() - 1);
         }
     }
+
+    /// Replace the entire tab list with server-authoritative data.
+    ///
+    /// Preserves the active tab if it still exists in the new list,
+    /// otherwise resets to index 0. Used by daemon-mode clients when
+    /// another process moves a tab to or from this window.
+    pub fn replace_tabs(&mut self, tab_ids: &[TabId]) {
+        let prev_active = self.active_tab();
+        self.tabs.clear();
+        self.tabs.extend_from_slice(tab_ids);
+        self.active_tab_idx = prev_active
+            .and_then(|id| self.tabs.iter().position(|&t| t == id))
+            .unwrap_or(0);
+    }
 }
 
 #[cfg(test)]

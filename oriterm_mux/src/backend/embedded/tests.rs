@@ -52,7 +52,7 @@ fn object_safe() {
 #[test]
 fn create_window() {
     let mut mux = EmbeddedMux::new(test_wakeup());
-    let wid = mux.create_window();
+    let wid = mux.create_window().unwrap();
     assert!(mux.session().get_window(wid).is_some());
 }
 
@@ -69,7 +69,7 @@ fn drain_empty() {
 #[test]
 fn discard_notifications() {
     let mut mux = EmbeddedMux::new(test_wakeup());
-    let _ = mux.create_window();
+    let _ = mux.create_window().unwrap();
     // Window creation doesn't emit notifications, but discard shouldn't panic.
     mux.discard_notifications();
 }
@@ -78,7 +78,7 @@ fn discard_notifications() {
 #[test]
 fn close_empty_window() {
     let mut mux = EmbeddedMux::new(test_wakeup());
-    let wid = mux.create_window();
+    let wid = mux.create_window().unwrap();
     let panes = mux.close_window(wid);
     assert!(panes.is_empty());
 }
@@ -87,7 +87,7 @@ fn close_empty_window() {
 #[test]
 fn empty_window_no_active_tab() {
     let mut mux = EmbeddedMux::new(test_wakeup());
-    let wid = mux.create_window();
+    let wid = mux.create_window().unwrap();
     assert!(mux.active_tab_id(wid).is_none());
 }
 

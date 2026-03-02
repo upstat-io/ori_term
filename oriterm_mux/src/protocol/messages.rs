@@ -6,7 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::id::{ClientId, PaneId, TabId, WindowId};
+use oriterm_core::Theme;
+
+use crate::id::{ClientId, DomainId, PaneId, TabId, WindowId};
 use crate::layout::SplitDirection;
 
 use super::snapshot::{MuxTabInfo, MuxWindowInfo, PaneSnapshot};
@@ -34,6 +36,8 @@ pub enum MsgType {
     SplitPane = 0x010E,
     CycleTab = 0x010F,
     SetActiveTab = 0x0110,
+    CloseWindow = 0x0111,
+    ClaimWindow = 0x0112,
 
     // Responses (daemon → window).
     HelloAck = 0x0201,
@@ -49,6 +53,8 @@ pub enum MsgType {
     PaneSnapshotResp = 0x020B,
     PaneSplit = 0x020C,
     ActiveTabChanged = 0x020D,
+    WindowClosed = 0x020E,
+    WindowClaimed = 0x020F,
     Error = 0x02FF,
 
     // Push notifications (daemon → window).
@@ -80,6 +86,8 @@ impl MsgType {
             0x010E => Some(Self::SplitPane),
             0x010F => Some(Self::CycleTab),
             0x0110 => Some(Self::SetActiveTab),
+            0x0111 => Some(Self::CloseWindow),
+            0x0112 => Some(Self::ClaimWindow),
             0x0201 => Some(Self::HelloAck),
             0x0202 => Some(Self::WindowCreated),
             0x0203 => Some(Self::TabCreated),
@@ -93,6 +101,8 @@ impl MsgType {
             0x020B => Some(Self::PaneSnapshotResp),
             0x020C => Some(Self::PaneSplit),
             0x020D => Some(Self::ActiveTabChanged),
+            0x020E => Some(Self::WindowClosed),
+            0x020F => Some(Self::WindowClaimed),
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),
@@ -231,6 +241,21 @@ pub enum MuxPdu {
         tab_id: TabId,
     },
 
+    /// Close a window and all its tabs/panes.
+    CloseWindow {
+        /// Window to close.
+        window_id: WindowId,
+    },
+
+    /// Tell the daemon which mux window this client renders.
+    ///
+    /// Sent after window ID is resolved (init or `create_window`). Enables
+    /// the daemon to route `WindowTabsChanged` notifications to this client.
+    ClaimWindow {
+        /// Window this client is rendering.
+        window_id: WindowId,
+    },
+
     // -- Responses (daemon → window) --
     /// Handshake acknowledgment.
     HelloAck {
@@ -250,6 +275,8 @@ pub enum MuxPdu {
         tab_id: TabId,
         /// ID of the initial pane in the tab.
         pane_id: PaneId,
+        /// Domain that owns the pane.
+        domain_id: DomainId,
     },
 
     /// Tab closed successfully.
@@ -292,6 +319,8 @@ pub enum MuxPdu {
     PaneSplit {
         /// ID of the newly created pane.
         new_pane_id: PaneId,
+        /// Domain that owns the pane.
+        domain_id: DomainId,
     },
 
     /// Active tab changed in a window.
@@ -299,6 +328,15 @@ pub enum MuxPdu {
         /// Now-active tab.
         tab_id: TabId,
     },
+
+    /// Window closed with all its panes.
+    WindowClosed {
+        /// IDs of panes that were removed.
+        pane_ids: Vec<PaneId>,
+    },
+
+    /// Window claim acknowledged.
+    WindowClaimed,
 
     /// Error response for a failed request.
     Error {
@@ -370,6 +408,8 @@ impl MuxPdu {
             Self::SplitPane { .. } => MsgType::SplitPane,
             Self::CycleTab { .. } => MsgType::CycleTab,
             Self::SetActiveTab { .. } => MsgType::SetActiveTab,
+            Self::CloseWindow { .. } => MsgType::CloseWindow,
+            Self::ClaimWindow { .. } => MsgType::ClaimWindow,
             Self::HelloAck { .. } => MsgType::HelloAck,
             Self::WindowCreated { .. } => MsgType::WindowCreated,
             Self::TabCreated { .. } => MsgType::TabCreated,
@@ -383,6 +423,8 @@ impl MuxPdu {
             Self::PaneSnapshotResp { .. } => MsgType::PaneSnapshotResp,
             Self::PaneSplit { .. } => MsgType::PaneSplit,
             Self::ActiveTabChanged { .. } => MsgType::ActiveTabChanged,
+            Self::WindowClosed { .. } => MsgType::WindowClosed,
+            Self::WindowClaimed => MsgType::WindowClaimed,
             Self::Error { .. } => MsgType::Error,
             Self::NotifyPaneOutput { .. } => MsgType::NotifyPaneOutput,
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,
@@ -409,5 +451,17 @@ impl MuxPdu {
                 | Self::NotifyWindowTabsChanged { .. }
                 | Self::NotifyTabMoved { .. }
         )
+    }
+}
+
+/// Convert a [`Theme`] to its wire representation.
+///
+/// Returns `Some("dark")` or `Some("light")`, or `None` for
+/// [`Theme::Unknown`] (server uses its default).
+pub(crate) fn theme_to_wire(theme: Theme) -> Option<String> {
+    match theme {
+        Theme::Dark => Some("dark".to_owned()),
+        Theme::Light => Some("light".to_owned()),
+        Theme::Unknown => None,
     }
 }

@@ -63,8 +63,13 @@ pub fn dispatch_request(
             match mux.create_tab(window_id, &config, theme, wakeup) {
                 Ok((tab_id, pane_id, pane)) => {
                     panes.insert(pane_id, pane);
+                    let domain_id = mux.default_domain();
                     log::debug!("created {tab_id} with {pane_id} in {window_id}");
-                    Some(MuxPdu::TabCreated { tab_id, pane_id })
+                    Some(MuxPdu::TabCreated {
+                        tab_id,
+                        pane_id,
+                        domain_id,
+                    })
                 }
                 Err(e) => Some(MuxPdu::Error {
                     message: format!("create_tab failed: {e}"),
@@ -88,6 +93,15 @@ pub fn dispatch_request(
             Some(MuxPdu::PaneClosedAck)
         }
 
+        MuxPdu::CloseWindow { window_id } => {
+            let pane_ids = mux.close_window(window_id);
+            for &pid in &pane_ids {
+                panes.remove(&pid);
+            }
+            log::debug!("closed {window_id}, {} panes removed", pane_ids.len());
+            Some(MuxPdu::WindowClosed { pane_ids })
+        }
+
         MuxPdu::Input { pane_id, data } => {
             if let Some(pane) = panes.get(&pane_id) {
                 pane.write_input(&data);
@@ -105,6 +119,12 @@ pub fn dispatch_request(
                 pane.resize_pty(rows, cols);
             }
             None // Fire-and-forget.
+        }
+
+        MuxPdu::ClaimWindow { window_id } => {
+            conn.set_window_id(window_id);
+            log::info!("client {} claimed {window_id}", conn.id());
+            Some(MuxPdu::WindowClaimed)
         }
 
         MuxPdu::MoveTabToWindow {
@@ -178,8 +198,12 @@ pub fn dispatch_request(
             match mux.split_pane(tab_id, pane_id, direction, &config, theme, wakeup) {
                 Ok((new_pane_id, pane)) => {
                     panes.insert(new_pane_id, pane);
+                    let domain_id = mux.default_domain();
                     log::debug!("split {pane_id} -> {new_pane_id}");
-                    Some(MuxPdu::PaneSplit { new_pane_id })
+                    Some(MuxPdu::PaneSplit {
+                        new_pane_id,
+                        domain_id,
+                    })
                 }
                 Err(e) => Some(MuxPdu::Error {
                     message: format!("split_pane failed: {e}"),

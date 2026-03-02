@@ -55,8 +55,14 @@ impl App {
             // Daemon mode with a pre-claimed window ID.
             claimed
         } else {
-            mux.create_window()
+            mux.create_window()?
         };
+
+        // 4b. Tell the daemon which window this client renders so it can
+        //     route `WindowTabsChanged` notifications to us.
+        if is_daemon {
+            mux.claim_window(mux_window_id)?;
+        }
 
         // 5. Wrap the same window into TermWindow (creates surface, applies effects).
         let window = TermWindow::from_window(window_arc, &window_config, &gpu, mux_window_id)?;

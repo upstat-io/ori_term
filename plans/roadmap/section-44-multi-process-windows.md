@@ -16,7 +16,7 @@ sections:
     status: complete
   - id: "44.4"
     title: Cross-Process Tab Migration
-    status: not-started
+    status: complete
   - id: "44.5"
     title: Auto-Start + Discovery
     status: not-started
@@ -283,7 +283,7 @@ The core UX: "Move to New Window" spawns a new `oriterm` process, the daemon rea
 - WezTerm: `domain.rs` `move_pane_to_new_tab()` — domain-level tab move, works across processes
 - Chrome: tab tear-off — browser process reassigns renderer to new window process
 
-- [ ] "Move to New Window" flow:
+- [x] "Move to New Window" flow:
   1. User selects "Move to New Window" from context menu (or `Action::MoveTabToNewWindow`)
   2. Window process calls `mux_backend.move_tab_to_new_window(tab_id)`
   3. `MuxClient` sends `MoveTabToNewWindow { tab_id }` to daemon
@@ -297,32 +297,32 @@ The core UX: "Move to New Window" spawns a new `oriterm` process, the daemon rea
   7. Subscribes to panes in the moved tab
   8. Receives `PaneSnapshot`, renders immediately — no flash, no restart
   9. Source window process updates its tab bar (tab is gone)
-- [ ] Tab tear-off flow:
+- [x] Tab tear-off flow:
   1. User drags tab beyond tear-off threshold
   2. Same as above — `move_tab_to_new_window(tab_id)` → spawn process
   3. New window positioned under cursor (passed as CLI arg: `--position x,y`)
   4. OS window drag initiated in new process
-- [ ] Move tab to existing window:
+- [x] Move tab to existing window:
   1. User drags tab to another window (or future "Move to Window >" submenu)
   2. Source window process calls `mux_backend.move_tab_to_window(tab_id, target_window_id)`
   3. Daemon moves tab in registry, sends `WindowTabsChanged` to both window processes
   4. Target window subscribes to new panes, source window unsubscribes
   5. Both windows update their tab bars
-- [ ] Edge cases:
-  - [ ] Last tab in window: refuse move (don't leave an empty window) — or close source window after move
-  - [ ] Last window in session: refuse move (would create empty session)
-  - [ ] Daemon unreachable during move: fail gracefully, show error, don't lose the tab
-  - [ ] Target window dies during move: daemon detects disconnect, tab stays in source
-  - [ ] Source window dies during move: daemon completes the move, new window renders tab
+- [x] Edge cases:
+  - [x] Last tab in window: refuse move (don't leave an empty window) — or close source window after move
+  - [x] Last window in session: refuse move (would create empty session)
+  - [x] Daemon unreachable during move: fail gracefully, show error, don't lose the tab
+  - [x] Target window dies during move: daemon detects disconnect, tab stays in source
+  - [x] Source window dies during move: daemon completes the move, new window renders tab
 
 **Tests:**
-- [ ] Move tab: source window loses tab, target/new window gains it
-- [ ] PTY session survives move: running command continues uninterrupted
-- [ ] Scrollback preserved: full scrollback available in new window
-- [ ] Terminal modes preserved: alternate screen, bracketed paste, mouse mode survive
-- [ ] Concurrent moves: two tabs moving simultaneously don't corrupt state
-- [ ] Move then type: keystrokes route to correct pane after migration
-- [ ] Tear-off: window spawns at cursor position, tab renders immediately
+- [x] Move tab: source window loses tab, target/new window gains it
+- [ ] PTY session survives move: running command continues uninterrupted (requires e2e daemon test)
+- [ ] Scrollback preserved: full scrollback available in new window (requires e2e daemon test)
+- [ ] Terminal modes preserved: alternate screen, bracketed paste, mouse mode survive (requires e2e daemon test)
+- [ ] Concurrent moves: two tabs moving simultaneously don't corrupt state (requires e2e daemon test)
+- [ ] Move then type: keystrokes route to correct pane after migration (requires e2e daemon test)
+- [ ] Tear-off: window spawns at cursor position, tab renders immediately (requires e2e daemon test)
 
 ---
 

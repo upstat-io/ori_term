@@ -114,7 +114,23 @@ impl App {
             ..WindowConfig::default()
         };
 
-        let mux_window_id = mux.create_window();
+        let mux_window_id = match mux.create_window() {
+            Ok(id) => id,
+            Err(e) => {
+                log::error!("failed to create mux window: {e}");
+                return None;
+            }
+        };
+
+        // Tell the daemon this client renders the new window.
+        if mux.is_daemon_mode() {
+            if let Err(e) = mux.claim_window(mux_window_id) {
+                log::error!("failed to claim mux window {mux_window_id}: {e}");
+                mux.close_window(mux_window_id);
+                mux.discard_notifications();
+                return None;
+            }
+        }
 
         let window = match TermWindow::new(event_loop, &window_config, gpu, mux_window_id) {
             Ok(w) => w,

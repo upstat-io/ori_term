@@ -22,7 +22,16 @@ impl App {
     ///
     /// Extracts the drag state, creates a bare window, moves the tab via mux,
     /// positions the window under the cursor, and starts an OS drag session.
+    /// In daemon mode, delegates to `move_tab_to_new_window_daemon` because
+    /// the new window is a separate OS process.
     pub(super) fn tear_off_tab(&mut self, event_loop: &ActiveEventLoop) {
+        // Daemon mode: the new window is a separate process, so OS-level
+        // drag doesn't apply. Delegate to the daemon-mode code path.
+        if self.mux.as_ref().is_some_and(|m| m.is_daemon_mode()) {
+            self.tear_off_tab_daemon();
+            return;
+        }
+
         // Extract drag state from the source window.
         let (tab_id, mouse_offset, origin_y, source_winit_id) = {
             let Some(ctx) = self.focused_ctx_mut() else {
@@ -144,6 +153,30 @@ impl App {
 
         // Start OS drag on the new window.
         self.begin_os_tab_drag(new_winit_id, tab_id, mouse_offset, grab_offset);
+    }
+
+    /// Daemon-mode tear-off: consume drag state and delegate to `move_tab_to_new_window_daemon`.
+    ///
+    /// In daemon mode the new window is a separate OS process, so the
+    /// in-process OS drag and merge flow doesn't apply.
+    fn tear_off_tab_daemon(&mut self) {
+        let Some(ctx) = self.focused_ctx_mut() else {
+            return;
+        };
+        let drag = ctx.tab_drag.take();
+        ctx.tab_bar.set_drag_visual(None);
+        ctx.dirty = true;
+
+        let Some(d) = drag else { return };
+        self.release_tab_width_lock();
+
+        let is_last = self
+            .mux
+            .as_ref()
+            .is_some_and(|m| m.session().tab_count() <= 1);
+        if !is_last {
+            self.move_tab_to_new_window_daemon(d.tab_id);
+        }
     }
 
     /// Configure and start an OS-level drag session.

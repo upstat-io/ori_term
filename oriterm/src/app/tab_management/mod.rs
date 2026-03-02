@@ -275,15 +275,17 @@ impl App {
     }
 
     /// Daemon-mode: create window via daemon, move tab, spawn new process.
-    fn move_tab_to_new_window_daemon(&mut self, tab_id: TabId) {
+    pub(super) fn move_tab_to_new_window_daemon(&mut self, tab_id: TabId) {
         let Some(mux) = &mut self.mux else { return };
 
         // Create a new empty window in the daemon.
-        let new_window_id = mux.create_window();
-        if new_window_id.raw() == 0 {
-            log::error!("move_tab_to_new_window_daemon: failed to create window");
-            return;
-        }
+        let new_window_id = match mux.create_window() {
+            Ok(id) => id,
+            Err(e) => {
+                log::error!("move_tab_to_new_window_daemon: failed to create window: {e}");
+                return;
+            }
+        };
 
         // Move the tab to the new window.
         if !mux.move_tab_to_window(tab_id, new_window_id) {

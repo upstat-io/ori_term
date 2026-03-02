@@ -410,6 +410,36 @@ fn create_window_roundtrip() {
     }
 }
 
+// -- ClaimWindow --
+
+#[test]
+fn claim_window_sets_connection_window_id() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Create a window.
+    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
+    poll_and_dispatch(&mut server);
+    let (_, resp) = recv_pdu(&mut client);
+    let window_id = match resp {
+        MuxPdu::WindowCreated { window_id } => window_id,
+        other => panic!("expected WindowCreated, got {other:?}"),
+    };
+
+    // Claim the window.
+    send_pdu(&mut client, 3, &MuxPdu::ClaimWindow { window_id });
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 3);
+    assert_eq!(resp, MuxPdu::WindowClaimed);
+}
+
 // -- ListWindows --
 
 #[test]

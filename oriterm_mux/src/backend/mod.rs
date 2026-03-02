@@ -65,7 +65,7 @@ pub trait MuxBackend {
     // -- Window operations --
 
     /// Create a new empty mux window.
-    fn create_window(&mut self) -> WindowId;
+    fn create_window(&mut self) -> io::Result<WindowId>;
 
     /// Close a window and all its tabs/panes.
     ///
@@ -218,6 +218,22 @@ pub trait MuxBackend {
 
     /// Default domain ID for spawning.
     fn default_domain(&self) -> DomainId;
+
+    /// Tell the daemon which mux window this client renders.
+    ///
+    /// In embedded mode this is a no-op (the process owns its own state).
+    /// In daemon mode this sends a `ClaimWindow` RPC so the server can
+    /// route `WindowTabsChanged` notifications to this client.
+    fn claim_window(&mut self, _window_id: WindowId) -> io::Result<()> {
+        Ok(())
+    }
+
+    /// Re-fetch the tab list for `window_id` from the daemon.
+    ///
+    /// Called in daemon mode when a `WindowTabsChanged` notification
+    /// arrives — another client may have moved a tab to this window.
+    /// In embedded mode this is a no-op (local state is authoritative).
+    fn refresh_window_tabs(&mut self, _window_id: WindowId) {}
 
     /// Whether this backend is running in daemon (IPC client) mode.
     ///

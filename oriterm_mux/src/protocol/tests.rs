@@ -9,7 +9,7 @@ use super::snapshot::{
     WireRgb,
 };
 use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
-use crate::id::{ClientId, PaneId, TabId, WindowId};
+use crate::id::{ClientId, DomainId, PaneId, TabId, WindowId};
 use crate::layout::SplitDirection;
 
 // -- FrameHeader tests --
@@ -70,6 +70,8 @@ fn msg_type_roundtrip_all() {
         MsgType::SplitPane,
         MsgType::CycleTab,
         MsgType::SetActiveTab,
+        MsgType::CloseWindow,
+        MsgType::ClaimWindow,
         MsgType::HelloAck,
         MsgType::WindowCreated,
         MsgType::TabCreated,
@@ -83,6 +85,8 @@ fn msg_type_roundtrip_all() {
         MsgType::PaneSnapshotResp,
         MsgType::PaneSplit,
         MsgType::ActiveTabChanged,
+        MsgType::WindowClosed,
+        MsgType::WindowClaimed,
         MsgType::Error,
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
@@ -354,6 +358,7 @@ fn roundtrip_tab_created() {
         MuxPdu::TabCreated {
             tab_id: TabId::from_raw(5),
             pane_id: PaneId::from_raw(9),
+            domain_id: DomainId::from_raw(0),
         },
     );
 }
@@ -382,8 +387,46 @@ fn roundtrip_pane_split() {
         24,
         MuxPdu::PaneSplit {
             new_pane_id: PaneId::from_raw(10),
+            domain_id: DomainId::from_raw(0),
         },
     );
+}
+
+#[test]
+fn roundtrip_close_window() {
+    roundtrip(
+        25,
+        MuxPdu::CloseWindow {
+            window_id: WindowId::from_raw(1),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_window_closed() {
+    roundtrip(
+        26,
+        MuxPdu::WindowClosed {
+            pane_ids: vec![PaneId::from_raw(1), PaneId::from_raw(2)],
+        },
+    );
+}
+
+// -- ClaimWindow/WindowClaimed roundtrips --
+
+#[test]
+fn roundtrip_claim_window() {
+    roundtrip(
+        27,
+        MuxPdu::ClaimWindow {
+            window_id: WindowId::from_raw(3),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_window_claimed() {
+    roundtrip(27, MuxPdu::WindowClaimed);
 }
 
 // -- Notification roundtrips --
@@ -747,6 +790,7 @@ fn multiple_frames_sequential() {
             MuxPdu::TabCreated {
                 tab_id: TabId::from_raw(1),
                 pane_id: PaneId::from_raw(1),
+                domain_id: DomainId::from_raw(0),
             },
         ),
     ];

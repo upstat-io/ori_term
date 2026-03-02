@@ -19,7 +19,7 @@
 //! - payload: bincode-serialized variant fields.
 
 mod codec;
-mod messages;
+pub(crate) mod messages;
 mod snapshot;
 
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};

@@ -1,11 +1,8 @@
 //! IPC roundtrip implementations for [`MuxBackend`] methods.
 //!
-//! Each method sends a PDU to the daemon via [`ClientTransport::rpc`],
+//! Each method sends a PDU to the daemon via [`MuxClient::rpc`],
 //! extracts the response, and updates the mirrored [`SessionRegistry`].
 //! Methods that have no corresponding PDU yet log and return defaults.
-//!
-//! On non-unix platforms (where IPC transport is unavailable), all RPC
-//! methods return failure values.
 
 use std::collections::HashSet;
 use std::io;
@@ -19,13 +16,11 @@ use crate::in_process::ClosePaneResult;
 use crate::layout::{Rect, SplitDirection};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
-use crate::registry::{PaneEntry, SessionRegistry};
-use crate::{DomainId, PaneId, TabId, WindowId};
-
-#[cfg(unix)]
 use crate::protocol::MuxPdu;
-#[cfg(unix)]
+use crate::protocol::messages::theme_to_wire;
+use crate::registry::{PaneEntry, SessionRegistry};
 use crate::session::{MuxTab, MuxWindow};
+use crate::{DomainId, PaneId, TabId, WindowId};
 
 use super::MuxClient;
 
@@ -62,51 +57,38 @@ impl MuxBackend for MuxClient {
         self.local_session.is_last_pane(pane_id)
     }
 
-    fn create_window(&mut self) -> WindowId {
-        #[cfg(unix)]
-        {
-            let Some(transport) = self.transport.as_mut() else {
-                log::error!("create_window: not connected");
-                return WindowId::from_raw(0);
-            };
-
-            match transport.rpc(MuxPdu::CreateWindow) {
-                Ok(MuxPdu::WindowCreated { window_id }) => {
-                    self.local_session.add_window(MuxWindow::new(window_id));
-                    log::info!("daemon created window {window_id}");
-                    window_id
-                }
-                Ok(other) => {
-                    log::error!("create_window: unexpected response: {other:?}");
-                    WindowId::from_raw(0)
-                }
-                Err(e) => {
-                    log::error!("create_window: RPC failed: {e}");
-                    WindowId::from_raw(0)
-                }
+    fn create_window(&mut self) -> io::Result<WindowId> {
+        match self.rpc(MuxPdu::CreateWindow)? {
+            MuxPdu::WindowCreated { window_id } => {
+                self.local_session.add_window(MuxWindow::new(window_id));
+                log::info!("daemon created window {window_id}");
+                Ok(window_id)
             }
-        }
-        #[cfg(not(unix))]
-        {
-            log::error!("create_window: daemon mode not supported on this platform");
-            WindowId::from_raw(0)
+            other => Err(io::Error::other(format!(
+                "create_window: unexpected response: {other:?}"
+            ))),
         }
     }
 
     fn close_window(&mut self, window_id: WindowId) -> Vec<PaneId> {
-        // Close all tabs in the mirrored window, collecting pane IDs.
-        let tab_ids: Vec<TabId> = self
-            .local_session
-            .get_window(window_id)
-            .map(|w| w.tabs().to_vec())
-            .unwrap_or_default();
-
-        let mut pane_ids = Vec::new();
-        for tab_id in tab_ids {
-            pane_ids.extend(self.close_tab(tab_id));
+        match self.rpc(MuxPdu::CloseWindow { window_id }) {
+            Ok(MuxPdu::WindowClosed { pane_ids }) => {
+                for &pid in &pane_ids {
+                    self.pane_registry.unregister(pid);
+                }
+                self.local_session.remove_window(window_id);
+                log::info!("daemon closed window {window_id}, {} panes", pane_ids.len());
+                pane_ids
+            }
+            Ok(other) => {
+                log::error!("close_window: unexpected response: {other:?}");
+                Vec::new()
+            }
+            Err(e) => {
+                log::error!("close_window: RPC failed: {e}");
+                Vec::new()
+            }
         }
-        self.local_session.remove_window(window_id);
-        pane_ids
     }
 
     fn create_tab(
@@ -115,158 +97,115 @@ impl MuxBackend for MuxClient {
         config: &SpawnConfig,
         theme: Theme,
     ) -> io::Result<(TabId, PaneId)> {
-        #[cfg(unix)]
-        {
-            let transport = self.transport.as_mut().ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotConnected, "not connected to daemon")
-            })?;
+        let pdu = MuxPdu::CreateTab {
+            window_id,
+            shell: config.shell.clone(),
+            cwd: config.cwd.as_ref().map(|p| p.display().to_string()),
+            theme: theme_to_wire(theme),
+        };
 
-            let theme_str = match theme {
-                Theme::Dark => Some("dark".to_owned()),
-                Theme::Light => Some("light".to_owned()),
-                Theme::Unknown => None,
-            };
-
-            let pdu = MuxPdu::CreateTab {
-                window_id,
-                shell: config.shell.clone(),
-                cwd: config.cwd.as_ref().map(|p| p.display().to_string()),
-                theme: theme_str,
-            };
-
-            match transport.rpc(pdu)? {
-                MuxPdu::TabCreated { tab_id, pane_id } => {
-                    let tab = MuxTab::new(tab_id, pane_id);
-                    self.local_session.add_tab(tab);
-                    if let Some(win) = self.local_session.get_window_mut(window_id) {
-                        win.add_tab(tab_id);
-                    }
-                    self.pane_registry.register(PaneEntry {
-                        pane: pane_id,
-                        tab: tab_id,
-                        domain: DomainId::from_raw(0),
-                    });
-                    log::info!("daemon created tab {tab_id} with pane {pane_id}");
-                    Ok((tab_id, pane_id))
+        match self.rpc(pdu)? {
+            MuxPdu::TabCreated {
+                tab_id,
+                pane_id,
+                domain_id,
+            } => {
+                let tab = MuxTab::new(tab_id, pane_id);
+                self.local_session.add_tab(tab);
+                if let Some(win) = self.local_session.get_window_mut(window_id) {
+                    win.add_tab(tab_id);
                 }
-                other => Err(io::Error::other(format!(
-                    "create_tab: unexpected response: {other:?}"
-                ))),
+                self.pane_registry.register(PaneEntry {
+                    pane: pane_id,
+                    tab: tab_id,
+                    domain: domain_id,
+                });
+                log::info!("daemon created tab {tab_id} with pane {pane_id}");
+                Ok((tab_id, pane_id))
             }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (window_id, config, theme);
-            Err(io::Error::other(
-                "daemon mode not supported on this platform",
-            ))
+            other => Err(io::Error::other(format!(
+                "create_tab: unexpected response: {other:?}"
+            ))),
         }
     }
 
     fn close_tab(&mut self, tab_id: TabId) -> Vec<PaneId> {
-        #[cfg(unix)]
-        {
-            let Some(transport) = self.transport.as_mut() else {
-                return Vec::new();
-            };
+        match self.rpc(MuxPdu::CloseTab { tab_id }) {
+            Ok(MuxPdu::TabClosed) => {
+                let pane_ids: Vec<PaneId> = self
+                    .local_session
+                    .get_tab(tab_id)
+                    .map(MuxTab::all_panes)
+                    .unwrap_or_default();
 
-            match transport.rpc(MuxPdu::CloseTab { tab_id }) {
-                Ok(MuxPdu::TabClosed) => {
-                    let pane_ids: Vec<PaneId> = self
-                        .local_session
-                        .get_tab(tab_id)
-                        .map(MuxTab::all_panes)
-                        .unwrap_or_default();
+                for &pid in &pane_ids {
+                    self.pane_registry.unregister(pid);
+                }
 
-                    for &pid in &pane_ids {
-                        self.pane_registry.unregister(pid);
+                if let Some(win_id) = self.local_session.window_for_tab(tab_id) {
+                    if let Some(win) = self.local_session.get_window_mut(win_id) {
+                        win.remove_tab(tab_id);
                     }
+                }
+                self.local_session.remove_tab(tab_id);
 
-                    if let Some(win_id) = self.local_session.window_for_tab(tab_id) {
-                        if let Some(win) = self.local_session.get_window_mut(win_id) {
-                            win.remove_tab(tab_id);
-                        }
-                    }
-                    self.local_session.remove_tab(tab_id);
-
-                    pane_ids
-                }
-                Ok(other) => {
-                    log::error!("close_tab: unexpected response: {other:?}");
-                    Vec::new()
-                }
-                Err(e) => {
-                    log::error!("close_tab: RPC failed: {e}");
-                    Vec::new()
-                }
+                pane_ids
             }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = tab_id;
-            Vec::new()
+            Ok(other) => {
+                log::error!("close_tab: unexpected response: {other:?}");
+                Vec::new()
+            }
+            Err(e) => {
+                log::error!("close_tab: RPC failed: {e}");
+                Vec::new()
+            }
         }
     }
 
     fn switch_active_tab(&mut self, window_id: WindowId, tab_id: TabId) -> bool {
-        #[cfg(unix)]
-        {
-            let Some(transport) = self.transport.as_mut() else {
-                return false;
-            };
-
-            match transport.rpc(MuxPdu::SetActiveTab { window_id, tab_id }) {
-                Ok(MuxPdu::ActiveTabChanged { tab_id: new_id }) => {
-                    if let Some(win) = self.local_session.get_window_mut(window_id) {
-                        if let Some(idx) = win.tabs().iter().position(|&t| t == new_id) {
-                            win.set_active_tab_idx(idx);
-                        }
+        match self.rpc(MuxPdu::SetActiveTab { window_id, tab_id }) {
+            Ok(MuxPdu::ActiveTabChanged { tab_id: new_id }) => {
+                if let Some(win) = self.local_session.get_window_mut(window_id) {
+                    if let Some(idx) = win.tabs().iter().position(|&t| t == new_id) {
+                        win.set_active_tab_idx(idx);
                     }
-                    true
                 }
-                Ok(other) => {
-                    log::error!("switch_active_tab: unexpected response: {other:?}");
-                    false
-                }
-                Err(e) => {
-                    log::error!("switch_active_tab: RPC failed: {e}");
-                    false
-                }
+                true
             }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (window_id, tab_id);
-            false
+            Ok(other) => {
+                log::error!("switch_active_tab: unexpected response: {other:?}");
+                false
+            }
+            Err(e) => {
+                log::error!("switch_active_tab: RPC failed: {e}");
+                false
+            }
         }
     }
 
     fn cycle_active_tab(&mut self, window_id: WindowId, delta: isize) -> Option<TabId> {
-        #[cfg(unix)]
-        {
-            let transport = self.transport.as_mut()?;
+        let delta_i32: i32 = delta.try_into().unwrap_or(if delta > 0 { 1 } else { -1 });
 
-            let delta_i32: i32 = delta.try_into().unwrap_or(if delta > 0 { 1 } else { -1 });
-
-            match transport.rpc(MuxPdu::CycleTab {
-                window_id,
-                delta: delta_i32,
-            }) {
-                Ok(MuxPdu::ActiveTabChanged { tab_id }) => {
-                    if let Some(win) = self.local_session.get_window_mut(window_id) {
-                        if let Some(idx) = win.tabs().iter().position(|&t| t == tab_id) {
-                            win.set_active_tab_idx(idx);
-                        }
+        match self.rpc(MuxPdu::CycleTab {
+            window_id,
+            delta: delta_i32,
+        }) {
+            Ok(MuxPdu::ActiveTabChanged { tab_id }) => {
+                if let Some(win) = self.local_session.get_window_mut(window_id) {
+                    if let Some(idx) = win.tabs().iter().position(|&t| t == tab_id) {
+                        win.set_active_tab_idx(idx);
                     }
-                    Some(tab_id)
                 }
-                Ok(_) | Err(_) => None,
+                Some(tab_id)
             }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (window_id, delta);
-            None
+            Ok(other) => {
+                log::warn!("cycle_active_tab: unexpected response: {other:?}");
+                None
+            }
+            Err(e) => {
+                log::error!("cycle_active_tab: RPC failed: {e}");
+                None
+            }
         }
     }
 
@@ -281,41 +220,29 @@ impl MuxBackend for MuxClient {
     }
 
     fn move_tab_to_window(&mut self, tab_id: TabId, dest: WindowId) -> bool {
-        #[cfg(unix)]
-        {
-            let Some(transport) = self.transport.as_mut() else {
-                return false;
-            };
-
-            match transport.rpc(MuxPdu::MoveTabToWindow {
-                tab_id,
-                target_window_id: dest,
-            }) {
-                Ok(MuxPdu::TabMovedAck) => {
-                    if let Some(src_id) = self.local_session.window_for_tab(tab_id) {
-                        if let Some(src_win) = self.local_session.get_window_mut(src_id) {
-                            src_win.remove_tab(tab_id);
-                        }
+        match self.rpc(MuxPdu::MoveTabToWindow {
+            tab_id,
+            target_window_id: dest,
+        }) {
+            Ok(MuxPdu::TabMovedAck) => {
+                if let Some(src_id) = self.local_session.window_for_tab(tab_id) {
+                    if let Some(src_win) = self.local_session.get_window_mut(src_id) {
+                        src_win.remove_tab(tab_id);
                     }
-                    if let Some(dest_win) = self.local_session.get_window_mut(dest) {
-                        dest_win.add_tab(tab_id);
-                    }
-                    true
                 }
-                Ok(other) => {
-                    log::error!("move_tab_to_window: unexpected response: {other:?}");
-                    false
+                if let Some(dest_win) = self.local_session.get_window_mut(dest) {
+                    dest_win.add_tab(tab_id);
                 }
-                Err(e) => {
-                    log::error!("move_tab_to_window: RPC failed: {e}");
-                    false
-                }
+                true
             }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (tab_id, dest);
-            false
+            Ok(other) => {
+                log::error!("move_tab_to_window: unexpected response: {other:?}");
+                false
+            }
+            Err(e) => {
+                log::error!("move_tab_to_window: RPC failed: {e}");
+                false
+            }
         }
     }
 
@@ -341,76 +268,47 @@ impl MuxBackend for MuxClient {
         config: &SpawnConfig,
         theme: Theme,
     ) -> io::Result<PaneId> {
-        #[cfg(unix)]
-        {
-            let transport = self.transport.as_mut().ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotConnected, "not connected to daemon")
-            })?;
+        let pdu = MuxPdu::SplitPane {
+            tab_id,
+            pane_id: source,
+            direction: dir,
+            shell: config.shell.clone(),
+            cwd: config.cwd.as_ref().map(|p| p.display().to_string()),
+            theme: theme_to_wire(theme),
+        };
 
-            let theme_str = match theme {
-                Theme::Dark => Some("dark".to_owned()),
-                Theme::Light => Some("light".to_owned()),
-                Theme::Unknown => None,
-            };
-
-            let pdu = MuxPdu::SplitPane {
-                tab_id,
-                pane_id: source,
-                direction: dir,
-                shell: config.shell.clone(),
-                cwd: config.cwd.as_ref().map(|p| p.display().to_string()),
-                theme: theme_str,
-            };
-
-            match transport.rpc(pdu)? {
-                MuxPdu::PaneSplit { new_pane_id } => {
-                    self.pane_registry.register(PaneEntry {
-                        pane: new_pane_id,
-                        tab: tab_id,
-                        domain: DomainId::from_raw(0),
-                    });
-                    Ok(new_pane_id)
-                }
-                other => Err(io::Error::other(format!(
-                    "split_pane: unexpected response: {other:?}"
-                ))),
+        match self.rpc(pdu)? {
+            MuxPdu::PaneSplit {
+                new_pane_id,
+                domain_id,
+            } => {
+                self.pane_registry.register(PaneEntry {
+                    pane: new_pane_id,
+                    tab: tab_id,
+                    domain: domain_id,
+                });
+                Ok(new_pane_id)
             }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (tab_id, source, dir, config, theme);
-            Err(io::Error::other(
-                "daemon mode not supported on this platform",
-            ))
+            other => Err(io::Error::other(format!(
+                "split_pane: unexpected response: {other:?}"
+            ))),
         }
     }
 
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
-        #[cfg(unix)]
-        {
-            let Some(transport) = self.transport.as_mut() else {
-                return ClosePaneResult::NotFound;
-            };
-
-            match transport.rpc(MuxPdu::ClosePane { pane_id }) {
-                Ok(MuxPdu::PaneClosedAck) => {
-                    self.pane_registry.unregister(pane_id);
-                    ClosePaneResult::PaneRemoved
-                }
-                Ok(other) => {
-                    log::error!("close_pane: unexpected response: {other:?}");
-                    ClosePaneResult::NotFound
-                }
-                Err(e) => {
-                    log::error!("close_pane: RPC failed: {e}");
-                    ClosePaneResult::NotFound
-                }
+        match self.rpc(MuxPdu::ClosePane { pane_id }) {
+            Ok(MuxPdu::PaneClosedAck) => {
+                self.pane_registry.unregister(pane_id);
+                ClosePaneResult::PaneRemoved
             }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = pane_id;
-            ClosePaneResult::NotFound
+            Ok(other) => {
+                log::error!("close_pane: unexpected response: {other:?}");
+                ClosePaneResult::NotFound
+            }
+            Err(e) => {
+                log::error!("close_pane: RPC failed: {e}");
+                ClosePaneResult::NotFound
+            }
         }
     }
 
@@ -526,6 +424,37 @@ impl MuxBackend for MuxClient {
 
     fn default_domain(&self) -> DomainId {
         DomainId::from_raw(0)
+    }
+
+    fn claim_window(&mut self, window_id: WindowId) -> io::Result<()> {
+        match self.rpc(MuxPdu::ClaimWindow { window_id })? {
+            MuxPdu::WindowClaimed => {
+                log::info!("claimed {window_id} on daemon");
+                Ok(())
+            }
+            other => Err(io::Error::other(format!(
+                "claim_window: unexpected response: {other:?}"
+            ))),
+        }
+    }
+
+    fn refresh_window_tabs(&mut self, window_id: WindowId) {
+        match self.rpc(MuxPdu::ListTabs { window_id }) {
+            Ok(MuxPdu::TabList { tabs }) => {
+                if let Some(win) = self.local_session.get_window_mut(window_id) {
+                    // Replace the window's tab list with the server-authoritative data.
+                    let tab_ids: Vec<TabId> = tabs.iter().map(|t| t.tab_id).collect();
+                    win.replace_tabs(&tab_ids);
+                }
+                log::debug!("refreshed tabs for {window_id}: {} tabs", tabs.len());
+            }
+            Ok(other) => {
+                log::error!("refresh_window_tabs: unexpected response: {other:?}");
+            }
+            Err(e) => {
+                log::error!("refresh_window_tabs: RPC failed: {e}");
+            }
+        }
     }
 
     fn is_daemon_mode(&self) -> bool {

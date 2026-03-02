@@ -73,8 +73,8 @@ impl MuxBackend for EmbeddedMux {
         self.mux.is_last_pane(pane_id)
     }
 
-    fn create_window(&mut self) -> WindowId {
-        self.mux.create_window()
+    fn create_window(&mut self) -> io::Result<WindowId> {
+        Ok(self.mux.create_window())
     }
 
     fn close_window(&mut self, window_id: WindowId) -> Vec<PaneId> {

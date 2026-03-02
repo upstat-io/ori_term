@@ -11,12 +11,13 @@ mod rpc_methods;
 #[cfg(unix)]
 mod transport;
 
-#[cfg(unix)]
 use std::io;
+
 #[cfg(unix)]
 use std::sync::Arc;
 
 use crate::mux_event::MuxNotification;
+use crate::protocol::MuxPdu;
 use crate::registry::{PaneRegistry, SessionRegistry};
 
 #[cfg(unix)]
@@ -89,6 +90,31 @@ impl MuxClient {
         self.transport
             .as_ref()
             .is_some_and(ClientTransport::is_alive)
+    }
+
+    /// Send an RPC request to the daemon and return the response.
+    ///
+    /// Centralizes the `#[cfg(unix)]` transport gate — callers use
+    /// `self.rpc(pdu)?` without any platform-specific branching.
+    #[cfg(unix)]
+    fn rpc(&mut self, pdu: MuxPdu) -> io::Result<MuxPdu> {
+        self.transport
+            .as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "not connected to daemon"))?
+            .rpc(pdu)
+    }
+
+    /// Stub: daemon mode is not supported on this platform.
+    #[cfg(not(unix))]
+    #[expect(
+        clippy::unused_self,
+        clippy::needless_pass_by_ref_mut,
+        reason = "signature must match the unix cfg variant"
+    )]
+    fn rpc(&mut self, _pdu: MuxPdu) -> io::Result<MuxPdu> {
+        Err(io::Error::other(
+            "daemon mode not supported on this platform",
+        ))
     }
 }
 

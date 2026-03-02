@@ -186,8 +186,24 @@ impl App {
                 }
                 true
             }
+            Action::MoveTabToNewWindow => {
+                // Resolve the active tab index and defer to `about_to_wait`
+                // where `ActiveEventLoop` is available.
+                let idx = self
+                    .mux
+                    .as_ref()
+                    .zip(self.active_window)
+                    .and_then(|(m, wid)| {
+                        let win = m.session().get_window(wid)?;
+                        Some(win.active_tab_idx())
+                    });
+                if let Some(i) = idx {
+                    self.move_tab_to_new_window_deferred(i);
+                }
+                true
+            }
             // Actions for future sections — consume the event but log a stub.
-            Action::ZoomIn | Action::ZoomOut | Action::ZoomReset | Action::MoveTabToNewWindow => {
+            Action::ZoomIn | Action::ZoomOut | Action::ZoomReset => {
                 log::debug!("keybinding action not yet implemented: {action:?}");
                 true
             }

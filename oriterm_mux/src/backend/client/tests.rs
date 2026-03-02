@@ -103,6 +103,28 @@ fn pane_ids_empty() {
     assert!(client.pane_ids().is_empty());
 }
 
+// -- claim_window / refresh_window_tabs stubs --
+
+/// `claim_window` on an unconnected stub returns an error (no panic).
+#[test]
+fn claim_window_stub_returns_error() {
+    use crate::WindowId;
+
+    let mut client = MuxClient::new();
+    let result = client.claim_window(WindowId::from_raw(1));
+    assert!(result.is_err());
+}
+
+/// `refresh_window_tabs` on an unconnected stub is a no-op (no panic).
+#[test]
+fn refresh_window_tabs_stub_noop() {
+    use crate::WindowId;
+
+    let mut client = MuxClient::new();
+    // Should not panic — just logs an error internally.
+    client.refresh_window_tabs(WindowId::from_raw(1));
+}
+
 // -- Send compile check --
 
 /// `MuxClient` satisfies `Send` (prevents accidental `Rc`/`Cell` additions).
