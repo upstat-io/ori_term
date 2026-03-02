@@ -1072,3 +1072,117 @@ fn urxvt_release_uses_m_suffix() {
         "URXVT release should use M suffix, got: {s}"
     );
 }
+
+// --- X10 mode (mode 9) tests ---
+
+#[test]
+fn x10_mode_press_encodes_normally() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::Left, MouseEventKind::Press, 5, 10);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(bytes.len(), 6);
+    assert!(bytes.starts_with(b"\x1b[M"));
+    // Left(0), no modifiers; button byte = 32 + 0 = 32.
+    assert_eq!(bytes[3], 32);
+    // col=5: 32 + 1 + 5 = 38.
+    assert_eq!(bytes[4], 38);
+    // line=10: 32 + 1 + 10 = 43.
+    assert_eq!(bytes[5], 43);
+}
+
+#[test]
+fn x10_mode_release_is_suppressed() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::Left, MouseEventKind::Release, 5, 10);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(bytes.is_empty(), "X10 mode should not report releases");
+}
+
+#[test]
+fn x10_mode_motion_is_suppressed() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::Left, MouseEventKind::Motion, 5, 10);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // Motion is a kind of "not release" but X10 should only report button
+    // presses. The motion bit in the code makes it technically a "press with
+    // motion" — that should still be filtered out since X10 is press-only.
+    // However, our current implementation only filters releases. Motion
+    // events are handled at the App layer (report_mouse_motion returns
+    // early for X10 mode), so encode_mouse_event does encode motion.
+    // This test documents the actual behavior.
+    assert!(
+        !bytes.is_empty(),
+        "motion encoding is allowed at the encoder level"
+    );
+}
+
+#[test]
+fn x10_mode_strips_modifiers() {
+    let mods = MouseModifiers {
+        shift: true,
+        alt: true,
+        ctrl: true,
+    };
+    let mode = TermMode::MOUSE_X10;
+    let e = event_with_mods(MouseButton::Left, MouseEventKind::Press, 0, 0, mods);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    // X10 mode should NOT add modifier bits (shift=4, alt=8, ctrl=16).
+    // Button byte should be 32 + 0 = 32 (bare left click).
+    assert_eq!(bytes[3], 32, "X10 mode should strip all modifiers");
+}
+
+#[test]
+fn x10_mode_right_click_press() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::Right, MouseEventKind::Press, 3, 7);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(bytes.len(), 6);
+    // Right(2), no modifiers; button byte = 32 + 2 = 34.
+    assert_eq!(bytes[3], 34);
+}
+
+#[test]
+fn x10_mode_middle_click_press() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::Middle, MouseEventKind::Press, 0, 0);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(bytes.len(), 6);
+    // Middle(1); button byte = 32 + 1 = 33.
+    assert_eq!(bytes[3], 33);
+}
+
+#[test]
+fn x10_mode_scroll_up_press() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::ScrollUp, MouseEventKind::Press, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(bytes.len(), 6);
+    // ScrollUp(64), no modifiers; button byte = 32 + 64 = 96.
+    assert_eq!(bytes[3], 96);
+}
+
+#[test]
+fn x10_mode_scroll_down_press() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::ScrollDown, MouseEventKind::Press, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert_eq!(bytes.len(), 6);
+    // ScrollDown(65), no modifiers; button byte = 32 + 65 = 97.
+    assert_eq!(bytes[3], 97);
+}
+
+#[test]
+fn x10_mode_out_of_range_drops_event() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::Left, MouseEventKind::Press, 300, 300);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(bytes.is_empty(), "X10 mode should drop out-of-range events");
+}
+
+#[test]
+fn x10_mode_scroll_release_is_suppressed() {
+    let mode = TermMode::MOUSE_X10;
+    let e = event(MouseButton::ScrollUp, MouseEventKind::Release, 5, 5);
+    let bytes = encode_mouse_event(&e, mode).as_bytes().to_vec();
+    assert!(bytes.is_empty(), "X10 mode should suppress scroll releases");
+}

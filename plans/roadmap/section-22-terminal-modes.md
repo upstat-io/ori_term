@@ -54,7 +54,7 @@ Report mouse events to applications (vim, tmux, htop, etc.). The terminal must s
 **Files:** `oriterm/src/app/mouse_report/mod.rs`, `oriterm_core/src/term/mode/mod.rs`
 
 - [x] Mouse reporting modes (DECSET):
-  - [ ] 9: X10 mouse reporting (button press only, legacy)
+  - [x] 9: X10 mouse reporting (button press only, legacy)
   - [x] 1000: Normal tracking (press + release)
   - [x] 1002: Button-event tracking (press + release + drag with button held)
   - [x] 1003: Any-event tracking (all motion, even without button held)
@@ -286,7 +286,7 @@ Complete reference of every DECSET/DECRST private mode.
 - [x] Synchronized output prevents flicker (vte handles internally)
 - [x] OSC 8 hyperlinks render and are clickable (Ctrl+click)
 - [x] Implicit URL detection works on plain-text URLs
-- [x] All modes in the comprehensive mode table are implemented (except X10 mode 9)
+- [x] All modes in the comprehensive mode table are implemented (including X10 mode 9)
 - [x] Mode interactions (mutual exclusion, alt screen save/restore) are correct
 - [x] XTSAVE/XTRESTORE work for applicable modes
 - [x] Legacy alt screen modes (47, 1047, 1048) implemented

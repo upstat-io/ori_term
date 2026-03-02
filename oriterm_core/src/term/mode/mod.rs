@@ -66,11 +66,14 @@ bitflags! {
         const REVERSE_WRAP           = 1 << 24;
         /// Mode 1015 — URXVT mouse encoding.
         const MOUSE_URXVT            = 1 << 25;
+        /// Mode 9 — X10 mouse reporting (press only, no modifiers).
+        const MOUSE_X10              = 1 << 26;
 
         /// Computed: any mouse reporting mode is active.
         const ANY_MOUSE = Self::MOUSE_REPORT_CLICK.bits()
                         | Self::MOUSE_DRAG.bits()
-                        | Self::MOUSE_MOTION.bits();
+                        | Self::MOUSE_MOTION.bits()
+                        | Self::MOUSE_X10.bits();
         /// Computed: any mouse encoding mode is active.
         const ANY_MOUSE_ENCODING = Self::MOUSE_SGR.bits()
                                  | Self::MOUSE_UTF8.bits()

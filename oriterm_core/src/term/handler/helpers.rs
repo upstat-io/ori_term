@@ -22,6 +22,7 @@ pub(super) fn named_private_mode_number(mode: NamedPrivateMode) -> u16 {
     match mode {
         NamedPrivateMode::CursorKeys => 1,
         NamedPrivateMode::ColumnMode => 3,
+        NamedPrivateMode::X10Mouse => 9,
         NamedPrivateMode::Origin => 6,
         NamedPrivateMode::LineWrap => 7,
         NamedPrivateMode::BlinkingCursor => 12,
@@ -57,6 +58,7 @@ pub(super) fn named_private_mode_flag(mode: NamedPrivateMode) -> Option<TermMode
         NamedPrivateMode::AltScreen
         | NamedPrivateMode::AltScreenOpt
         | NamedPrivateMode::SwapScreenAndSetRestoreCursor => Some(TermMode::ALT_SCREEN),
+        NamedPrivateMode::X10Mouse => Some(TermMode::MOUSE_X10),
         NamedPrivateMode::ReportMouseClicks => Some(TermMode::MOUSE_REPORT_CLICK),
         NamedPrivateMode::ReportCellMouseMotion => Some(TermMode::MOUSE_DRAG),
         NamedPrivateMode::ReportAllMouseMotion => Some(TermMode::MOUSE_MOTION),

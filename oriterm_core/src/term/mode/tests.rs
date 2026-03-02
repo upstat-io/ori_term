@@ -38,7 +38,10 @@ fn set_and_clear_individual_modes() {
 
 #[test]
 fn any_mouse_is_union_of_mouse_modes() {
-    let expected = TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_DRAG | TermMode::MOUSE_MOTION;
+    let expected = TermMode::MOUSE_REPORT_CLICK
+        | TermMode::MOUSE_DRAG
+        | TermMode::MOUSE_MOTION
+        | TermMode::MOUSE_X10;
     assert_eq!(TermMode::ANY_MOUSE, expected);
 }
 
@@ -52,6 +55,9 @@ fn any_mouse_detects_any_single_mouse_mode() {
 
     let motion_only = TermMode::MOUSE_MOTION;
     assert!(motion_only.intersects(TermMode::ANY_MOUSE));
+
+    let x10_only = TermMode::MOUSE_X10;
+    assert!(x10_only.intersects(TermMode::ANY_MOUSE));
 }
 
 #[test]
@@ -87,6 +93,8 @@ fn all_flags_are_distinct() {
         TermMode::REPORT_ALL_KEYS_AS_ESC,
         TermMode::REPORT_ASSOCIATED_TEXT,
         TermMode::ALTERNATE_SCROLL,
+        TermMode::MOUSE_URXVT,
+        TermMode::MOUSE_X10,
     ];
 
     // Each individual flag has exactly one bit set (excluding composite ANY_MOUSE).
@@ -136,7 +144,10 @@ fn any_mouse_encoding_is_union_of_encoding_modes() {
 fn new_flags_are_distinct() {
     assert!(TermMode::REVERSE_WRAP.bits().is_power_of_two());
     assert!(TermMode::MOUSE_URXVT.bits().is_power_of_two());
+    assert!(TermMode::MOUSE_X10.bits().is_power_of_two());
     assert_ne!(TermMode::REVERSE_WRAP, TermMode::MOUSE_URXVT);
+    assert_ne!(TermMode::MOUSE_X10, TermMode::MOUSE_URXVT);
+    assert_ne!(TermMode::MOUSE_X10, TermMode::REVERSE_WRAP);
 }
 
 #[test]
@@ -144,4 +155,5 @@ fn default_does_not_have_new_modes() {
     let mode = TermMode::default();
     assert!(!mode.contains(TermMode::REVERSE_WRAP));
     assert!(!mode.contains(TermMode::MOUSE_URXVT));
+    assert!(!mode.contains(TermMode::MOUSE_X10));
 }

@@ -27,6 +27,11 @@ impl<T: EventListener> Term<T> {
                 self.event_listener.send_event(Event::CursorBlinkingChange);
             }
             NamedPrivateMode::ShowCursor => self.mode.insert(TermMode::SHOW_CURSOR),
+            NamedPrivateMode::X10Mouse => {
+                self.mode.remove(TermMode::ANY_MOUSE);
+                self.mode.insert(TermMode::MOUSE_X10);
+                self.event_listener.send_event(Event::MouseCursorDirty);
+            }
             NamedPrivateMode::ReportMouseClicks => {
                 self.mode.remove(TermMode::ANY_MOUSE);
                 self.mode.insert(TermMode::MOUSE_REPORT_CLICK);
@@ -100,6 +105,10 @@ impl<T: EventListener> Term<T> {
                 self.event_listener.send_event(Event::CursorBlinkingChange);
             }
             NamedPrivateMode::ShowCursor => self.mode.remove(TermMode::SHOW_CURSOR),
+            NamedPrivateMode::X10Mouse => {
+                self.mode.remove(TermMode::MOUSE_X10);
+                self.event_listener.send_event(Event::MouseCursorDirty);
+            }
             NamedPrivateMode::ReportMouseClicks => {
                 self.mode.remove(TermMode::MOUSE_REPORT_CLICK);
                 self.event_listener.send_event(Event::MouseCursorDirty);

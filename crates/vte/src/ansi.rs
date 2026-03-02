@@ -915,6 +915,7 @@ impl PrivateMode {
         match mode {
             1 => Self::Named(NamedPrivateMode::CursorKeys),
             3 => Self::Named(NamedPrivateMode::ColumnMode),
+            9 => Self::Named(NamedPrivateMode::X10Mouse),
             6 => Self::Named(NamedPrivateMode::Origin),
             7 => Self::Named(NamedPrivateMode::LineWrap),
             12 => Self::Named(NamedPrivateMode::BlinkingCursor),
@@ -958,6 +959,8 @@ impl From<NamedPrivateMode> for PrivateMode {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum NamedPrivateMode {
     CursorKeys = 1,
+    /// X10 mouse reporting — press only, no release, no modifiers.
+    X10Mouse = 9,
     /// Select 80 or 132 columns per page (DECCOLM).
     ///
     /// CSI ? 3 h -> set 132 column font.

@@ -232,11 +232,24 @@ pub(crate) struct MouseEvent {
 /// Encode a mouse event, selecting the format based on terminal mode.
 ///
 /// Priority: SGR > URXVT > UTF-8 > Normal. Returns the encoded bytes in
-/// the buffer.
+/// the buffer. For X10 mode (mode 9), modifiers are stripped and only
+/// presses are encoded (releases return an empty buffer).
 pub(crate) fn encode_mouse_event(event: &MouseEvent, mode: TermMode) -> MouseReportBuf {
     let mut buf = MouseReportBuf::new();
-    let code = apply_modifiers(button_code(event.button, event.kind), event.mods);
+    let x10 = mode.contains(TermMode::MOUSE_X10);
+
+    // X10 mode: no modifiers in the button code.
+    let code = if x10 {
+        button_code(event.button, event.kind)
+    } else {
+        apply_modifiers(button_code(event.button, event.kind), event.mods)
+    };
     let pressed = event.kind != MouseEventKind::Release;
+
+    // X10 mode: only report button presses, not releases or motion.
+    if x10 && !pressed {
+        return buf;
+    }
 
     buf.len = if mode.contains(TermMode::MOUSE_SGR) {
         encode_sgr(&mut buf.data, code, event.col, event.line, pressed)
@@ -311,6 +324,11 @@ impl App {
         position: PhysicalPosition<f64>,
         mode: TermMode,
     ) -> bool {
+        // X10 mode reports presses only — no motion, no drag.
+        if mode.contains(TermMode::MOUSE_X10) {
+            return false;
+        }
+
         let has_drag = mode.contains(TermMode::MOUSE_DRAG) && self.mouse.any_button_down();
         let has_motion = mode.contains(TermMode::MOUSE_MOTION);
 
