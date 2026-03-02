@@ -47,40 +47,6 @@ fn mode_cache_round_trip() {
     assert_eq!(cache.load(Ordering::Acquire), 0x5678);
 }
 
-// --- CWD short path ---
-
-use super::cwd_short_path;
-
-#[test]
-fn short_path_last_component() {
-    assert_eq!(cwd_short_path("/home/user/projects"), "projects");
-}
-
-#[test]
-fn short_path_root() {
-    assert_eq!(cwd_short_path("/"), "/");
-}
-
-#[test]
-fn short_path_trailing_slash() {
-    assert_eq!(cwd_short_path("/home/user/"), "user");
-}
-
-#[test]
-fn short_path_single_dir() {
-    assert_eq!(cwd_short_path("/tmp"), "tmp");
-}
-
-#[test]
-fn short_path_triple_slash() {
-    assert_eq!(cwd_short_path("///"), "/");
-}
-
-#[test]
-fn short_path_double_slash() {
-    assert_eq!(cwd_short_path("//"), "/");
-}
-
 /// Cross-thread atomic visibility (simulated with sequential ops).
 #[test]
 fn dirty_flag_cross_thread_pattern() {

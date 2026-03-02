@@ -1259,6 +1259,40 @@ fn term_resize_with_vte_wrapped_content() {
     assert_eq!(term.grid()[Line(0)][Column(19)].ch, 't');
 }
 
+// --- CWD short path ---
+
+use super::cwd_short_path;
+
+#[test]
+fn short_path_last_component() {
+    assert_eq!(cwd_short_path("/home/user/projects"), "projects");
+}
+
+#[test]
+fn short_path_root() {
+    assert_eq!(cwd_short_path("/"), "/");
+}
+
+#[test]
+fn short_path_trailing_slash() {
+    assert_eq!(cwd_short_path("/home/user/"), "user");
+}
+
+#[test]
+fn short_path_single_dir() {
+    assert_eq!(cwd_short_path("/tmp"), "tmp");
+}
+
+#[test]
+fn short_path_triple_slash() {
+    assert_eq!(cwd_short_path("///"), "/");
+}
+
+#[test]
+fn short_path_double_slash() {
+    assert_eq!(cwd_short_path("//"), "/");
+}
+
 // --- Prompt marker tests ---
 
 #[test]

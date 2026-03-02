@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
+use oriterm_core::term::cwd_short_path;
 use oriterm_core::{
     FairMutex, SearchState, Selection, SelectionMode, SelectionPoint, Side, StableRowIndex, Term,
 };
@@ -508,22 +509,6 @@ impl Pane {
             end: anchor,
         })
     }
-}
-
-/// Extract the last path component from a CWD path for tab display.
-///
-/// - `/home/user/projects` → `projects`
-/// - `/` → `/`
-/// - `~` passthrough (shouldn't occur from OSC 7, but handle gracefully).
-fn cwd_short_path(cwd: &str) -> &str {
-    if cwd == "/" {
-        return cwd;
-    }
-    // Strip trailing slash then take last component.
-    let trimmed = cwd.strip_suffix('/').unwrap_or(cwd);
-    let component = trimmed.rsplit('/').next().unwrap_or(cwd);
-    // Paths like `///` reduce to an empty component after stripping — return `/`.
-    if component.is_empty() { "/" } else { component }
 }
 
 #[cfg(test)]
