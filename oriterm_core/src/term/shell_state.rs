@@ -140,12 +140,8 @@ impl<T: EventListener> Term<T> {
     /// the next prompt's `prompt_start`, or the current cursor row if this
     /// is the last marker.
     pub fn command_output_range(&self, near_row: usize) -> Option<(usize, usize)> {
-        let marker = self.find_nearest_marker(near_row)?;
+        let (idx, marker) = self.find_nearest_marker(near_row)?;
         let output_row = marker.output?;
-        let idx = self
-            .prompt_markers
-            .iter()
-            .position(|m| std::ptr::eq(m, marker))?;
         let end = if idx + 1 < self.prompt_markers.len() {
             self.prompt_markers[idx + 1].prompt.saturating_sub(1)
         } else {
@@ -163,20 +159,14 @@ impl<T: EventListener> Term<T> {
     /// Returns `(command_start_row, end_row)` where `end_row` is one before
     /// `output_start`, or one before the next prompt if no output marker.
     pub fn command_input_range(&self, near_row: usize) -> Option<(usize, usize)> {
-        let marker = self.find_nearest_marker(near_row)?;
+        let (idx, marker) = self.find_nearest_marker(near_row)?;
         let cmd_row = marker.command?;
         let end = if let Some(or) = marker.output {
             or.saturating_sub(1)
+        } else if idx + 1 < self.prompt_markers.len() {
+            self.prompt_markers[idx + 1].prompt.saturating_sub(1)
         } else {
-            let idx = self
-                .prompt_markers
-                .iter()
-                .position(|m| std::ptr::eq(m, marker))?;
-            if idx + 1 < self.prompt_markers.len() {
-                self.prompt_markers[idx + 1].prompt.saturating_sub(1)
-            } else {
-                self.grid.scrollback().len() + self.grid.cursor().line()
-            }
+            self.grid.scrollback().len() + self.grid.cursor().line()
         };
         if end < cmd_row {
             return None;
@@ -335,11 +325,13 @@ impl<T: EventListener> Term<T> {
 
     /// Find the prompt marker whose zone contains `near_row`.
     ///
-    /// Returns the last marker whose `prompt_start <= near_row`.
-    fn find_nearest_marker(&self, near_row: usize) -> Option<&PromptMarker> {
+    /// Returns the index and a reference to the last marker whose
+    /// `prompt_start <= near_row`.
+    fn find_nearest_marker(&self, near_row: usize) -> Option<(usize, &PromptMarker)> {
         self.prompt_markers
             .iter()
+            .enumerate()
             .rev()
-            .find(|m| m.prompt <= near_row)
+            .find(|(_, m)| m.prompt <= near_row)
     }
 }

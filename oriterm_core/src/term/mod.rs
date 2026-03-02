@@ -415,13 +415,11 @@ impl<T: EventListener> Term<T> {
             visible: cursor_visible,
         };
 
-        let (all_dirty, damage) = renderable::collect_damage(grid, lines, cols);
+        out.all_dirty = renderable::collect_damage(grid, lines, cols, &mut out.damage);
         out.display_offset = offset;
         let base_abs = grid.scrollback().len().saturating_sub(offset);
         out.stable_row_base = grid.total_evicted() as u64 + base_abs as u64;
         out.mode = self.mode;
-        out.all_dirty = all_dirty;
-        out.damage = damage;
     }
 
     /// Drain damage from the active grid.
