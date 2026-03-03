@@ -21,10 +21,24 @@ use std::collections::HashMap;
 use oriterm_core::Rgb;
 use serde::{Deserialize, Serialize};
 
+/// Process model for how the terminal manages multiplexer state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProcessModel {
+    /// Multi-process mode: auto-start a mux daemon, connect via IPC.
+    /// Each window is a separate OS process. Tabs migrate between windows.
+    #[default]
+    Daemon,
+    /// Single-process mode: embedded mux, no IPC, no daemon.
+    /// Used for testing, sandboxed environments, or when daemon unavailable.
+    Embedded,
+}
+
 /// Top-level configuration structure.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    pub process_model: ProcessModel,
     pub font: FontConfig,
     pub terminal: TerminalConfig,
     pub colors: ColorConfig,

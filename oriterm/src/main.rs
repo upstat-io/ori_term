@@ -24,7 +24,7 @@ mod window;
 
 use clap::Parser;
 
-use crate::config::Config;
+use crate::config::{Config, ProcessModel};
 use crate::event::TermEvent;
 
 fn main() {
@@ -53,16 +53,22 @@ fn main() {
 
     let config = Config::load();
 
+    // CLI flag > config for process model decision.
+    let embedded = args.embedded || config.process_model == ProcessModel::Embedded;
+
     #[cfg(unix)]
     let mut app = if let Some(ref socket) = args.connect {
-        // Explicit --connect: connect to specified daemon socket.
+        // Explicit --connect always uses daemon mode (regardless of config).
         app::App::new_daemon(proxy, config, socket, args.window)
+    } else if embedded {
+        log::info!("embedded mode (config or --embedded flag)");
+        app::App::new(proxy, config)
     } else {
-        // Auto-start: try daemon mode, fall back to embedded.
-        match oriterm_mux::discovery::ensure_daemon() {
+        // Daemon mode with retry + fallback.
+        match ensure_daemon_with_retry() {
             Ok(socket_path) => app::App::new_daemon(proxy, config, &socket_path, None),
             Err(e) => {
-                log::warn!("daemon auto-start failed, using embedded mode: {e}");
+                log::warn!("daemon auto-start failed after retries, using embedded mode: {e}");
                 app::App::new(proxy, config)
             }
         }
@@ -70,6 +76,7 @@ fn main() {
 
     #[cfg(not(unix))]
     let mut app = {
+        let _ = embedded; // Daemon mode not supported on this platform.
         if args.connect.is_some() {
             log::error!("--connect is not supported on this platform");
         }
@@ -147,6 +154,23 @@ fn install_panic_hook() {
             log::error!("backtrace (first line): {bt}");
         }
     }));
+}
+
+/// Try to start the daemon up to 3 times before giving up.
+#[cfg(unix)]
+fn ensure_daemon_with_retry() -> std::io::Result<std::path::PathBuf> {
+    const MAX_ATTEMPTS: u32 = 3;
+    let mut last_err = None;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match oriterm_mux::discovery::ensure_daemon() {
+            Ok(path) => return Ok(path),
+            Err(e) => {
+                log::warn!("daemon attempt {attempt}/{MAX_ATTEMPTS} failed: {e}");
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| std::io::Error::other("daemon start failed")))
 }
 
 /// Build a winit event loop usable from the main thread.

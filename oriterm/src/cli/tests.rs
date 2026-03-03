@@ -571,3 +571,35 @@ fn new_window_with_subcommand_parses() {
     assert!(cli.new_window);
     assert!(cli.command.is_some());
 }
+
+// ── --embedded flag ──
+
+#[test]
+fn embedded_flag_parses() {
+    let cli = Cli::try_parse_from(["oriterm", "--embedded"]).unwrap();
+    assert!(cli.embedded);
+}
+
+#[test]
+fn embedded_flag_defaults_to_false() {
+    let cli = Cli::try_parse_from(["oriterm"]).unwrap();
+    assert!(!cli.embedded);
+}
+
+#[test]
+fn embedded_with_connect_parses() {
+    // Both flags are syntactically valid — connect takes priority in code.
+    let cli = Cli::try_parse_from(["oriterm", "--embedded", "--connect", "/tmp/mux.sock"]).unwrap();
+    assert!(cli.embedded);
+    assert!(cli.connect.is_some());
+}
+
+#[test]
+fn completions_contain_embedded_flag() {
+    let output = generate_completions(Shell::Bash);
+    let text = String::from_utf8(output).expect("valid UTF-8");
+    assert!(
+        text.contains("embedded"),
+        "bash completions should mention --embedded flag"
+    );
+}

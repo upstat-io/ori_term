@@ -8,6 +8,7 @@ fn default_config_roundtrip() {
     let cfg = Config::default();
     let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
     let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.process_model, ProcessModel::Daemon);
     assert!((parsed.font.size - 11.0).abs() < f32::EPSILON);
     assert_eq!(parsed.terminal.scrollback, 10_000);
     assert_eq!(parsed.terminal.cursor_style, CursorStyle::Block);
@@ -1881,4 +1882,56 @@ fn pane_config_invalid_color_falls_back() {
             b: 80
         }
     );
+}
+
+// ── ProcessModel config ──
+
+#[test]
+fn process_model_defaults_to_daemon() {
+    let cfg = Config::default();
+    assert_eq!(cfg.process_model, ProcessModel::Daemon);
+}
+
+#[test]
+fn process_model_roundtrip_daemon() {
+    let toml_str = r#"process_model = "daemon""#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.process_model, ProcessModel::Daemon);
+}
+
+#[test]
+fn process_model_roundtrip_embedded() {
+    let toml_str = r#"process_model = "embedded""#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.process_model, ProcessModel::Embedded);
+}
+
+#[test]
+fn process_model_missing_uses_default() {
+    let toml_str = r#"
+[font]
+size = 14.0
+"#;
+    let parsed: Config = toml::from_str(toml_str).expect("deserialize");
+    assert_eq!(parsed.process_model, ProcessModel::Daemon);
+}
+
+#[test]
+fn process_model_serializes_in_show_config() {
+    let mut cfg = Config::default();
+    cfg.process_model = ProcessModel::Embedded;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    assert!(
+        toml_str.contains(r#"process_model = "embedded""#),
+        "should serialize embedded: {toml_str}"
+    );
+}
+
+#[test]
+fn process_model_survives_full_roundtrip() {
+    let mut cfg = Config::default();
+    cfg.process_model = ProcessModel::Embedded;
+    let toml_str = toml::to_string_pretty(&cfg).expect("serialize");
+    let parsed: Config = toml::from_str(&toml_str).expect("deserialize");
+    assert_eq!(parsed.process_model, ProcessModel::Embedded);
 }

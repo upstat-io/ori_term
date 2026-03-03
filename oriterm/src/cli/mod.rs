@@ -42,6 +42,13 @@ pub(crate) struct Cli {
     /// Open a new window (default when daemon is running).
     #[arg(long)]
     pub new_window: bool,
+
+    /// Force embedded (single-process) mode, ignoring config.
+    ///
+    /// Bypasses daemon auto-start entirely. Useful for debugging,
+    /// CI testing, or environments where daemon spawning isn't possible.
+    #[arg(long)]
+    pub embedded: bool,
 }
 
 /// Diagnostic subcommands that run headlessly.

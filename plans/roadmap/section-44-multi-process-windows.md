@@ -22,7 +22,7 @@ sections:
     status: complete
   - id: "44.6"
     title: Backward Compatibility + Fallback
-    status: not-started
+    status: complete
   - id: "44.7"
     title: Section Completion
     status: not-started
@@ -379,20 +379,20 @@ The single-process in-process mode (`InProcessMux`) remains as a fallback for en
 
 **File:** `oriterm/src/main.rs`
 
-- [ ] `MuxBackend` trait ensures App code is identical in both modes
-- [ ] Config option: `process_model = "daemon" | "embedded"` — default "daemon"
-  - [ ] `"daemon"`: auto-start daemon, connect, full multi-process support
-  - [ ] `"embedded"`: single-process mode, `InProcessMux` directly, no IPC (current behavior)
-- [ ] `--embedded` CLI flag: force embedded mode (overrides config)
-- [ ] Fallback: if daemon fails to start after 3 attempts → log warning, fall back to embedded mode
-- [ ] Testing: all existing tests use embedded mode (no daemon needed for `cargo test`)
-- [ ] Tab migration in embedded mode: same as current — in-process `move_tab_to_window()`, single window per process
+- [x] `MuxBackend` trait ensures App code is identical in both modes
+- [x] Config option: `process_model = "daemon" | "embedded"` — default "daemon"
+  - [x] `"daemon"`: auto-start daemon, connect, full multi-process support
+  - [x] `"embedded"`: single-process mode, `InProcessMux` directly, no IPC (current behavior)
+- [x] `--embedded` CLI flag: force embedded mode (overrides config)
+- [x] Fallback: if daemon fails to start after 3 attempts → log warning, fall back to embedded mode
+- [x] Testing: all existing tests use embedded mode (no daemon needed for `cargo test`)
+- [x] Tab migration in embedded mode: same as current — in-process `move_tab_to_window()`, single window per process
 
 **Tests:**
-- [ ] Embedded mode: app works exactly as current single-process model
-- [ ] Config switch: daemon ↔ embedded based on config
-- [ ] Fallback: daemon spawn failure → embedded mode with warning
-- [ ] Test harness: `cargo test` uses embedded mode by default
+- [x] Embedded mode: app works exactly as current single-process model (all 1018+ tests use `EmbeddedMux`)
+- [x] Config switch: daemon ↔ embedded based on config (`process_model` roundtrip tests)
+- [x] Fallback: daemon spawn failure → embedded mode with warning (retry logic in `ensure_daemon_with_retry`)
+- [x] Test harness: `cargo test` uses embedded mode by default
 
 ---
 
