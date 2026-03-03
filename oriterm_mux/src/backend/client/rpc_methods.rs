@@ -3,6 +3,9 @@
 //! Each method sends a PDU to the daemon via [`MuxClient::rpc`],
 //! extracts the response, and updates the mirrored [`SessionRegistry`].
 //! Methods that have no corresponding PDU yet log and return defaults.
+//!
+//! This file exceeds 500 lines because `MuxBackend` has ~30 required methods
+//! and Rust requires all trait method impls in a single `impl` block.
 
 use std::collections::HashSet;
 use std::io;
@@ -10,6 +13,7 @@ use std::sync::mpsc;
 
 use oriterm_core::Theme;
 
+use crate::PaneSnapshot;
 use crate::backend::MuxBackend;
 use crate::domain::SpawnConfig;
 use crate::in_process::ClosePaneResult;
@@ -29,6 +33,13 @@ impl MuxBackend for MuxClient {
         #[cfg(unix)]
         if let Some(transport) = &self.transport {
             transport.poll_notifications(&mut self.notifications);
+        }
+
+        // Scan buffered notifications to mark panes dirty for rendering.
+        for notif in &self.notifications {
+            if let MuxNotification::PaneDirty(pane_id) = notif {
+                self.dirty_panes.insert(*pane_id);
+            }
         }
     }
 
@@ -74,6 +85,7 @@ impl MuxBackend for MuxClient {
         match self.rpc(MuxPdu::CloseWindow { window_id }) {
             Ok(MuxPdu::WindowClosed { pane_ids }) => {
                 for &pid in &pane_ids {
+                    self.remove_snapshot(pid);
                     self.pane_registry.unregister(pid);
                 }
                 self.local_session.remove_window(window_id);
@@ -120,6 +132,10 @@ impl MuxBackend for MuxClient {
                     tab: tab_id,
                     domain: domain_id,
                 });
+
+                // Subscribe to the new pane and cache its initial snapshot.
+                self.subscribe_pane(pane_id);
+
                 log::info!("daemon created tab {tab_id} with pane {pane_id}");
                 Ok((tab_id, pane_id))
             }
@@ -139,6 +155,7 @@ impl MuxBackend for MuxClient {
                     .unwrap_or_default();
 
                 for &pid in &pane_ids {
+                    self.unsubscribe_pane(pid);
                     self.pane_registry.unregister(pid);
                 }
 
@@ -287,6 +304,10 @@ impl MuxBackend for MuxClient {
                     tab: tab_id,
                     domain: domain_id,
                 });
+
+                // Subscribe to the new pane and cache its initial snapshot.
+                self.subscribe_pane(new_pane_id);
+
                 Ok(new_pane_id)
             }
             other => Err(io::Error::other(format!(
@@ -298,6 +319,7 @@ impl MuxBackend for MuxClient {
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult {
         match self.rpc(MuxPdu::ClosePane { pane_id }) {
             Ok(MuxPdu::PaneClosedAck) => {
+                self.unsubscribe_pane(pane_id);
                 self.pane_registry.unregister(pane_id);
                 ClosePaneResult::PaneRemoved
             }
@@ -430,6 +452,19 @@ impl MuxBackend for MuxClient {
         match self.rpc(MuxPdu::ClaimWindow { window_id })? {
             MuxPdu::WindowClaimed => {
                 log::info!("claimed {window_id} on daemon");
+
+                // Subscribe to all panes in all tabs of this window.
+                if let Some(win) = self.local_session.get_window(window_id) {
+                    let tab_ids: Vec<TabId> = win.tabs().to_vec();
+                    for tab_id in tab_ids {
+                        if let Some(tab) = self.local_session.get_tab(tab_id) {
+                            for pane_id in tab.all_panes() {
+                                self.subscribe_pane(pane_id);
+                            }
+                        }
+                    }
+                }
+
                 Ok(())
             }
             other => Err(io::Error::other(format!(
@@ -463,5 +498,36 @@ impl MuxBackend for MuxClient {
 
     fn is_daemon_mode(&self) -> bool {
         true
+    }
+
+    // -- Snapshot access --
+
+    fn pane_snapshot(&self, pane_id: PaneId) -> Option<&PaneSnapshot> {
+        self.pane_snapshots.get(&pane_id)
+    }
+
+    fn is_pane_snapshot_dirty(&self, pane_id: PaneId) -> bool {
+        self.dirty_panes.contains(&pane_id)
+    }
+
+    fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot> {
+        match self.rpc(MuxPdu::GetPaneSnapshot { pane_id }) {
+            Ok(MuxPdu::PaneSnapshotResp { snapshot }) => {
+                self.pane_snapshots.insert(pane_id, snapshot);
+                self.pane_snapshots.get(&pane_id)
+            }
+            Ok(other) => {
+                log::error!("refresh_pane_snapshot: unexpected response: {other:?}");
+                None
+            }
+            Err(e) => {
+                log::error!("refresh_pane_snapshot: RPC failed: {e}");
+                None
+            }
+        }
+    }
+
+    fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {
+        self.dirty_panes.remove(&pane_id);
     }
 }

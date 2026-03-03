@@ -2,7 +2,26 @@
 
 # ori-term
 
-A GPU-accelerated terminal emulator with a built-in multiplexer, written from scratch in Rust.
+A GPU-accelerated Terminal OS written from scratch in Rust.
+
+ori-term is not just a terminal emulator. It is a unified runtime for shells, sessions, panes, tabs, windows, and terminal-native UI. Instead of stacking `terminal + tmux + scripts + glue`, ori-term collapses that stack into one coherent system.
+
+## Terminal OS Positioning
+
+### Category
+**Terminal OS** - a terminal platform that combines rendering, multiplexing, session lifecycle, and interaction model in one product.
+
+### One-liner
+**ori-term is a Terminal OS: a GPU terminal, multiplexer, and session runtime unified into one system.**
+
+### Short pitch
+Most terminals stop at emulation. ori-term owns the full terminal workflow: render, split, float, drag, persist, recover, and orchestrate sessions across windows. The goal is to make terminal workspaces feel like a modern operating surface, not a patched stack of separate tools.
+
+### Core pillars
+- **Runtime, not wrapper** - tabs, splits, floating panes, and session lifecycle are first-class primitives
+- **Stateful by design** - daemon-backed sessions and reconnection-aware architecture
+- **Native interaction model** - GPU-rendered chrome, tab tear-off/merge, and pane-level UI behaviors
+- **Compositional architecture** - clean crate boundaries for terminal core, mux, UI framework, and app shell
 
 Most terminal emulators make you choose: a fast GPU renderer (Alacritty, Ghostty) or a built-in multiplexer (WezTerm), but never both done well — and you still end up running tmux inside any of them. ori-term eliminates that entire layer. Splits, floating panes, tabs, sessions, and daemon mode are native. Close your laptop, reopen it, and your session is exactly where you left it. SSH into a remote machine and your panes feel local with Mosh-style predictive echo. Or skip the GUI entirely — `oriterm-tui` attaches to the same daemon from any terminal, giving you a tmux-like experience backed by the same multiplexer.
 

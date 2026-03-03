@@ -20,8 +20,12 @@ pub struct WireRgb {
     pub b: u8,
 }
 
-/// Terminal color on the wire.
+/// Terminal color on the wire (unresolved palette reference).
+///
+/// Reserved for future incremental wire format where cells send only
+/// changed fields and colors may reference palette indices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(dead_code, reason = "reserved for future incremental wire format")]
 pub enum WireColor {
     /// Named color (0–15).
     Named(u8),
@@ -38,16 +42,23 @@ pub enum WireColor {
 pub type WireCellFlags = u16;
 
 /// A single terminal cell on the wire.
+///
+/// Colors are pre-resolved RGB values — bold-as-bright, dim, and inverse
+/// have already been applied server-side via `renderable_content()`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireCell {
     /// Displayed character.
     pub ch: char,
-    /// Foreground color.
-    pub fg: WireColor,
-    /// Background color.
-    pub bg: WireColor,
+    /// Pre-resolved foreground color.
+    pub fg: WireRgb,
+    /// Pre-resolved background color.
+    pub bg: WireRgb,
     /// SGR attribute flags (bold, italic, etc.).
     pub flags: WireCellFlags,
+    /// Resolved underline color (`None` = use foreground).
+    pub underline_color: Option<WireRgb>,
+    /// Whether this cell has an OSC 8 hyperlink.
+    pub has_hyperlink: bool,
     /// Combining marks / zero-width characters.
     pub zerowidth: Vec<char>,
 }

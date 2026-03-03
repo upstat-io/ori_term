@@ -1,56 +1,62 @@
 //! Snapshot building for IPC responses.
 //!
-//! Converts internal terminal state (`Cell`, `Color`, `Cursor`, `Grid`) into
-//! wire-friendly types ([`PaneSnapshot`], [`WireCell`], [`WireColor`],
-//! [`WireCursor`]) for transmission to window processes.
+//! Converts internal terminal state into wire-friendly types ([`PaneSnapshot`],
+//! [`WireCell`], [`WireCursor`]) for transmission to window processes.
+//!
+//! Colors are pre-resolved server-side via [`Term::renderable_content()`] — the
+//! wire cells carry resolved RGB values (bold-as-bright, dim, inverse already
+//! applied). This eliminates the need for clients to duplicate color resolution.
 
 use std::collections::HashMap;
 
-use oriterm_core::{Column, Line};
-use vte::ansi::Color;
+use oriterm_core::{CursorShape, RenderableCell, Rgb};
 
 use crate::pane::Pane;
 use crate::registry::PaneRegistry;
 use crate::{
     MuxTabInfo, MuxWindowInfo, PaneId, PaneSnapshot, SessionRegistry, WindowId, WireCell,
-    WireColor, WireCursor, WireCursorShape, WireRgb,
+    WireCursor, WireCursorShape, WireRgb,
 };
 
 /// Build a full snapshot of a pane's visible state.
+///
+/// Uses [`Term::renderable_content()`] to produce pre-resolved colors.
+/// The wire cells carry resolved RGB — clients never need to reference the
+/// palette for per-cell fg/bg.
 pub fn build_snapshot(pane: &Pane) -> PaneSnapshot {
     let term = pane.terminal().lock();
-    let grid = term.grid();
 
+    // renderable_content() resolves all per-cell colors (bold-as-bright,
+    // dim, inverse) and computes cursor visibility.
+    let content = term.renderable_content();
+    let grid = term.grid();
     let lines = grid.lines();
     let cols = grid.cols();
 
-    // Convert visible grid to wire cells.
+    // Convert flat cell vec to wire rows.
     let mut cells = Vec::with_capacity(lines);
-    for row_idx in 0..lines {
-        let row = &grid[Line(row_idx as i32)];
-        let mut wire_row = Vec::with_capacity(cols);
-        for col_idx in 0..cols {
-            wire_row.push(cell_to_wire(&row[Column(col_idx)]));
+    let mut row_buf = Vec::with_capacity(cols);
+    for cell in &content.cells {
+        row_buf.push(renderable_to_wire(cell));
+        if row_buf.len() == cols {
+            cells.push(std::mem::replace(&mut row_buf, Vec::with_capacity(cols)));
         }
-        cells.push(wire_row);
+    }
+    // Flush any partial last row.
+    if !row_buf.is_empty() {
+        cells.push(row_buf);
     }
 
-    // Cursor.
-    let cursor = grid.cursor();
-    let cursor_shape = term.cursor_shape();
-    let mode = term.mode();
-    let cursor_visible = mode.contains(oriterm_core::TermMode::SHOW_CURSOR)
-        && grid.display_offset() == 0
-        && cursor_shape != oriterm_core::CursorShape::Hidden;
-
+    // Cursor (visibility already resolved by renderable_content).
     let wire_cursor = WireCursor {
-        col: u16::try_from(cursor.col().0).unwrap_or(u16::MAX),
-        row: u16::try_from(cursor.line()).unwrap_or(u16::MAX),
-        shape: cursor_shape_to_wire(cursor_shape),
-        visible: cursor_visible,
+        col: u16::try_from(content.cursor.column.0).unwrap_or(u16::MAX),
+        row: u16::try_from(content.cursor.line).unwrap_or(u16::MAX),
+        shape: cursor_shape_to_wire(content.cursor.shape),
+        visible: content.cursor.visible,
     };
 
-    // Palette: extract 270 RGB triplets.
+    // Palette: extract 270 RGB triplets (needed for FramePalette semantic
+    // colors: background, foreground, cursor color, selection overrides).
     let palette = term.palette();
     let palette_rgb: Vec<[u8; 3]> = (0..270)
         .map(|i| {
@@ -64,50 +70,42 @@ pub fn build_snapshot(pane: &Pane) -> PaneSnapshot {
         cursor: wire_cursor,
         palette: palette_rgb,
         title: pane.effective_title().to_string(),
-        modes: mode.bits(),
+        modes: content.mode.bits(),
         scrollback_len: u32::try_from(grid.scrollback().len()).unwrap_or(u32::MAX),
-        display_offset: u32::try_from(grid.display_offset()).unwrap_or(u32::MAX),
+        display_offset: u32::try_from(content.display_offset).unwrap_or(u32::MAX),
     }
 }
 
-/// Convert a core `Cell` to a `WireCell`.
-fn cell_to_wire(cell: &oriterm_core::Cell) -> WireCell {
-    let zerowidth = cell
-        .extra
-        .as_ref()
-        .map(|e| e.zerowidth.clone())
-        .unwrap_or_default();
-
+/// Convert a pre-resolved [`RenderableCell`] to a [`WireCell`].
+fn renderable_to_wire(cell: &RenderableCell) -> WireCell {
     WireCell {
         ch: cell.ch,
-        fg: color_to_wire(cell.fg),
-        bg: color_to_wire(cell.bg),
+        fg: rgb_to_wire(cell.fg),
+        bg: rgb_to_wire(cell.bg),
         flags: cell.flags.bits(),
-        zerowidth,
+        underline_color: cell.underline_color.map(rgb_to_wire),
+        has_hyperlink: cell.has_hyperlink,
+        zerowidth: cell.zerowidth.clone(),
     }
 }
 
-/// Convert a `vte::ansi::Color` to a `WireColor`.
-fn color_to_wire(color: Color) -> WireColor {
-    match color {
-        Color::Named(nc) => WireColor::Named(nc as u8),
-        Color::Indexed(i) => WireColor::Indexed(i),
-        Color::Spec(rgb) => WireColor::Rgb(WireRgb {
-            r: rgb.r,
-            g: rgb.g,
-            b: rgb.b,
-        }),
+/// Convert an [`Rgb`] to a [`WireRgb`].
+fn rgb_to_wire(rgb: Rgb) -> WireRgb {
+    WireRgb {
+        r: rgb.r,
+        g: rgb.g,
+        b: rgb.b,
     }
 }
 
-/// Map `CursorShape` enum to [`WireCursorShape`].
-fn cursor_shape_to_wire(shape: oriterm_core::CursorShape) -> WireCursorShape {
+/// Map [`CursorShape`] enum to [`WireCursorShape`].
+fn cursor_shape_to_wire(shape: CursorShape) -> WireCursorShape {
     match shape {
-        oriterm_core::CursorShape::Block => WireCursorShape::Block,
-        oriterm_core::CursorShape::Underline => WireCursorShape::Underline,
-        oriterm_core::CursorShape::Bar => WireCursorShape::Bar,
-        oriterm_core::CursorShape::HollowBlock => WireCursorShape::HollowBlock,
-        oriterm_core::CursorShape::Hidden => WireCursorShape::Hidden,
+        CursorShape::Block => WireCursorShape::Block,
+        CursorShape::Underline => WireCursorShape::Underline,
+        CursorShape::Bar => WireCursorShape::Bar,
+        CursorShape::HollowBlock => WireCursorShape::HollowBlock,
+        CursorShape::Hidden => WireCursorShape::Hidden,
     }
 }
 

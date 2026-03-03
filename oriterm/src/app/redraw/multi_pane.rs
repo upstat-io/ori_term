@@ -12,7 +12,7 @@ use super::App;
 use super::mouse_selection::{self, GridCtx};
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame,
-    extract_frame_into,
+    extract_frame_from_snapshot, extract_frame_into,
 };
 
 impl App {
@@ -144,63 +144,102 @@ impl App {
             let mut focused_rect = None;
             let mut focused_base = 0u64;
             let mut blinking_now = self.blinking_active;
+            let daemon_mode = self.mux.as_ref().is_some_and(|m| m.is_daemon_mode());
 
             for layout in layouts {
                 let pane_id = layout.pane_id;
-                let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) else {
-                    log::warn!("multi-pane: pane {:?} not found", pane_id);
-                    continue;
+
+                // Dirty check: daemon mode checks snapshot dirty flag;
+                // embedded mode checks local grid dirty + cache.
+                let is_cached = ctx.pane_cache.is_cached(pane_id, layout);
+                let dirty = if daemon_mode {
+                    let snap_dirty = self
+                        .mux
+                        .as_ref()
+                        .is_some_and(|m| m.is_pane_snapshot_dirty(pane_id));
+                    layout.is_focused || snap_dirty || !is_cached
+                } else {
+                    let grid_dirty = self
+                        .mux
+                        .as_ref()
+                        .and_then(|m| m.pane(pane_id))
+                        .is_some_and(oriterm_mux::Pane::grid_dirty);
+                    layout.is_focused || grid_dirty || !is_cached
                 };
 
-                // Focused pane always re-prepares (cursor blink, hover change
-                // per-frame). Unfocused panes only re-prepare on new PTY output
-                // or missing cache entry.
-                let is_cached = ctx.pane_cache.is_cached(pane_id, layout);
-                let dirty = layout.is_focused || pane.grid_dirty() || !is_cached;
-
                 if dirty {
-                    pane.clear_grid_dirty();
-
                     let pane_viewport = ViewportSize::new(
                         layout.pixel_rect.width as u32,
                         layout.pixel_rect.height as u32,
                     );
 
-                    let frame = match &mut ctx.frame {
-                        Some(existing) => {
-                            extract_frame_into(pane.terminal(), existing, pane_viewport, cell);
-                            existing
+                    // Extract phase: daemon mode uses snapshot; embedded
+                    // mode locks the local terminal.
+                    if daemon_mode {
+                        let mux = self.mux.as_mut().expect("mux checked");
+                        if mux.is_pane_snapshot_dirty(pane_id) {
+                            mux.refresh_pane_snapshot(pane_id);
                         }
-                        slot @ None => {
-                            *slot = Some(extract_frame(pane.terminal(), pane_viewport, cell));
-                            slot.as_mut().expect("just assigned")
+                        if let Some(snapshot) = mux.pane_snapshot(pane_id) {
+                            ctx.frame =
+                                Some(extract_frame_from_snapshot(snapshot, pane_viewport, cell));
+                        } else {
+                            log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
+                            continue;
                         }
-                    };
+                        mux.clear_pane_snapshot_dirty(pane_id);
+                    } else {
+                        let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) else {
+                            log::warn!("multi-pane: pane {pane_id:?} not found");
+                            continue;
+                        };
+                        pane.clear_grid_dirty();
+                        match &mut ctx.frame {
+                            Some(existing) => {
+                                extract_frame_into(pane.terminal(), existing, pane_viewport, cell);
+                            }
+                            slot @ None => {
+                                *slot = Some(extract_frame(pane.terminal(), pane_viewport, cell));
+                            }
+                        }
+                    }
+
+                    let frame = ctx.frame.as_mut().expect("frame just assigned");
 
                     frame.palette.opacity = self.config.window.effective_opacity();
 
                     if layout.is_focused && !self.ime.preedit.is_empty() {
                         let cols = frame.columns();
-                        super::overlay_preedit_cells(&self.ime.preedit, &mut frame.content, cols);
+                        super::preedit::overlay_preedit_cells(
+                            &self.ime.preedit,
+                            &mut frame.content,
+                            cols,
+                        );
                     }
 
-                    frame.mark_cursor = if layout.is_focused {
-                        pane.mark_cursor().and_then(|mc| {
-                            let (line, col) =
-                                mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
-                            Some(MarkCursorOverride {
-                                line,
-                                column: Column(col),
-                                shape: CursorShape::HollowBlock,
-                            })
-                        })
-                    } else {
-                        None
-                    };
-
-                    let base = frame.content.stable_row_base;
-                    frame.selection = pane.selection().map(|sel| FrameSelection::new(sel, base));
-                    frame.search = pane.search().map(|s| FrameSearch::new(s, base));
+                    // Pane-level annotations (selection, search, mark cursor)
+                    // are only available in embedded mode.
+                    if !daemon_mode {
+                        if let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) {
+                            frame.mark_cursor = if layout.is_focused {
+                                pane.mark_cursor().and_then(|mc| {
+                                    let (line, col) = mc
+                                        .to_viewport(frame.content.stable_row_base, frame.rows())?;
+                                    Some(MarkCursorOverride {
+                                        line,
+                                        column: Column(col),
+                                        shape: CursorShape::HollowBlock,
+                                    })
+                                })
+                            } else {
+                                None
+                            };
+                            let base = frame.content.stable_row_base;
+                            frame.selection =
+                                pane.selection().map(|sel| FrameSelection::new(sel, base));
+                            frame.search = pane.search().map(|s| FrameSearch::new(s, base));
+                        }
+                    }
 
                     if layout.is_focused {
                         let cell_metrics = renderer.cell_metrics();
@@ -224,11 +263,7 @@ impl App {
                     }
 
                     if layout.is_focused {
-                        // Save stable row base for search bar restoration after the loop.
                         focused_base = frame.content.stable_row_base;
-
-                        // Capture blinking mode for post-render update. Timer
-                        // reset deferred to after GPU submission.
                         blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
                     }
 
@@ -241,7 +276,6 @@ impl App {
                     let origin = (layout.pixel_rect.x, layout.pixel_rect.y);
                     let pane_cursor_visible = cursor_blink_visible && layout.is_focused;
 
-                    // Prepare into per-pane cache, then merge into aggregate frame.
                     let cached = ctx
                         .pane_cache
                         .get_or_prepare(pane_id, layout, true, |target| {
@@ -268,13 +302,13 @@ impl App {
                 }
             }
 
-            // Restore focused pane's search for the search bar — `frame.search`
-            // may have been overwritten by a non-focused dirty pane later in
-            // layout order.
-            if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
-                if let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(focused.pane_id)) {
-                    if let Some(frame) = ctx.frame.as_mut() {
-                        frame.search = pane.search().map(|s| FrameSearch::new(s, focused_base));
+            // Restore focused pane's search for the search bar (embedded mode only).
+            if !daemon_mode {
+                if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
+                    if let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(focused.pane_id)) {
+                        if let Some(frame) = ctx.frame.as_mut() {
+                            frame.search = pane.search().map(|s| FrameSearch::new(s, focused_base));
+                        }
                     }
                 }
             }

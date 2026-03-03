@@ -5,8 +5,7 @@ use std::io::Cursor;
 use super::codec::{DecodeError, DecodedFrame, ProtocolCodec};
 use super::messages::{MsgType, MuxPdu};
 use super::snapshot::{
-    MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireCell, WireColor, WireCursor, WireCursorShape,
-    WireRgb,
+    MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb,
 };
 use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
 use crate::id::{ClientId, DomainId, PaneId, TabId, WindowId};
@@ -526,28 +525,46 @@ fn sample_snapshot() -> PaneSnapshot {
             vec![
                 WireCell {
                     ch: 'A',
-                    fg: WireColor::Named(7),
-                    bg: WireColor::Named(0),
+                    fg: WireRgb {
+                        r: 211,
+                        g: 215,
+                        b: 207,
+                    },
+                    bg: WireRgb { r: 0, g: 0, b: 0 },
                     flags: 0,
+                    underline_color: None,
+                    has_hyperlink: false,
                     zerowidth: vec![],
                 },
                 WireCell {
                     ch: '你',
-                    fg: WireColor::Rgb(WireRgb {
+                    fg: WireRgb {
                         r: 255,
                         g: 128,
                         b: 0,
-                    }),
-                    bg: WireColor::Indexed(236),
+                    },
+                    bg: WireRgb {
+                        r: 48,
+                        g: 48,
+                        b: 48,
+                    },
                     flags: 0x0100, // WIDE_CHAR
+                    underline_color: None,
+                    has_hyperlink: false,
                     zerowidth: vec![],
                 },
             ],
             vec![WireCell {
                 ch: 'e',
-                fg: WireColor::Named(2),
-                bg: WireColor::Named(0),
-                flags: 0x0001 | 0x0004,      // BOLD | ITALIC
+                fg: WireRgb {
+                    r: 78,
+                    g: 154,
+                    b: 6,
+                },
+                bg: WireRgb { r: 0, g: 0, b: 0 },
+                flags: 0x0001 | 0x0004, // BOLD | ITALIC
+                underline_color: None,
+                has_hyperlink: false,
                 zerowidth: vec!['\u{0301}'], // combining acute accent
             }],
         ],
@@ -589,29 +606,43 @@ fn snapshot_with_cjk_emoji_combining() {
             // CJK wide char.
             WireCell {
                 ch: '漢',
-                fg: WireColor::Named(7),
-                bg: WireColor::Named(0),
+                fg: WireRgb {
+                    r: 211,
+                    g: 215,
+                    b: 207,
+                },
+                bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0x0100,
+                underline_color: None,
+                has_hyperlink: false,
                 zerowidth: vec![],
             },
             // Emoji (🦀).
             WireCell {
                 ch: '🦀',
-                fg: WireColor::Rgb(WireRgb {
+                fg: WireRgb {
                     r: 255,
                     g: 69,
                     b: 0,
-                }),
-                bg: WireColor::Named(0),
+                },
+                bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0x0100,
+                underline_color: None,
+                has_hyperlink: false,
                 zerowidth: vec![],
             },
             // Combining marks (e + combining acute + combining tilde).
             WireCell {
                 ch: 'e',
-                fg: WireColor::Named(7),
-                bg: WireColor::Named(0),
+                fg: WireRgb {
+                    r: 211,
+                    g: 215,
+                    b: 207,
+                },
+                bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0,
+                underline_color: None,
+                has_hyperlink: false,
                 zerowidth: vec!['\u{0301}', '\u{0303}'],
             },
         ]],
@@ -1023,13 +1054,15 @@ fn roundtrip_large_pane_snapshot() {
         for c in 0..cols {
             row.push(WireCell {
                 ch: char::from(b'A' + ((r * cols + c) % 26) as u8),
-                fg: WireColor::Rgb(WireRgb {
+                fg: WireRgb {
                     r: (r * 5) as u8,
                     g: (c * 2) as u8,
                     b: 128,
-                }),
-                bg: WireColor::Named(0),
+                },
+                bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: if c % 10 == 0 { 0x0001 } else { 0 }, // every 10th cell bold
+                underline_color: None,
+                has_hyperlink: false,
                 zerowidth: vec![],
             });
         }

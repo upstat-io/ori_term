@@ -1,20 +1,17 @@
 //! Three-phase rendering pipeline: Extract → Prepare → Render.
 
 mod multi_pane;
+pub(in crate::app) mod preedit;
+mod search_bar;
 
 use std::cell::Cell;
-use std::fmt::Write as _;
 use std::time::Instant;
 
-use unicode_width::UnicodeWidthChar;
-
-use oriterm_core::{CellFlags, Column, CursorShape, RenderableContent, TermMode};
+use oriterm_core::{Column, CursorShape, TermMode};
 
 use oriterm_ui::draw::DrawList;
-use oriterm_ui::geometry::Point;
 use oriterm_ui::overlay::OverlayManager;
 use oriterm_ui::theme::UiTheme;
-use oriterm_ui::widgets::status_badge::StatusBadge;
 use oriterm_ui::widgets::window_chrome::WindowChromeWidget;
 use oriterm_ui::widgets::{DrawCtx, Widget};
 
@@ -24,7 +21,7 @@ use crate::font::UiFontMeasurer;
 use crate::gpu::state::GpuState;
 use crate::gpu::{
     FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize, extract_frame,
-    extract_frame_into,
+    extract_frame_from_snapshot, extract_frame_into,
 };
 
 impl App {
@@ -76,11 +73,6 @@ impl App {
                 log::warn!("redraw: no window");
                 return;
             };
-            let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) else {
-                log::warn!("redraw: no active pane");
-                return;
-            };
-
             if !ctx.window.has_surface_area() {
                 log::warn!("redraw: no surface area");
                 return;
@@ -89,19 +81,37 @@ impl App {
             let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
+            let mux = self.mux.as_mut().expect("mux checked at pane_id");
+            let daemon_mode = mux.is_daemon_mode();
 
-            // Reuse the FrameInput allocation across frames. First frame
-            // does a fresh allocation; subsequent frames refill in place.
-            let frame = match &mut ctx.frame {
-                Some(existing) => {
-                    extract_frame_into(pane.terminal(), existing, viewport, cell);
-                    existing
+            // Extract phase: daemon mode uses snapshot wire data; embedded
+            // mode locks the local terminal.
+            if daemon_mode {
+                if mux.is_pane_snapshot_dirty(pane_id) {
+                    mux.refresh_pane_snapshot(pane_id);
                 }
-                slot @ None => {
-                    *slot = Some(extract_frame(pane.terminal(), viewport, cell));
-                    slot.as_mut().expect("just assigned")
+                let Some(snapshot) = mux.pane_snapshot(pane_id) else {
+                    log::warn!("redraw: no snapshot for pane {pane_id:?}");
+                    return;
+                };
+                ctx.frame = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
+                mux.clear_pane_snapshot_dirty(pane_id);
+            } else {
+                let Some(pane) = mux.pane(pane_id) else {
+                    log::warn!("redraw: no active pane");
+                    return;
+                };
+                match &mut ctx.frame {
+                    Some(existing) => {
+                        extract_frame_into(pane.terminal(), existing, viewport, cell);
+                    }
+                    slot @ None => {
+                        *slot = Some(extract_frame(pane.terminal(), viewport, cell));
+                    }
                 }
-            };
+            }
+
+            let frame = ctx.frame.as_mut().expect("frame just assigned");
 
             // Set window opacity from config (extract phase doesn't have
             // access to config — opacity is a window concern, not terminal state).
@@ -111,23 +121,29 @@ impl App {
             // (underlined) so it flows through the normal shaping pipeline.
             if !self.ime.preedit.is_empty() {
                 let cols = frame.columns();
-                overlay_preedit_cells(&self.ime.preedit, &mut frame.content, cols);
+                preedit::overlay_preedit_cells(&self.ime.preedit, &mut frame.content, cols);
             }
 
-            // Mark-mode cursor override: hollow block at the mark position.
-            frame.mark_cursor = pane.mark_cursor().and_then(|mc| {
-                let (line, col) = mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
-                Some(MarkCursorOverride {
-                    line,
-                    column: Column(col),
-                    shape: CursorShape::HollowBlock,
-                })
-            });
-
-            // Snapshot selection and search for rendering (Pane owns both, not Term).
-            let base = frame.content.stable_row_base;
-            frame.selection = pane.selection().map(|sel| FrameSelection::new(sel, base));
-            frame.search = pane.search().map(|s| FrameSearch::new(s, base));
+            // Annotate frame with pane-level state (selection, search, mark
+            // cursor). In daemon mode these are deferred — the daemon owns
+            // pane state, so selection/search/mark are not yet available.
+            if !daemon_mode {
+                let mux = self.mux.as_ref().expect("mux checked");
+                if let Some(pane) = mux.pane(pane_id) {
+                    frame.mark_cursor = pane.mark_cursor().and_then(|mc| {
+                        let (line, col) =
+                            mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
+                        Some(MarkCursorOverride {
+                            line,
+                            column: Column(col),
+                            shape: CursorShape::HollowBlock,
+                        })
+                    });
+                    let base = frame.content.stable_row_base;
+                    frame.selection = pane.selection().map(|sel| FrameSelection::new(sel, base));
+                    frame.search = pane.search().map(|s| FrameSearch::new(s, base));
+                }
+            }
 
             // Compute hovered cell for hyperlink underline rendering.
             let cell_metrics = renderer.cell_metrics();
@@ -447,121 +463,5 @@ impl App {
         }
 
         animating || animations_running.get()
-    }
-
-    /// Draw the search bar overlay above the grid area.
-    ///
-    /// Shows the current query and match count ("N of M") as a floating
-    /// [`StatusBadge`]. Coordinates are in logical pixels; `scale` converts
-    /// to physical pixels for the GPU pipeline.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "search bar drawing: search state, renderer, draw list, buffer, viewport, caption, scale, GPU"
-    )]
-    fn draw_search_bar(
-        search: &FrameSearch,
-        renderer: &mut crate::gpu::GpuRenderer,
-        draw_list: &mut DrawList,
-        buf: &mut String,
-        logical_width: f32,
-        caption_h: f32,
-        scale: f32,
-        gpu: &GpuState,
-    ) {
-        buf.clear();
-        let query = search.query();
-        if query.is_empty() {
-            buf.push_str("Search: ");
-        } else if search.match_count() == 0 {
-            let _ = write!(buf, "Search: {query}  No matches");
-        } else {
-            let _ = write!(
-                buf,
-                "Search: {query}  {} of {}",
-                search.focused_display(),
-                search.match_count()
-            );
-        }
-
-        let badge = StatusBadge::new(buf);
-
-        // Shape text and measure badge (immutable borrow on renderer ends
-        // after shape — NLL lets the mutable append follow).
-        let max_text_w = logical_width * 0.4;
-        let measurer = UiFontMeasurer::new(renderer.active_ui_collection(), scale);
-        let (w, _h) = badge.measure(&measurer, max_text_w);
-
-        // Position: top-right of grid area, inset from edges.
-        let margin = 8.0;
-        let pos = Point::new(logical_width - w - margin, caption_h + margin);
-
-        draw_list.clear();
-        let _ = badge.draw(draw_list, &measurer, pos, max_text_w);
-
-        renderer.append_ui_draw_list_with_text(draw_list, scale, 1.0, gpu);
-    }
-}
-
-/// Overlay IME preedit characters into the renderable content at the cursor.
-///
-/// Replaces cells at the cursor position with preedit characters, adding
-/// [`CellFlags::UNDERLINE`] to visually distinguish composition text from
-/// committed text. Wide (CJK) characters occupy two cells; the spacer cell
-/// gets [`CellFlags::WIDE_CHAR_SPACER`]. Characters beyond the grid width
-/// are clipped.
-///
-/// The content's cursor visibility is set to `false` so the prepare phase
-/// does not emit a cursor on top of the preedit text.
-pub(super) fn overlay_preedit_cells(preedit: &str, content: &mut RenderableContent, cols: usize) {
-    if content.cells.is_empty() || cols == 0 {
-        return;
-    }
-
-    let line = content.cursor.line;
-    let start_col = content.cursor.column.0;
-
-    // Hide the terminal cursor while preedit is active.
-    content.cursor.visible = false;
-
-    let mut col = start_col;
-    for ch in preedit.chars() {
-        let w = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if w == 0 {
-            continue;
-        }
-        if col >= cols {
-            break;
-        }
-
-        let idx = line * cols + col;
-        if idx >= content.cells.len() {
-            break;
-        }
-
-        // Preserve the cell's colors but replace character and add underline.
-        let cell = &mut content.cells[idx];
-        cell.ch = ch;
-        cell.flags = (cell.flags
-            - CellFlags::WIDE_CHAR
-            - CellFlags::WIDE_CHAR_SPACER
-            - CellFlags::LEADING_WIDE_CHAR_SPACER)
-            | CellFlags::UNDERLINE;
-        cell.zerowidth.clear();
-
-        if w == 2 {
-            cell.flags |= CellFlags::WIDE_CHAR;
-            // Mark the next cell as a spacer for the wide character.
-            if col + 1 < cols {
-                let spacer_idx = idx + 1;
-                if spacer_idx < content.cells.len() {
-                    let spacer = &mut content.cells[spacer_idx];
-                    spacer.ch = ' ';
-                    spacer.flags = CellFlags::WIDE_CHAR_SPACER;
-                    spacer.zerowidth.clear();
-                }
-            }
-        }
-
-        col += w;
     }
 }

@@ -125,6 +125,230 @@ fn refresh_window_tabs_stub_noop() {
     client.refresh_window_tabs(WindowId::from_raw(1));
 }
 
+// -- Snapshot cache tests --
+
+/// Helper: build a minimal `PaneSnapshot` for cache tests.
+fn test_snapshot(title: &str) -> crate::PaneSnapshot {
+    use crate::protocol::{WireCell, WireCursor, WireCursorShape, WireRgb};
+
+    crate::PaneSnapshot {
+        cells: vec![vec![WireCell {
+            ch: 'X',
+            fg: WireRgb {
+                r: 200,
+                g: 200,
+                b: 200,
+            },
+            bg: WireRgb { r: 0, g: 0, b: 0 },
+            flags: 0,
+            underline_color: None,
+            has_hyperlink: false,
+            zerowidth: vec![],
+        }]],
+        cursor: WireCursor {
+            col: 0,
+            row: 0,
+            shape: WireCursorShape::Block,
+            visible: true,
+        },
+        palette: vec![[0, 0, 0]; 270],
+        title: title.into(),
+        modes: 0,
+        scrollback_len: 0,
+        display_offset: 0,
+    }
+}
+
+/// `cache_snapshot` makes a snapshot retrievable via `pane_snapshot`.
+#[test]
+fn cache_snapshot_then_retrieve() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+    let snap = test_snapshot("cached");
+
+    client.cache_snapshot(p, snap);
+
+    let got = client.pane_snapshot(p);
+    assert!(got.is_some());
+    assert_eq!(got.unwrap().title, "cached");
+}
+
+/// `cache_snapshot` overwrites a previously cached snapshot for the same pane.
+#[test]
+fn cache_snapshot_overwrites() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.cache_snapshot(p, test_snapshot("first"));
+    client.cache_snapshot(p, test_snapshot("second"));
+
+    assert_eq!(client.pane_snapshot(p).unwrap().title, "second");
+}
+
+/// `pane_snapshot` returns `None` for an uncached pane.
+#[test]
+fn pane_snapshot_returns_none_for_unknown() {
+    let client = MuxClient::new();
+    assert!(client.pane_snapshot(PaneId::from_raw(999)).is_none());
+}
+
+/// `remove_snapshot` evicts the cached snapshot and clears dirty.
+#[test]
+fn remove_snapshot_evicts_and_clears_dirty() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.cache_snapshot(p, test_snapshot("doomed"));
+    client.dirty_panes.insert(p);
+
+    client.remove_snapshot(p);
+
+    assert!(client.pane_snapshot(p).is_none());
+    assert!(!client.is_pane_snapshot_dirty(p));
+}
+
+/// `remove_snapshot` on an unknown pane is a no-op.
+#[test]
+fn remove_snapshot_noop_for_unknown() {
+    let mut client = MuxClient::new();
+    // Should not panic.
+    client.remove_snapshot(PaneId::from_raw(999));
+}
+
+// -- Dirty tracking tests --
+
+/// `is_pane_snapshot_dirty` returns `false` initially.
+#[test]
+fn dirty_initially_false() {
+    let client = MuxClient::new();
+    assert!(!client.is_pane_snapshot_dirty(PaneId::from_raw(1)));
+}
+
+/// Dirty flag set → cleared lifecycle.
+#[test]
+fn dirty_set_then_clear() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.dirty_panes.insert(p);
+    assert!(client.is_pane_snapshot_dirty(p));
+
+    client.clear_pane_snapshot_dirty(p);
+    assert!(!client.is_pane_snapshot_dirty(p));
+}
+
+/// `clear_pane_snapshot_dirty` on an already-clean pane is a no-op.
+#[test]
+fn clear_dirty_idempotent() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    // Clear without ever setting — should not panic.
+    client.clear_pane_snapshot_dirty(p);
+    assert!(!client.is_pane_snapshot_dirty(p));
+}
+
+/// `poll_events` marks panes dirty from `PaneDirty` notifications.
+#[test]
+fn poll_events_marks_dirty() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(5);
+
+    client.notifications.push(MuxNotification::PaneDirty(p));
+    client.poll_events();
+
+    assert!(client.is_pane_snapshot_dirty(p));
+}
+
+/// Multiple dirty notifications for the same pane don't corrupt state.
+#[test]
+fn duplicate_dirty_notifications() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.notifications.push(MuxNotification::PaneDirty(p));
+    client.notifications.push(MuxNotification::PaneDirty(p));
+    client.notifications.push(MuxNotification::PaneDirty(p));
+    client.poll_events();
+
+    assert!(client.is_pane_snapshot_dirty(p));
+
+    // A single clear removes the flag.
+    client.clear_pane_snapshot_dirty(p);
+    assert!(!client.is_pane_snapshot_dirty(p));
+}
+
+/// Non-PaneDirty notifications don't set dirty flags.
+#[test]
+fn non_dirty_notifications_ignored() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    client.notifications.push(MuxNotification::PaneClosed(p));
+    client
+        .notifications
+        .push(MuxNotification::PaneTitleChanged(p));
+    client.poll_events();
+
+    assert!(!client.is_pane_snapshot_dirty(p));
+}
+
+/// `refresh_pane_snapshot` on unconnected stub returns `None`.
+#[test]
+fn refresh_snapshot_stub_returns_none() {
+    let mut client = MuxClient::new();
+    assert!(client.refresh_pane_snapshot(PaneId::from_raw(1)).is_none());
+}
+
+/// Double refresh without dirty notification is safe (idempotent).
+#[test]
+fn refresh_snapshot_idempotent() {
+    let mut client = MuxClient::new();
+    let p = PaneId::from_raw(1);
+
+    // Both return None on stub, but neither panics.
+    assert!(client.refresh_pane_snapshot(p).is_none());
+    assert!(client.refresh_pane_snapshot(p).is_none());
+}
+
+// -- MuxBackend default trait method tests --
+
+/// Default `pane_snapshot` returns `None` (embedded mode behavior).
+#[test]
+fn trait_default_pane_snapshot_none() {
+    use std::sync::Arc;
+
+    use crate::backend::embedded::EmbeddedMux;
+
+    let mux = EmbeddedMux::new(Arc::new(|| {}));
+    let backend: &dyn MuxBackend = &mux;
+    assert!(backend.pane_snapshot(PaneId::from_raw(1)).is_none());
+}
+
+/// Default `is_pane_snapshot_dirty` returns `false`.
+#[test]
+fn trait_default_is_dirty_false() {
+    use std::sync::Arc;
+
+    use crate::backend::embedded::EmbeddedMux;
+
+    let mux = EmbeddedMux::new(Arc::new(|| {}));
+    let backend: &dyn MuxBackend = &mux;
+    assert!(!backend.is_pane_snapshot_dirty(PaneId::from_raw(1)));
+}
+
+/// Default `clear_pane_snapshot_dirty` is a no-op (no panic).
+#[test]
+fn trait_default_clear_dirty_noop() {
+    use std::sync::Arc;
+
+    use crate::backend::embedded::EmbeddedMux;
+
+    let mut mux = EmbeddedMux::new(Arc::new(|| {}));
+    let backend: &mut dyn MuxBackend = &mut mux;
+    backend.clear_pane_snapshot_dirty(PaneId::from_raw(1));
+}
+
 // -- Send compile check --
 
 /// `MuxClient` satisfies `Send` (prevents accidental `Rc`/`Cell` additions).

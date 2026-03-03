@@ -17,6 +17,7 @@ use std::sync::mpsc;
 
 use oriterm_core::Theme;
 
+use crate::PaneSnapshot;
 use crate::domain::SpawnConfig;
 use crate::in_process::ClosePaneResult;
 use crate::layout::{Rect, SplitDirection};
@@ -249,4 +250,32 @@ pub trait MuxBackend {
     /// The App uses this to choose between in-process window creation
     /// and cross-process tab migration.
     fn is_daemon_mode(&self) -> bool;
+
+    // -- Snapshot access (daemon mode) --
+
+    /// Cached snapshot for a pane (daemon mode only).
+    ///
+    /// Returns `None` in embedded mode (use `pane()` + `terminal()` instead).
+    fn pane_snapshot(&self, _pane_id: PaneId) -> Option<&PaneSnapshot> {
+        None
+    }
+
+    /// Whether the cached snapshot for `pane_id` is stale.
+    ///
+    /// Returns `false` in embedded mode (no snapshot cache).
+    fn is_pane_snapshot_dirty(&self, _pane_id: PaneId) -> bool {
+        false
+    }
+
+    /// Fetch a fresh snapshot from the daemon and cache it.
+    ///
+    /// Returns `None` in embedded mode (no-op).
+    fn refresh_pane_snapshot(&mut self, _pane_id: PaneId) -> Option<&PaneSnapshot> {
+        None
+    }
+
+    /// Clear the dirty flag for a pane's cached snapshot.
+    ///
+    /// No-op in embedded mode.
+    fn clear_pane_snapshot_dirty(&mut self, _pane_id: PaneId) {}
 }

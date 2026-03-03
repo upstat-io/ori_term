@@ -1,13 +1,22 @@
 //! Extract phase: snapshot terminal state into owned frame data.
 //!
-//! Locks the terminal via [`FairMutex`], copies visible cells, cursor,
-//! palette, and damage information into a [`FrameInput`], then releases
-//! the lock immediately. The returned data is fully owned — no references
-//! back to the terminal. Total lock hold time: microseconds.
+//! Two extraction paths:
+//!
+//! - **Embedded mode**: Locks the terminal via [`FairMutex`], copies visible
+//!   cells, cursor, palette, and damage into a [`FrameInput`], then releases
+//!   the lock. Total lock hold time: microseconds.
+//!
+//! - **Daemon mode**: Converts a [`PaneSnapshot`](oriterm_mux::PaneSnapshot)
+//!   (wire data from the daemon) into a [`FrameInput`]. No lock needed —
+//!   the snapshot is already owned data.
+
+mod from_snapshot;
 
 use std::time::Instant;
 
 use oriterm_core::{EventListener, FairMutex, RenderableContent, Term};
+
+pub(crate) use self::from_snapshot::extract_frame_from_snapshot;
 
 use super::frame_input::{FrameInput, FramePalette, ViewportSize};
 use crate::font::CellMetrics;

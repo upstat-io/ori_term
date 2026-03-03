@@ -7,7 +7,7 @@ use oriterm_core::{
     TermMode,
 };
 
-use super::super::redraw::overlay_preedit_cells;
+use super::super::redraw::preedit::overlay_preedit_cells;
 use super::{ImeEffect, ImeState};
 
 const FG: Rgb = Rgb {
