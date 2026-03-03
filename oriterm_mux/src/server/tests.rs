@@ -800,3 +800,383 @@ fn server_exits_after_client_disconnects_and_no_windows() {
         "should exit when no clients and no windows after grace"
     );
 }
+
+// -- MoveTabToWindow via server (tasks 2, 3) --
+
+/// Helper: connect a client, handshake, create a window, claim it, and
+/// inject a test tab into the server's mux. Returns the window ID and tab ID.
+fn setup_client_with_tab(
+    server: &mut MuxServer,
+    client: &mut UnixStream,
+    seq_start: u32,
+) -> (crate::WindowId, crate::TabId) {
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(client, seq_start, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(server);
+    let _ = recv_pdu(client);
+
+    // Create a window.
+    send_pdu(client, seq_start + 1, &MuxPdu::CreateWindow);
+    poll_and_dispatch(server);
+    let (_, resp) = recv_pdu(client);
+    let window_id = match resp {
+        MuxPdu::WindowCreated { window_id } => window_id,
+        other => panic!("expected WindowCreated, got {other:?}"),
+    };
+
+    // Claim the window.
+    send_pdu(client, seq_start + 2, &MuxPdu::ClaimWindow { window_id });
+    poll_and_dispatch(server);
+    let _ = recv_pdu(client);
+
+    // Inject a test tab directly into the server's mux.
+    let tid = crate::TabId::from_raw(window_id.raw() * 10);
+    let pid = crate::PaneId::from_raw(window_id.raw() * 100);
+    server.mux.inject_test_tab(window_id, tid, pid);
+
+    (window_id, tid)
+}
+
+/// MoveTabToWindow succeeds and the mux state reflects the move.
+#[test]
+fn move_tab_between_windows_roundtrip() {
+    let (_dir, mut server, mut client) = server_with_client();
+
+    // Create two windows with one tab each.
+    let (_w1, t1) = setup_client_with_tab(&mut server, &mut client, 1);
+
+    // Create second window.
+    send_pdu(&mut client, 10, &MuxPdu::CreateWindow);
+    poll_and_dispatch(&mut server);
+    let (_, resp) = recv_pdu(&mut client);
+    let w2 = match resp {
+        MuxPdu::WindowCreated { window_id } => window_id,
+        other => panic!("expected WindowCreated, got {other:?}"),
+    };
+
+    // Inject a tab in w2 so w1 move doesn't leave w2 empty.
+    let t2 = crate::TabId::from_raw(w2.raw() * 10);
+    let p2 = crate::PaneId::from_raw(w2.raw() * 100);
+    server.mux.inject_test_tab(w2, t2, p2);
+
+    // Move t1 from w1 → w2.
+    send_pdu(
+        &mut client,
+        11,
+        &MuxPdu::MoveTabToWindow {
+            tab_id: t1,
+            target_window_id: w2,
+        },
+    );
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 11);
+    assert_eq!(resp, MuxPdu::TabMovedAck);
+
+    // Verify mux state: t1 should now be in w2.
+    let w2_win = server.mux.session().get_window(w2).unwrap();
+    assert!(w2_win.tabs().contains(&t1));
+}
+
+/// MoveTabToWindow with a nonexistent tab returns an Error PDU.
+#[test]
+fn move_nonexistent_tab_returns_error() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Create a destination window.
+    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
+    poll_and_dispatch(&mut server);
+    let (_, resp) = recv_pdu(&mut client);
+    let w1 = match resp {
+        MuxPdu::WindowCreated { window_id } => window_id,
+        other => panic!("expected WindowCreated, got {other:?}"),
+    };
+
+    // Move a nonexistent tab.
+    let fake_tab = crate::TabId::from_raw(999);
+    send_pdu(
+        &mut client,
+        3,
+        &MuxPdu::MoveTabToWindow {
+            tab_id: fake_tab,
+            target_window_id: w1,
+        },
+    );
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 3);
+    assert!(
+        matches!(resp, MuxPdu::Error { .. }),
+        "expected Error for nonexistent tab, got {resp:?}"
+    );
+}
+
+/// MoveTabToWindow to nonexistent target window returns Error.
+#[test]
+fn move_tab_to_nonexistent_window_returns_error() {
+    let (_dir, mut server, mut client) = server_with_client();
+    let (w1, t1) = setup_client_with_tab(&mut server, &mut client, 1);
+
+    // Inject a second tab so t1 isn't the last tab in w1.
+    let t2 = crate::TabId::from_raw(w1.raw() * 10 + 1);
+    let p2 = crate::PaneId::from_raw(w1.raw() * 100 + 1);
+    server.mux.inject_test_tab(w1, t2, p2);
+
+    let fake_dest = crate::WindowId::from_raw(999);
+    send_pdu(
+        &mut client,
+        10,
+        &MuxPdu::MoveTabToWindow {
+            tab_id: t1,
+            target_window_id: fake_dest,
+        },
+    );
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 10);
+    assert!(
+        matches!(resp, MuxPdu::Error { .. }),
+        "expected Error for nonexistent dest window, got {resp:?}"
+    );
+}
+
+// -- Multi-client interaction (task 4) --
+
+/// Helper: connect a second client to the server.
+fn connect_second_client(server: &mut MuxServer, sock_path: &std::path::Path) -> UnixStream {
+    let client2 = UnixStream::connect(sock_path).unwrap();
+
+    let mut events = mio::Events::with_capacity(16);
+    server
+        .poll
+        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
+        .unwrap();
+    server.accept_connections().unwrap();
+
+    client2
+}
+
+/// Two clients claim different windows. Tab move triggers
+/// `NotifyWindowTabsChanged` delivery to the destination window's client.
+#[test]
+fn multi_client_tab_move_notification() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock_path = dir.path().join("multi.sock");
+    let pid_path = dir.path().join("multi.pid");
+    let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
+
+    // Connect client 1.
+    let mut c1 = UnixStream::connect(&sock_path).unwrap();
+    let mut events = mio::Events::with_capacity(16);
+    server
+        .poll
+        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
+        .unwrap();
+    server.accept_connections().unwrap();
+
+    let (_w1, t1) = setup_client_with_tab(&mut server, &mut c1, 1);
+
+    // Connect client 2.
+    let mut c2 = connect_second_client(&mut server, &sock_path);
+    c2.set_nonblocking(false).unwrap();
+
+    // Client 2 handshake.
+    send_pdu(&mut c2, 1, &MuxPdu::Hello { pid: 2 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut c2);
+
+    // Client 2 creates and claims window w2.
+    send_pdu(&mut c2, 2, &MuxPdu::CreateWindow);
+    poll_and_dispatch(&mut server);
+    let (_, resp) = recv_pdu(&mut c2);
+    let w2 = match resp {
+        MuxPdu::WindowCreated { window_id } => window_id,
+        other => panic!("expected WindowCreated, got {other:?}"),
+    };
+    send_pdu(&mut c2, 3, &MuxPdu::ClaimWindow { window_id: w2 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut c2);
+
+    // Inject a tab in w2 (so the move has somewhere to land).
+    let t2 = crate::TabId::from_raw(w2.raw() * 10);
+    let p2 = crate::PaneId::from_raw(w2.raw() * 100);
+    server.mux.inject_test_tab(w2, t2, p2);
+
+    // Client 1 moves t1 to w2.
+    send_pdu(
+        &mut c1,
+        10,
+        &MuxPdu::MoveTabToWindow {
+            tab_id: t1,
+            target_window_id: w2,
+        },
+    );
+    poll_and_dispatch(&mut server);
+
+    // Client 1 gets TabMovedAck.
+    let (seq, resp) = recv_pdu(&mut c1);
+    assert_eq!(seq, 10);
+    assert_eq!(resp, MuxPdu::TabMovedAck);
+
+    // Client 2 should receive NotifyWindowTabsChanged for w2.
+    c2.set_read_timeout(Some(std::time::Duration::from_millis(500)))
+        .unwrap();
+    let (notif_seq, notif_pdu) = recv_pdu(&mut c2);
+    assert_eq!(notif_seq, 0, "notification should have seq=0");
+    assert_eq!(
+        notif_pdu,
+        MuxPdu::NotifyWindowTabsChanged { window_id: w2 },
+        "client 2 should get WindowTabsChanged for its window"
+    );
+}
+
+// -- Client disconnect after claiming window (task 7) --
+
+/// Client claims a window, then disconnects. Server handles cleanup
+/// without panic and doesn't leak the claimed window.
+#[test]
+fn disconnect_after_claim_cleans_up() {
+    let (_dir, mut server, mut client) = server_with_client();
+    let (w1, _t1) = setup_client_with_tab(&mut server, &mut client, 1);
+
+    assert_eq!(server.client_count(), 1);
+
+    // Verify the connection has the window claim.
+    let has_claim = server
+        .connections
+        .values()
+        .any(|c| c.window_id() == Some(w1));
+    assert!(has_claim, "client should have claimed w1");
+
+    // Disconnect.
+    drop(client);
+    poll_and_dispatch(&mut server);
+
+    assert_eq!(server.client_count(), 0);
+
+    // The window itself still exists in the mux (it's not removed on
+    // client disconnect — the daemon keeps session state).
+    assert!(server.mux.session().get_window(w1).is_some());
+
+    // No connection should still claim w1.
+    let still_claimed = server
+        .connections
+        .values()
+        .any(|c| c.window_id() == Some(w1));
+    assert!(!still_claimed);
+}
+
+// -- remove_client_subscriptions integration (task 8) --
+
+/// Client subscribes to a pane, then disconnects. Subscription is cleaned up.
+#[test]
+fn disconnect_cleans_up_subscriptions() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Create a window and inject a pane.
+    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
+    poll_and_dispatch(&mut server);
+    let (_, resp) = recv_pdu(&mut client);
+    let w1 = match resp {
+        MuxPdu::WindowCreated { window_id } => window_id,
+        other => panic!("expected WindowCreated, got {other:?}"),
+    };
+    let tid = crate::TabId::from_raw(1);
+    let pid = crate::PaneId::from_raw(1);
+    server.mux.inject_test_tab(w1, tid, pid);
+
+    // We need a real Pane in the server's pane map for Subscribe to succeed.
+    // Since we can't easily construct a Pane in tests, we'll just subscribe
+    // and the server will return an Error (pane not in pane map). But the
+    // subscription is still recorded on the connection.
+    //
+    // Actually, let's test with Unsubscribe which doesn't require the pane to
+    // exist, or check that the server returns Error but still registers the
+    // subscription on the connection side.
+    //
+    // The subscribe dispatch checks `panes.get(&pane_id)` which will fail
+    // since inject_test_tab doesn't insert into the server's pane HashMap.
+    // Let's test with Subscribe → Error, then check subscription cleanup.
+    send_pdu(&mut client, 3, &MuxPdu::Subscribe { pane_id: pid });
+    poll_and_dispatch(&mut server);
+
+    // The response will be an Error because the pane isn't in the server's
+    // pane map (inject_test_tab only sets up mux metadata, not actual Panes).
+    let (_, resp) = recv_pdu(&mut client);
+    assert!(
+        matches!(resp, MuxPdu::Error { .. }),
+        "expected Error since no Pane object exists"
+    );
+
+    // However, the connection's subscribe() was called before the pane check.
+    // Let's verify: dispatch calls conn.subscribe() first, then checks panes.
+    // Actually, looking at dispatch.rs, Subscribe checks panes AFTER calling
+    // conn.subscribe(). So the subscription is recorded.
+    let has_sub = server.connections.values().any(|c| c.is_subscribed(pid));
+    assert!(has_sub, "subscription should be recorded on connection");
+
+    // Also check global subscriptions map.
+    assert!(
+        server.subscriptions.contains_key(&pid),
+        "global subscriptions should track the pane"
+    );
+
+    // Disconnect.
+    drop(client);
+    poll_and_dispatch(&mut server);
+
+    // Subscription should be cleaned up.
+    assert_eq!(server.client_count(), 0);
+    assert!(
+        !server.subscriptions.contains_key(&pid),
+        "subscription should be removed after disconnect"
+    );
+}
+
+// -- parse_theme roundtrip (task 9) --
+
+/// `parse_theme` with `"dark"` returns Dark.
+#[test]
+fn parse_theme_dark() {
+    use oriterm_core::Theme;
+    assert_eq!(super::dispatch::parse_theme(Some("dark")), Theme::Dark);
+}
+
+/// `parse_theme` with `"light"` returns Light.
+#[test]
+fn parse_theme_light() {
+    use oriterm_core::Theme;
+    assert_eq!(super::dispatch::parse_theme(Some("light")), Theme::Light);
+}
+
+/// `parse_theme` with `None` defaults to Dark.
+#[test]
+fn parse_theme_none_defaults_to_dark() {
+    use oriterm_core::Theme;
+    assert_eq!(super::dispatch::parse_theme(None), Theme::Dark);
+}
+
+/// `parse_theme` with unrecognized string defaults to Dark.
+#[test]
+fn parse_theme_garbage_defaults_to_dark() {
+    use oriterm_core::Theme;
+    assert_eq!(super::dispatch::parse_theme(Some("solarized")), Theme::Dark);
+    assert_eq!(super::dispatch::parse_theme(Some("")), Theme::Dark);
+}

@@ -71,3 +71,6 @@ pub fn notification_to_pdu(
         | MuxNotification::ClipboardLoad { .. } => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

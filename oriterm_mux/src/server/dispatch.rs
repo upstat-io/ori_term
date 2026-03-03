@@ -247,7 +247,7 @@ pub fn dispatch_request(
 /// Parse a wire theme string into a [`Theme`].
 ///
 /// `None` or unrecognized strings default to [`Theme::Dark`].
-fn parse_theme(s: Option<&str>) -> Theme {
+pub(crate) fn parse_theme(s: Option<&str>) -> Theme {
     match s {
         Some("light") => Theme::Light,
         _ => Theme::Dark,

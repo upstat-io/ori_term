@@ -814,4 +814,125 @@ mod transport_tests {
 
         let _s = server_handle.join().unwrap();
     }
+
+    // -- MuxClient-level transport tests --
+    //
+    // These use MuxClient::connect() to exercise the full MuxBackend
+    // trait methods through the IPC transport.
+
+    use super::super::MuxClient;
+    use crate::backend::MuxBackend;
+    use crate::protocol::MuxTabInfo;
+
+    /// Helper: start a fake server that handles Hello, then calls `handler`
+    /// for subsequent requests. Returns the server thread handle.
+    fn fake_server<F>(sock_path: &std::path::Path, handler: F) -> std::thread::JoinHandle<()>
+    where
+        F: FnOnce(&mut UnixStream) + Send + 'static,
+    {
+        let listener = std::os::unix::net::UnixListener::bind(sock_path).unwrap();
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Handshake.
+            let hello = ProtocolCodec::decode_frame(&mut stream).unwrap();
+            ProtocolCodec::encode_frame(
+                &mut stream,
+                hello.seq,
+                &MuxPdu::HelloAck {
+                    client_id: ClientId::from_raw(1),
+                },
+            )
+            .unwrap();
+
+            handler(&mut stream);
+        })
+    }
+
+    /// `claim_window` sends ClaimWindow and receives WindowClaimed.
+    #[test]
+    fn mux_client_claim_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("claim.sock");
+
+        let server = fake_server(&sock, |stream| {
+            let req = ProtocolCodec::decode_frame(stream).unwrap();
+            assert!(matches!(req.pdu, MuxPdu::ClaimWindow { .. }));
+            ProtocolCodec::encode_frame(stream, req.seq, &MuxPdu::WindowClaimed).unwrap();
+
+            // Keep alive briefly.
+            std::thread::sleep(Duration::from_millis(100));
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let mut client = MuxClient::connect(&sock, wakeup).unwrap();
+
+        // Need to add the window to local_session first (claim_window
+        // doesn't create the window — it just tells the daemon).
+        let wid = WindowId::from_raw(42);
+        client
+            .local_session
+            .add_window(crate::session::MuxWindow::new(wid));
+
+        let result = client.claim_window(wid);
+        assert!(result.is_ok(), "claim_window should succeed: {result:?}");
+
+        server.join().unwrap();
+    }
+
+    /// `refresh_window_tabs` sends ListTabs and replaces local tab list.
+    #[test]
+    fn mux_client_refresh_window_tabs() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("refresh.sock");
+
+        let t1 = crate::TabId::from_raw(10);
+        let t2 = crate::TabId::from_raw(20);
+
+        let server = fake_server(&sock, move |stream| {
+            let req = ProtocolCodec::decode_frame(stream).unwrap();
+            assert!(matches!(req.pdu, MuxPdu::ListTabs { .. }));
+            ProtocolCodec::encode_frame(
+                stream,
+                req.seq,
+                &MuxPdu::TabList {
+                    tabs: vec![
+                        MuxTabInfo {
+                            tab_id: t1,
+                            active_pane_id: PaneId::from_raw(100),
+                            pane_count: 1,
+                            title: "tab1".into(),
+                        },
+                        MuxTabInfo {
+                            tab_id: t2,
+                            active_pane_id: PaneId::from_raw(200),
+                            pane_count: 1,
+                            title: "tab2".into(),
+                        },
+                    ],
+                },
+            )
+            .unwrap();
+
+            // Keep alive.
+            std::thread::sleep(Duration::from_millis(100));
+        });
+
+        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+        let mut client = MuxClient::connect(&sock, wakeup).unwrap();
+
+        // Set up local state: a window with one stale tab.
+        let wid = WindowId::from_raw(42);
+        let mut win = crate::session::MuxWindow::new(wid);
+        win.add_tab(crate::TabId::from_raw(999)); // stale tab
+        client.local_session.add_window(win);
+
+        // refresh_window_tabs should replace local tabs with server's.
+        client.refresh_window_tabs(wid);
+
+        let win = client.local_session.get_window(wid).unwrap();
+        assert_eq!(win.tabs(), &[t1, t2], "local tabs should match server");
+
+        server.join().unwrap();
+    }
 }

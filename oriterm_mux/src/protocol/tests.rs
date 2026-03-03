@@ -955,3 +955,29 @@ fn wire_bytes_stable_for_hello() {
     let expected_payload = bincode::serialize(&pdu).unwrap();
     assert_eq!(&buf[HEADER_LEN..], &expected_payload);
 }
+
+// -- theme_to_wire roundtrip --
+
+#[test]
+fn theme_to_wire_dark() {
+    use super::messages::theme_to_wire;
+    use oriterm_core::Theme;
+
+    assert_eq!(theme_to_wire(Theme::Dark), Some("dark".to_owned()));
+}
+
+#[test]
+fn theme_to_wire_light() {
+    use super::messages::theme_to_wire;
+    use oriterm_core::Theme;
+
+    assert_eq!(theme_to_wire(Theme::Light), Some("light".to_owned()));
+}
+
+#[test]
+fn theme_to_wire_unknown() {
+    use super::messages::theme_to_wire;
+    use oriterm_core::Theme;
+
+    assert_eq!(theme_to_wire(Theme::Unknown), None);
+}
