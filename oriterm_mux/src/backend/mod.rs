@@ -192,6 +192,14 @@ pub trait MuxBackend {
     /// Bring a floating pane to the front.
     fn raise_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId);
 
+    // -- Input --
+
+    /// Send raw bytes to a pane's PTY.
+    ///
+    /// In embedded mode, delegates to [`Pane::write_input`].
+    /// In daemon mode, sends a fire-and-forget `Input` PDU to the daemon.
+    fn send_input(&mut self, pane_id: PaneId, data: &[u8]);
+
     // -- Pane data access --
 
     /// Immutable reference to a pane.

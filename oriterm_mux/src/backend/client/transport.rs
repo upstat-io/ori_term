@@ -178,7 +178,6 @@ impl ClientTransport {
     /// Used for `Input` and `Resize` PDUs once snapshot-based rendering
     /// is wired (the app will send input/resize through the client transport
     /// rather than through the local `Pane`).
-    #[allow(dead_code, reason = "wired when snapshot-based pane rendering lands")]
     pub(super) fn fire_and_forget(&mut self, pdu: MuxPdu) {
         if !self.is_alive() {
             return;

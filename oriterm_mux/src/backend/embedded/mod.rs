@@ -214,6 +214,12 @@ impl MuxBackend for EmbeddedMux {
         self.mux.raise_floating_pane(tab_id, pane_id);
     }
 
+    fn send_input(&mut self, pane_id: PaneId, data: &[u8]) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.write_input(data);
+        }
+    }
+
     fn pane(&self, pane_id: PaneId) -> Option<&Pane> {
         self.panes.get(&pane_id)
     }

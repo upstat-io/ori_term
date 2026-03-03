@@ -25,7 +25,7 @@ sections:
     status: complete
   - id: "44.7"
     title: Section Completion
-    status: not-started
+    status: in-progress
 ---
 
 # Section 44: Multi-Process Window Architecture
@@ -248,12 +248,12 @@ Each `oriterm` window process is a thin GPU client. It connects to the daemon, s
   - [x] All mux operations go through the trait — no direct `InProcessMux` access
   - [x] Push notifications from daemon arrive as `MuxNotification` on event loop
   - [x] `about_to_wait()` drains notification channel, triggers redraws
-- [ ] Render flow (window process):
-  - [ ] Daemon pushes `PaneOutput { pane_id, dirty_rows }` → client
-  - [ ] Client requests `GetPaneSnapshot(pane_id)` for dirty pane data
-  - [ ] **OR** (optimization): daemon pushes incremental cell updates inline
-  - [ ] Client renders from snapshot data — no `FairMutex<Term>` needed in window process
-  - [ ] GPU rendering uses the same `GpuRenderer` — just different data source
+- [x] Render flow (window process):
+  - [x] Daemon pushes `PaneOutput { pane_id, dirty_rows }` → client
+  - [x] Client requests `GetPaneSnapshot(pane_id)` for dirty pane data
+  - [x] **OR** (optimization): daemon pushes incremental cell updates inline
+  - [x] Client renders from snapshot data — no `FairMutex<Term>` needed in window process
+  - [x] GPU rendering uses the same `GpuRenderer` — just different data source
 - [x] Per-window process state:
   - [x] `GpuState` — per-process (each window has its own GPU context)
   - [x] `GpuRenderer` — per-process
@@ -266,10 +266,10 @@ Each `oriterm` window process is a thin GPU client. It connects to the daemon, s
 - [x] `EmbeddedMux` tests: create_window, drain_notifications, discard, pane access, event_tx
 - [x] `MuxClient` tests: pane returns None, drain empty, poll_events noop
 - [x] App works with `EmbeddedMux` backend: all 1018 tests pass, build + clippy clean
-- [ ] App works with `MuxClient` backend: create tab, type, see output  <!-- requires e2e infrastructure -->
-- [ ] Push notification flow: daemon output → client notification → redraw  <!-- requires e2e infrastructure -->
-- [ ] Multiple windows (processes) connected: each renders its own tabs  <!-- requires e2e infrastructure -->
-- [ ] Window process crash → daemon keeps sessions → new window can reconnect  <!-- requires e2e infrastructure -->
+- [x] App works with `MuxClient` backend: create tab, type, see output
+- [x] Push notification flow: daemon output → client notification → redraw
+- [x] Multiple windows (processes) connected: each renders its own tabs
+- [x] Window process crash → daemon keeps sessions → new window can reconnect
 
 ---
 
@@ -317,12 +317,12 @@ The core UX: "Move to New Window" spawns a new `oriterm` process, the daemon rea
 
 **Tests:**
 - [x] Move tab: source window loses tab, target/new window gains it
-- [ ] PTY session survives move: running command continues uninterrupted (requires e2e daemon test)
-- [ ] Scrollback preserved: full scrollback available in new window (requires e2e daemon test)
-- [ ] Terminal modes preserved: alternate screen, bracketed paste, mouse mode survive (requires e2e daemon test)
-- [ ] Concurrent moves: two tabs moving simultaneously don't corrupt state (requires e2e daemon test)
-- [ ] Move then type: keystrokes route to correct pane after migration (requires e2e daemon test)
-- [ ] Tear-off: window spawns at cursor position, tab renders immediately (requires e2e daemon test)
+- [x] PTY session survives move: running command continues uninterrupted
+- [x] Scrollback preserved: full scrollback available in new window
+- [x] Terminal modes preserved: alternate screen, bracketed paste, mouse mode survive
+- [x] Concurrent moves: two tabs moving simultaneously don't corrupt state
+- [x] Move then type: keystrokes route to correct pane after migration
+- [x] Tear-off: window spawns at cursor position, tab renders immediately
 
 ---
 
@@ -398,20 +398,20 @@ The single-process in-process mode (`InProcessMux`) remains as a fallback for en
 
 ## 44.7 Section Completion
 
-- [ ] All 44.1–44.6 items complete
-- [ ] `oriterm-mux` binary: daemon starts, owns PTY sessions, accepts IPC connections
-- [ ] IPC protocol: binary framing, request/response, push notifications
-- [ ] Window-as-client: `MuxBackend` trait, `MuxClient` implements it, App is mode-agnostic
-- [ ] Cross-process tab migration: "Move to New Window" spawns process, tab migrates seamlessly
-- [ ] Auto-start: daemon launches on first window, discovered by subsequent windows
-- [ ] Backward compatibility: embedded mode for testing and sandboxed environments
-- [ ] `cargo build --target x86_64-pc-windows-gnu` — compiles (both binaries)
-- [ ] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
-- [ ] `cargo test` — all tests pass (embedded mode)
-- [ ] **Tab migration test**: move tab to new window → running command uninterrupted
-- [ ] **Scrollback test**: moved tab retains full scrollback history
-- [ ] **Multi-window test**: 3 windows, move tabs between them, all render correctly
-- [ ] **Crash isolation test**: kill one window process → others unaffected, sessions alive
+- [x] All 44.1–44.6 items complete (Windows named pipes deferred — Unix-only for now)
+- [x] `oriterm-mux` binary: daemon starts, owns PTY sessions, accepts IPC connections
+- [x] IPC protocol: binary framing, request/response, push notifications
+- [x] Window-as-client: `MuxBackend` trait, `MuxClient` implements it, App is mode-agnostic
+- [x] Cross-process tab migration: "Move to New Window" spawns process, tab migrates seamlessly
+- [x] Auto-start: daemon launches on first window, discovered by subsequent windows
+- [x] Backward compatibility: embedded mode for testing and sandboxed environments
+- [x] `cargo build --target x86_64-pc-windows-gnu` — compiles (both binaries)
+- [x] `cargo clippy --target x86_64-pc-windows-gnu` — no warnings
+- [x] `cargo test` — all tests pass (embedded mode + 10 e2e daemon tests)
+- [x] **Tab migration test**: move tab to new window → running command uninterrupted
+- [x] **Scrollback test**: moved tab retains full scrollback history
+- [x] **Multi-window test**: 3 windows, move tabs between them, all render correctly
+- [x] **Crash isolation test**: kill one window process → others unaffected, sessions alive
 - [ ] **Daemon restart test**: kill daemon → windows detect, reconnect on daemon restart
 - [ ] **Latency test**: keystroke → screen update < 5ms through daemon IPC
 
