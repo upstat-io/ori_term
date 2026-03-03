@@ -24,6 +24,7 @@ use super::snapshot;
 /// unexpected PDU variants (responses/notifications sent by a client).
 #[allow(
     clippy::too_many_lines,
+    clippy::too_many_arguments,
     reason = "exhaustive match dispatch — splitting would scatter the routing table"
 )]
 pub fn dispatch_request(
@@ -32,6 +33,7 @@ pub fn dispatch_request(
     conn: &mut ClientConnection,
     pdu: MuxPdu,
     wakeup: &Arc<dyn Fn() + Send + Sync>,
+    closed_panes: &mut Vec<PaneId>,
 ) -> Option<MuxPdu> {
     match pdu {
         MuxPdu::Hello { pid } => {
@@ -78,10 +80,11 @@ pub fn dispatch_request(
         }
 
         MuxPdu::CloseTab { tab_id } => {
-            let closed_panes = mux.close_tab(tab_id);
-            for pid in closed_panes {
+            let removed = mux.close_tab(tab_id);
+            for &pid in &removed {
                 panes.remove(&pid);
             }
+            closed_panes.extend_from_slice(&removed);
             log::debug!("closed {tab_id}");
             Some(MuxPdu::TabClosed)
         }
@@ -89,6 +92,7 @@ pub fn dispatch_request(
         MuxPdu::ClosePane { pane_id } => {
             mux.close_pane(pane_id);
             panes.remove(&pane_id);
+            closed_panes.push(pane_id);
             log::debug!("closed {pane_id}");
             Some(MuxPdu::PaneClosedAck)
         }
@@ -98,6 +102,7 @@ pub fn dispatch_request(
             for &pid in &pane_ids {
                 panes.remove(&pid);
             }
+            closed_panes.extend_from_slice(&pane_ids);
             log::debug!("closed {window_id}, {} panes removed", pane_ids.len());
             Some(MuxPdu::WindowClosed { pane_ids })
         }

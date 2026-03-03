@@ -26,7 +26,7 @@ use mio::{Events, Interest, Poll, Token, Waker};
 
 use crate::id::ClientId;
 use crate::pane::Pane;
-use crate::{IdAllocator, InProcessMux, MuxNotification, PaneId};
+use crate::{IdAllocator, InProcessMux, MuxNotification, MuxPdu, PaneId, WindowId};
 
 use self::frame_io::{ReadStatus, send_frame};
 use self::notify::TargetClients;
@@ -65,6 +65,8 @@ pub struct MuxServer {
     subscriptions: HashMap<PaneId, Vec<ClientId>>,
     /// mio token → client ID for O(1) event dispatch.
     token_to_client: HashMap<Token, ClientId>,
+    /// window → client ID for O(1) notification routing.
+    window_to_client: HashMap<WindowId, ClientId>,
     /// Allocator for client IDs.
     client_alloc: IdAllocator<ClientId>,
 
@@ -127,6 +129,7 @@ impl MuxServer {
             connections: HashMap::new(),
             subscriptions: HashMap::new(),
             token_to_client: HashMap::new(),
+            window_to_client: HashMap::new(),
             client_alloc: IdAllocator::new(),
             poll,
             waker,
@@ -278,19 +281,45 @@ impl MuxServer {
             match decode_result {
                 Ok(decoded) => {
                     let seq = decoded.seq;
+                    let is_sub_change = matches!(
+                        &decoded.pdu,
+                        MuxPdu::Subscribe { .. } | MuxPdu::Unsubscribe { .. }
+                    );
+                    self.scratch_panes.clear();
                     let Some(conn) = self.connections.get_mut(&client_id) else {
                         return;
                     };
+                    let prev_window = conn.window_id();
                     let response = dispatch::dispatch_request(
                         &mut self.mux,
                         &mut self.panes,
                         conn,
                         decoded.pdu,
                         &self.wakeup,
+                        &mut self.scratch_panes,
                     );
 
-                    // Sync subscription tracking to the global map.
-                    self.sync_subscriptions(client_id);
+                    // Purge stale subscriptions for closed panes.
+                    if !self.scratch_panes.is_empty() {
+                        self.purge_closed_pane_subscriptions();
+                    }
+
+                    // Sync subscription tracking (only on subscription changes).
+                    if is_sub_change {
+                        self.sync_subscriptions(client_id);
+                    }
+
+                    // Update window→client reverse index on ClaimWindow.
+                    if matches!(&response, Some(MuxPdu::WindowClaimed)) {
+                        if let Some(old) = prev_window {
+                            self.window_to_client.remove(&old);
+                        }
+                        if let Some(c) = self.connections.get(&client_id) {
+                            if let Some(wid) = c.window_id() {
+                                self.window_to_client.insert(wid, client_id);
+                            }
+                        }
+                    }
 
                     if let Some(resp_pdu) = response {
                         let Some(conn) = self.connections.get_mut(&client_id) else {
@@ -307,7 +336,7 @@ impl MuxServer {
                     log::warn!("decode error from client {client_id}: {e}");
                     // Try to send an error response. If we don't know the seq,
                     // use 0.
-                    let err_pdu = crate::MuxPdu::Error {
+                    let err_pdu = MuxPdu::Error {
                         message: format!("decode error: {e}"),
                     };
                     if let Some(conn) = self.connections.get_mut(&client_id) {
@@ -349,13 +378,7 @@ impl MuxServer {
                     }
                 }
                 TargetClients::WindowClient(window_id) => {
-                    // Find the client that owns this window.
-                    let cid = self
-                        .connections
-                        .values()
-                        .find(|c| c.window_id() == Some(window_id))
-                        .map(ClientConnection::id);
-                    if let Some(cid) = cid {
+                    if let Some(&cid) = self.window_to_client.get(&window_id) {
                         if let Some(conn) = self.connections.get_mut(&cid) {
                             if let Err(e) = send_frame(conn.stream_mut(), 0, &pdu) {
                                 log::warn!("notification write error to {cid}: {e}");
@@ -378,6 +401,11 @@ impl MuxServer {
 
         // Remove token mapping.
         self.token_to_client.remove(&conn.token());
+
+        // Remove window→client mapping.
+        if let Some(wid) = conn.window_id() {
+            self.window_to_client.remove(&wid);
+        }
 
         // Clean up subscription state.
         dispatch::remove_client_subscriptions(
@@ -413,6 +441,23 @@ impl MuxServer {
             }
             !subs.is_empty()
         });
+    }
+
+    /// Purge subscription entries for panes that have been removed.
+    ///
+    /// Reads closed pane IDs from `scratch_panes` (filled by dispatch),
+    /// removes them from the global subscription map and all connections'
+    /// subscribed-pane sets, then clears `scratch_panes`.
+    fn purge_closed_pane_subscriptions(&mut self) {
+        for &pane_id in &self.scratch_panes {
+            self.subscriptions.remove(&pane_id);
+        }
+        for conn in self.connections.values_mut() {
+            for &pane_id in &self.scratch_panes {
+                conn.unsubscribe(pane_id);
+            }
+        }
+        self.scratch_panes.clear();
     }
 
     /// Check if the server should auto-exit.
