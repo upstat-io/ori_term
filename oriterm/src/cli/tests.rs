@@ -523,3 +523,51 @@ fn new_window_flag_defaults_to_false() {
     let cli = Cli::try_parse_from(["oriterm"]).unwrap();
     assert!(!cli.new_window);
 }
+
+#[test]
+fn window_flag_requires_connect() {
+    // `--window` without `--connect` should be rejected.
+    let result = Cli::try_parse_from(["oriterm", "--window", "5"]);
+    assert!(result.is_err(), "--window without --connect should fail");
+}
+
+#[test]
+fn window_flag_with_connect_parses() {
+    let cli =
+        Cli::try_parse_from(["oriterm", "--connect", "/tmp/mux.sock", "--window", "5"]).unwrap();
+    assert_eq!(
+        cli.connect.as_deref(),
+        Some(std::path::Path::new("/tmp/mux.sock"))
+    );
+    assert_eq!(cli.window, Some(5));
+}
+
+#[test]
+fn completions_contain_new_window_flag() {
+    let output = generate_completions(Shell::Bash);
+    let text = String::from_utf8(output).expect("valid UTF-8");
+    assert!(
+        text.contains("new-window"),
+        "bash completions should mention --new-window flag"
+    );
+}
+
+#[test]
+fn new_window_with_connect_parses() {
+    let cli =
+        Cli::try_parse_from(["oriterm", "--new-window", "--connect", "/tmp/mux.sock"]).unwrap();
+    assert!(cli.new_window);
+    assert_eq!(
+        cli.connect.as_deref(),
+        Some(std::path::Path::new("/tmp/mux.sock"))
+    );
+}
+
+#[test]
+fn new_window_with_subcommand_parses() {
+    // `--new-window` with a subcommand: the flag is set but the
+    // subcommand takes precedence in dispatch.
+    let cli = Cli::try_parse_from(["oriterm", "--new-window", "ls-fonts"]).unwrap();
+    assert!(cli.new_window);
+    assert!(cli.command.is_some());
+}

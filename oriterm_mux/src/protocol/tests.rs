@@ -1009,3 +1009,68 @@ fn theme_to_wire_unknown() {
 
     assert_eq!(theme_to_wire(Theme::Unknown), None);
 }
+
+// -- Large PaneSnapshot stress test --
+
+#[test]
+fn roundtrip_large_pane_snapshot() {
+    // 200 columns x 50 rows — a realistic full-screen terminal snapshot.
+    let cols = 200;
+    let rows = 50;
+    let mut cells = Vec::with_capacity(rows);
+    for r in 0..rows {
+        let mut row = Vec::with_capacity(cols);
+        for c in 0..cols {
+            row.push(WireCell {
+                ch: char::from(b'A' + ((r * cols + c) % 26) as u8),
+                fg: WireColor::Rgb(WireRgb {
+                    r: (r * 5) as u8,
+                    g: (c * 2) as u8,
+                    b: 128,
+                }),
+                bg: WireColor::Named(0),
+                flags: if c % 10 == 0 { 0x0001 } else { 0 }, // every 10th cell bold
+                zerowidth: vec![],
+            });
+        }
+        cells.push(row);
+    }
+
+    let snapshot = PaneSnapshot {
+        cells,
+        cursor: WireCursor {
+            col: 42,
+            row: 25,
+            shape: WireCursorShape::Block,
+            visible: true,
+        },
+        palette: (0..270).map(|i| [(i % 256) as u8, 0, 0]).collect(),
+        title: "large snapshot test".into(),
+        modes: 0x0201,
+        scrollback_len: 10_000,
+        display_offset: 50,
+    };
+
+    let frame = roundtrip(
+        100,
+        MuxPdu::PaneSnapshotResp {
+            snapshot: snapshot.clone(),
+        },
+    );
+    match frame.pdu {
+        MuxPdu::PaneSnapshotResp { snapshot: got } => {
+            assert_eq!(got.cells.len(), rows);
+            assert_eq!(got.cells[0].len(), cols);
+            assert_eq!(got.cursor.col, 42);
+            assert_eq!(got.cursor.row, 25);
+            assert_eq!(got.scrollback_len, 10_000);
+            assert_eq!(got.display_offset, 50);
+            // Spot-check a few cells.
+            assert_eq!(got.cells[0][0].ch, 'A');
+            assert_eq!(got.cells[0][0].flags, 0x0001); // bold
+            assert_eq!(got.cells[0][1].flags, 0); // not bold
+            assert_eq!(got.cells[49][199].ch, snapshot.cells[49][199].ch);
+        }
+        other => panic!("expected PaneSnapshotResp, got {other:?}"),
+    }
+}

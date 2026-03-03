@@ -1684,3 +1684,165 @@ fn shutdown_via_ipc_sets_flag() {
         "shutdown flag should be true after ShutdownAck"
     );
 }
+
+// -- Shutdown + event loop exit integration --
+
+/// After receiving a Shutdown PDU, the server's `run()` exits on the
+/// next poll iteration. Tests the combined flow rather than individual
+/// pieces (flag setting vs loop checking).
+#[test]
+fn shutdown_pdu_causes_run_to_exit() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock_path = dir.path().join("shutdown_run.sock");
+    let pid_path = dir.path().join("shutdown_run.pid");
+    let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
+
+    let mut client = UnixStream::connect(&sock_path).unwrap();
+    client.set_nonblocking(false).unwrap();
+
+    let mut events = mio::Events::with_capacity(16);
+    server
+        .poll
+        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
+        .unwrap();
+    server.accept_connections().unwrap();
+
+    // Send Shutdown. We need to get the data into the server's socket
+    // buffer before calling run(), since run() will poll for events.
+    send_pdu(&mut client, 1, &MuxPdu::Shutdown);
+
+    // Spawn a thread to call run(). It should exit promptly because
+    // the Shutdown PDU sets the shutdown flag.
+    let handle = std::thread::spawn(move || {
+        server.run().unwrap();
+    });
+
+    // If run() doesn't exit, the join will hang. Use a timeout.
+    let result = handle.join();
+    assert!(
+        result.is_ok(),
+        "server.run() should exit after Shutdown PDU"
+    );
+
+    // Client should have received ShutdownAck.
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 1);
+    assert_eq!(resp, MuxPdu::ShutdownAck);
+}
+
+// -- Shutdown from non-handshaked client --
+
+/// Client sends Shutdown without prior Hello. Server should still
+/// respond with ShutdownAck and set the shutdown flag.
+#[test]
+fn shutdown_without_hello_sets_flag() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // No Hello — send Shutdown directly.
+    send_pdu(&mut client, 1, &MuxPdu::Shutdown);
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 1);
+    assert_eq!(resp, MuxPdu::ShutdownAck);
+
+    assert!(
+        server.shutdown_flag().load(Ordering::Acquire),
+        "shutdown flag should be set even without Hello"
+    );
+}
+
+// -- Double Shutdown idempotency --
+
+/// Client sends Shutdown twice. Server ACKs both and shuts down once.
+#[test]
+fn double_shutdown_is_idempotent() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // First Shutdown.
+    send_pdu(&mut client, 2, &MuxPdu::Shutdown);
+    poll_and_dispatch(&mut server);
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+    assert_eq!(resp, MuxPdu::ShutdownAck);
+    assert!(server.shutdown_flag().load(Ordering::Acquire));
+
+    // Second Shutdown — should still ACK without panic.
+    send_pdu(&mut client, 3, &MuxPdu::Shutdown);
+    poll_and_dispatch(&mut server);
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 3);
+    assert_eq!(resp, MuxPdu::ShutdownAck);
+
+    // Flag is still set.
+    assert!(server.shutdown_flag().load(Ordering::Acquire));
+}
+
+// -- Shutdown with active subscriptions --
+
+/// Client subscribes to a pane, then sends Shutdown. Verify
+/// the server handles shutdown cleanly with active subscriptions.
+#[test]
+fn shutdown_with_active_subscriptions() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Create a window and inject a pane.
+    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
+    poll_and_dispatch(&mut server);
+    let (_, resp) = recv_pdu(&mut client);
+    let wid = match resp {
+        MuxPdu::WindowCreated { window_id } => window_id,
+        other => panic!("expected WindowCreated, got {other:?}"),
+    };
+    let tid = crate::TabId::from_raw(1);
+    let pid = crate::PaneId::from_raw(1);
+    server.mux.inject_test_tab(wid, tid, pid);
+
+    // Subscribe (will return Error since no real Pane, but subscription
+    // is still recorded on the connection).
+    send_pdu(&mut client, 3, &MuxPdu::Subscribe { pane_id: pid });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Verify subscription is registered.
+    assert!(
+        server.subscriptions.contains_key(&pid),
+        "subscription should be active before shutdown"
+    );
+
+    // Now send Shutdown.
+    send_pdu(&mut client, 4, &MuxPdu::Shutdown);
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 4);
+    assert_eq!(resp, MuxPdu::ShutdownAck);
+    assert!(server.shutdown_flag().load(Ordering::Acquire));
+}
+
+// -- Server init with unwritable PID path --
+
+/// `MuxServer::with_paths` returns an error when the PID file path
+/// is in a non-existent root directory that can't be created.
+#[test]
+fn server_init_unwritable_pid_path_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock_path = dir.path().join("ok.sock");
+    // /dev/null/nested is not a valid directory on any Unix.
+    let bad_pid = std::path::PathBuf::from("/dev/null/nested/test.pid");
+    let result = MuxServer::with_paths(&sock_path, &bad_pid);
+    assert!(result.is_err(), "should fail with unwritable PID path");
+}
