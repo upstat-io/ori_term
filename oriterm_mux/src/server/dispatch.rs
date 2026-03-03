@@ -37,7 +37,6 @@ pub fn dispatch_request(
 ) -> Option<MuxPdu> {
     match pdu {
         MuxPdu::Hello { pid } => {
-            conn.set_client_pid(pid);
             log::info!("client {} handshake (pid={pid})", conn.id());
             Some(MuxPdu::HelloAck {
                 client_id: conn.id(),

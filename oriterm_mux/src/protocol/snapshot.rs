@@ -144,8 +144,8 @@ pub struct MuxWindowInfo {
     pub window_id: WindowId,
     /// Number of tabs in the window.
     pub tab_count: u32,
-    /// Currently active tab.
-    pub active_tab_id: TabId,
+    /// Currently active tab (`None` for empty windows).
+    pub active_tab_id: Option<TabId>,
 }
 
 /// Summary info for a mux tab (used in `ListTabs` response).

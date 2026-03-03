@@ -26,8 +26,6 @@ pub struct ClientConnection {
     frame_reader: FrameReader,
     /// Which mux window this client renders (set after handshake).
     window_id: Option<WindowId>,
-    /// OS PID of the connected process (set during Hello handshake).
-    client_pid: Option<u32>,
     /// Panes this client is subscribed to for push notifications.
     subscribed_panes: HashSet<PaneId>,
 }
@@ -41,7 +39,6 @@ impl ClientConnection {
             token,
             frame_reader: FrameReader::new(),
             window_id: None,
-            client_pid: None,
             subscribed_panes: HashSet::new(),
         }
     }
@@ -74,11 +71,6 @@ impl ClientConnection {
     /// Set the window this client renders (after handshake).
     pub fn set_window_id(&mut self, id: WindowId) {
         self.window_id = Some(id);
-    }
-
-    /// Set the client's OS PID (from Hello handshake).
-    pub fn set_client_pid(&mut self, pid: u32) {
-        self.client_pid = Some(pid);
     }
 
     /// Add a pane subscription.

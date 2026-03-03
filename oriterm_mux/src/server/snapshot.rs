@@ -44,8 +44,8 @@ pub fn build_snapshot(pane: &Pane) -> PaneSnapshot {
         && cursor_shape != oriterm_core::CursorShape::Hidden;
 
     let wire_cursor = WireCursor {
-        col: cursor.col().0 as u16,
-        row: cursor.line() as u16,
+        col: u16::try_from(cursor.col().0).unwrap_or(u16::MAX),
+        row: u16::try_from(cursor.line()).unwrap_or(u16::MAX),
         shape: cursor_shape_to_wire(cursor_shape),
         visible: cursor_visible,
     };
@@ -65,8 +65,8 @@ pub fn build_snapshot(pane: &Pane) -> PaneSnapshot {
         palette: palette_rgb,
         title: pane.effective_title().to_string(),
         modes: mode.bits(),
-        scrollback_len: grid.scrollback().len() as u32,
-        display_offset: grid.display_offset() as u32,
+        scrollback_len: u32::try_from(grid.scrollback().len()).unwrap_or(u32::MAX),
+        display_offset: u32::try_from(grid.display_offset()).unwrap_or(u32::MAX),
     }
 }
 
@@ -119,14 +119,10 @@ pub fn build_window_list(session: &SessionRegistry) -> Vec<MuxWindowInfo> {
     // internal window map. Since SessionRegistry doesn't expose an iterator,
     // we use the window_ids accessor.
     for (&window_id, win) in session.windows() {
-        let active_tab_id = win.active_tab().unwrap_or_else(|| {
-            // Shouldn't happen — windows always have at least one tab.
-            crate::TabId::from_raw(0)
-        });
         windows.push(MuxWindowInfo {
             window_id,
             tab_count: win.tabs().len() as u32,
-            active_tab_id,
+            active_tab_id: win.active_tab(),
         });
     }
     windows

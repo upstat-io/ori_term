@@ -330,12 +330,12 @@ fn roundtrip_window_list() {
                 MuxWindowInfo {
                     window_id: WindowId::from_raw(1),
                     tab_count: 3,
-                    active_tab_id: TabId::from_raw(2),
+                    active_tab_id: Some(TabId::from_raw(2)),
                 },
                 MuxWindowInfo {
                     window_id: WindowId::from_raw(2),
                     tab_count: 1,
-                    active_tab_id: TabId::from_raw(4),
+                    active_tab_id: Some(TabId::from_raw(4)),
                 },
             ],
         },
