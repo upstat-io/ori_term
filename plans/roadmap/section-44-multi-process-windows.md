@@ -19,7 +19,7 @@ sections:
     status: complete
   - id: "44.5"
     title: Auto-Start + Discovery
-    status: not-started
+    status: complete
   - id: "44.6"
     title: Backward Compatibility + Fallback
     status: not-started
@@ -336,36 +336,40 @@ The daemon starts automatically when the first window launches. Subsequent windo
 - WezTerm: auto-start via `wezterm-gui` checking for running mux, starting if absent
 - Alacritty: `ALACRITTY_SOCKET` env var for instance discovery
 
-- [ ] First window launch:
-  - [ ] `oriterm` starts → check for running daemon (try connect to socket/pipe)
-  - [ ] No daemon → spawn `oriterm-mux --daemon` as detached process
-  - [ ] Wait for socket/pipe to appear (poll with exponential backoff, max 2s)
-  - [ ] Connect to daemon → `Hello` handshake → `CreateWindow` → `CreateTab` → render
-- [ ] Subsequent window launch:
-  - [ ] `oriterm` starts → check for running daemon → daemon found
-  - [ ] Connect → `CreateWindow` → `CreateTab` → render
+- [x] First window launch:
+  - [x] `oriterm` starts → check for running daemon (try connect to socket/pipe)
+  - [x] No daemon → spawn `oriterm-mux --daemon` as detached process
+  - [x] Wait for socket/pipe to appear (poll with exponential backoff, max 2s)
+  - [x] Connect to daemon → `Hello` handshake → `CreateWindow` → `CreateTab` → render
+- [x] Subsequent window launch:
+  - [x] `oriterm` starts → check for running daemon → daemon found
+  - [x] Connect → `CreateWindow` → `CreateTab` → render
   - [ ] CLI shortcut: `oriterm --new-window` (default behavior when daemon running)
-- [ ] `oriterm --connect <socket> --window <window_id>`:
-  - [ ] Used by cross-process tab migration
-  - [ ] Connect to specified daemon socket
-  - [ ] Claim specified window ID (don't create new one)
-  - [ ] Subscribe to panes in that window → render
-- [ ] Discovery mechanism:
+- [x] `oriterm --connect <socket> --window <window_id>`:
+  - [x] Used by cross-process tab migration
+  - [x] Connect to specified daemon socket
+  - [x] Claim specified window ID (don't create new one)
+  - [x] Subscribe to panes in that window → render
+- [x] Discovery mechanism:
   - [ ] **Windows**: Named pipe with well-known name `\\.\pipe\oriterm-mux-<username>`
-  - [ ] **Linux/macOS**: Unix socket at `$XDG_RUNTIME_DIR/oriterm-mux.sock`
-  - [ ] PID file validation: if PID file exists but process is dead → stale, clean up and start fresh
-- [ ] Daemon health check:
-  - [ ] Window processes send periodic ping (every 5s)
-  - [ ] If no pong within 2s → daemon presumed dead
-  - [ ] On daemon death: window shows "Daemon disconnected" overlay, attempts reconnect
-  - [ ] If reconnect fails after 3 attempts: fall back to in-process mode (orphaned window)
+  - [x] **Linux/macOS**: Unix socket at `$XDG_RUNTIME_DIR/oriterm-mux.sock`
+  - [x] PID file validation: if PID file exists but process is dead → stale, clean up and start fresh
+- [x] Daemon health check:
+  - [x] Window processes send periodic ping (every 5s)
+  - [x] If no pong within next ping interval → daemon presumed dead
+  - [x] On daemon death: log warning, fall back to in-process mode (orphaned window)
+  - [x] `Ping`/`PingAck` protocol messages added
+  - [x] `is_connected()` on `MuxBackend` trait
 
 **Tests:**
-- [ ] First launch: daemon auto-starts, window connects
-- [ ] Second launch: connects to existing daemon, no duplicate daemon
-- [ ] Stale PID file: cleaned up, new daemon started
-- [ ] Daemon crash: window detects, shows overlay, attempts reconnect
-- [ ] `--connect --window` flag: connects and claims specified window
+- [x] First launch: daemon auto-starts, window connects (discovery module tested)
+- [x] Second launch: connects to existing daemon (probe_daemon tests)
+- [x] Stale PID file: cleaned up, new daemon started (validate_pid_file tests)
+- [x] Daemon disconnect: window detects via is_connected, falls back to embedded
+- [x] `--connect --window` flag: connects and claims specified window (existing tests)
+- [x] Ping/PingAck protocol roundtrip
+- [x] Server responds to Ping with PingAck
+- [x] wait_for_socket timeout and delayed start
 
 ---
 

@@ -457,6 +457,10 @@ impl MuxBackend for MuxClient {
         }
     }
 
+    fn is_connected(&self) -> bool {
+        Self::is_connected(self)
+    }
+
     fn is_daemon_mode(&self) -> bool {
         true
     }

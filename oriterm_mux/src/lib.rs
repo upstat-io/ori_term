@@ -15,6 +15,8 @@
 #![deny(unsafe_code)]
 
 pub mod backend;
+#[cfg(unix)]
+pub mod discovery;
 pub mod domain;
 pub mod id;
 pub mod in_process;

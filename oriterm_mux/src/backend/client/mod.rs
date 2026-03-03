@@ -92,6 +92,16 @@ impl MuxClient {
             .is_some_and(ClientTransport::is_alive)
     }
 
+    /// Stub: always disconnected on non-unix platforms.
+    #[cfg(not(unix))]
+    #[expect(
+        clippy::unused_self,
+        reason = "signature must match the unix cfg variant"
+    )]
+    pub fn is_connected(&self) -> bool {
+        false
+    }
+
     /// Send an RPC request to the daemon and return the response.
     ///
     /// Centralizes the `#[cfg(unix)]` transport gate — callers use

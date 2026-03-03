@@ -235,6 +235,14 @@ pub trait MuxBackend {
     /// In embedded mode this is a no-op (local state is authoritative).
     fn refresh_window_tabs(&mut self, _window_id: WindowId) {}
 
+    /// Whether the daemon connection is alive.
+    ///
+    /// Always `true` for embedded mode (no remote connection).
+    /// In daemon mode, reflects the transport's liveness state.
+    fn is_connected(&self) -> bool {
+        true
+    }
+
     /// Whether this backend is running in daemon (IPC client) mode.
     ///
     /// Embedded mode returns `false`. Client mode returns `true`.

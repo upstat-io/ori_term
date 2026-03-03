@@ -89,6 +89,8 @@ pub(crate) struct App {
     // Mux backend (Section 44.3): abstracts in-process vs daemon mux access.
     // Owns pane structs (embedded) or proxies IPC (client).
     mux: Option<Box<dyn MuxBackend>>,
+    // Wakeup callback for mux backends (shared across fallback transitions).
+    mux_wakeup: Arc<dyn Fn() + Send + Sync>,
     // Active mux window ID (maps to the focused TermWindow).
     active_window: Option<MuxWindowId>,
     // Double-buffer for mux notifications (avoids per-frame allocation).
@@ -173,7 +175,7 @@ impl App {
         });
 
         let mux: Option<Box<dyn MuxBackend>> =
-            match oriterm_mux::MuxClient::connect(socket_path, mux_wakeup) {
+            match oriterm_mux::MuxClient::connect(socket_path, mux_wakeup.clone()) {
                 Ok(client) => {
                     log::info!("daemon mode: connected to {}", socket_path.display());
                     Some(Box::new(client))
@@ -193,6 +195,7 @@ impl App {
             windows: HashMap::new(),
             focused_window_id: None,
             mux,
+            mux_wakeup,
             active_window: None,
             notification_buf: Vec::new(),
             modifiers: ModifiersState::empty(),
@@ -241,13 +244,14 @@ impl App {
         let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = event_proxy.send_event(TermEvent::MuxWakeup);
         });
-        let mux = oriterm_mux::EmbeddedMux::new(mux_wakeup);
+        let mux = oriterm_mux::EmbeddedMux::new(mux_wakeup.clone());
         Self {
             gpu: None,
             renderer: None,
             windows: HashMap::new(),
             focused_window_id: None,
             mux: Some(Box::new(mux)),
+            mux_wakeup,
             active_window: None,
             notification_buf: Vec::new(),
             modifiers: ModifiersState::empty(),

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::id::ClientId;
 use crate::mux_event::MuxNotification;
@@ -25,6 +25,12 @@ const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Read timeout on the socket for interleaving reads with send-channel drains.
 const READ_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Interval between health-check pings.
+///
+/// If the previous ping is still outstanding when the next interval fires,
+/// the connection is declared dead (implicit timeout = `PING_INTERVAL`).
+const PING_INTERVAL: Duration = Duration::from_secs(5);
 
 /// A request queued for the reader thread to send.
 struct SendRequest {
@@ -254,6 +260,12 @@ fn reader_loop(
 
     let mut pending: HashMap<u32, mpsc::Sender<MuxPdu>> = HashMap::new();
 
+    // Health-check ping state.
+    let mut last_ping_sent = Instant::now();
+    let mut outstanding_ping_seq: Option<u32> = None;
+    // Ping seqs count down from u32::MAX to avoid colliding with RPC seqs.
+    let mut ping_seq_counter = u32::MAX;
+
     loop {
         // 1. Drain outbound requests.
         loop {
@@ -277,9 +289,34 @@ fn reader_loop(
             }
         }
 
-        // 2. Attempt to read a frame (may timeout after READ_POLL_INTERVAL).
+        // 2. Health-check ping.
+        if last_ping_sent.elapsed() >= PING_INTERVAL {
+            if let Some(_seq) = outstanding_ping_seq {
+                // Previous ping unanswered — daemon is unresponsive.
+                log::warn!("mux-client-reader: ping timeout, marking connection dead");
+                alive.store(false, Ordering::Release);
+                return;
+            }
+            let seq = ping_seq_counter;
+            ping_seq_counter = ping_seq_counter.wrapping_sub(1);
+            if let Err(e) = ProtocolCodec::encode_frame(&mut stream, seq, &MuxPdu::Ping) {
+                log::error!("mux-client-reader: ping write error: {e}");
+                alive.store(false, Ordering::Release);
+                return;
+            }
+            outstanding_ping_seq = Some(seq);
+            last_ping_sent = Instant::now();
+        }
+
+        // 3. Attempt to read a frame (may timeout after READ_POLL_INTERVAL).
         match ProtocolCodec::decode_frame(&mut stream) {
             Ok(DecodedFrame { seq, pdu }) => {
+                // Check if this is a PingAck for our health check.
+                if outstanding_ping_seq == Some(seq) && pdu == MuxPdu::PingAck {
+                    outstanding_ping_seq = None;
+                    continue;
+                }
+
                 if seq == 0 || pdu.is_notification() {
                     // Push notification from daemon.
                     if let Some(notif) = pdu_to_notification(pdu) {

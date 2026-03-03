@@ -23,6 +23,13 @@ impl App {
     pub(super) fn pump_mux_events(&mut self) {
         let Some(mux) = &mut self.mux else { return };
 
+        // Check daemon connectivity.
+        if mux.is_daemon_mode() && !mux.is_connected() {
+            log::warn!("daemon connection lost");
+            self.handle_daemon_disconnect();
+            return;
+        }
+
         // 1. Process incoming MuxEvents from PTY reader threads.
         mux.poll_events();
 
@@ -233,6 +240,20 @@ fn format_duration_body(duration: Duration) -> String {
 }
 
 impl App {
+    /// Handle daemon disconnect: fall back to embedded mode.
+    ///
+    /// When the daemon connection is lost, swap the backend to
+    /// `EmbeddedMux` so the window stays alive in single-process mode.
+    /// Existing pane state is lost (daemon owned it), but the window
+    /// remains usable for new tabs.
+    fn handle_daemon_disconnect(&mut self) {
+        log::warn!("falling back to embedded mode after daemon disconnect");
+
+        // Drop the dead client backend and replace with embedded.
+        let mux = oriterm_mux::EmbeddedMux::new(self.mux_wakeup.clone());
+        self.mux = Some(Box::new(mux));
+    }
+
     /// Handle a mux window being closed by removing its `WindowContext`.
     ///
     /// Scans `self.windows` for the winit ID matching the closed mux window,

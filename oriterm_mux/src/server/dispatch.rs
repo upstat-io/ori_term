@@ -132,6 +132,8 @@ pub fn dispatch_request(
             Some(MuxPdu::WindowClaimed)
         }
 
+        MuxPdu::Ping => Some(MuxPdu::PingAck),
+
         MuxPdu::MoveTabToWindow {
             tab_id,
             target_window_id,

@@ -51,9 +51,17 @@ fn main() {
 
     #[cfg(unix)]
     let mut app = if let Some(ref socket) = args.connect {
+        // Explicit --connect: connect to specified daemon socket.
         app::App::new_daemon(proxy, config, socket, args.window)
     } else {
-        app::App::new(proxy, config)
+        // Auto-start: try daemon mode, fall back to embedded.
+        match oriterm_mux::discovery::ensure_daemon() {
+            Ok(socket_path) => app::App::new_daemon(proxy, config, &socket_path, None),
+            Err(e) => {
+                log::warn!("daemon auto-start failed, using embedded mode: {e}");
+                app::App::new(proxy, config)
+            }
+        }
     };
 
     #[cfg(not(unix))]

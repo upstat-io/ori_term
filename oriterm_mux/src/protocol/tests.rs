@@ -72,6 +72,7 @@ fn msg_type_roundtrip_all() {
         MsgType::SetActiveTab,
         MsgType::CloseWindow,
         MsgType::ClaimWindow,
+        MsgType::Ping,
         MsgType::HelloAck,
         MsgType::WindowCreated,
         MsgType::TabCreated,
@@ -87,6 +88,7 @@ fn msg_type_roundtrip_all() {
         MsgType::ActiveTabChanged,
         MsgType::WindowClosed,
         MsgType::WindowClaimed,
+        MsgType::PingAck,
         MsgType::Error,
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
@@ -427,6 +429,16 @@ fn roundtrip_claim_window() {
 #[test]
 fn roundtrip_window_claimed() {
     roundtrip(27, MuxPdu::WindowClaimed);
+}
+
+#[test]
+fn roundtrip_ping() {
+    roundtrip(28, MuxPdu::Ping);
+}
+
+#[test]
+fn roundtrip_ping_ack() {
+    roundtrip(29, MuxPdu::PingAck);
 }
 
 // -- Notification roundtrips --

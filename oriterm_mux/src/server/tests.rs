@@ -1180,3 +1180,25 @@ fn parse_theme_garbage_defaults_to_dark() {
     assert_eq!(super::dispatch::parse_theme(Some("solarized")), Theme::Dark);
     assert_eq!(super::dispatch::parse_theme(Some("")), Theme::Dark);
 }
+
+// -- Ping/PingAck roundtrip --
+
+/// Server responds to Ping with PingAck.
+#[test]
+fn ping_returns_ping_ack() {
+    let (_dir, mut server, mut client) = server_with_client();
+    client.set_nonblocking(false).unwrap();
+
+    // Handshake first.
+    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 99 });
+    poll_and_dispatch(&mut server);
+    let _ = recv_pdu(&mut client);
+
+    // Send Ping.
+    send_pdu(&mut client, 2, &MuxPdu::Ping);
+    poll_and_dispatch(&mut server);
+
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+    assert_eq!(resp, MuxPdu::PingAck);
+}
