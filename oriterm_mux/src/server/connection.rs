@@ -74,8 +74,20 @@ impl ClientConnection {
     /// in the write buffer. The caller should register `WRITABLE` interest
     /// when [`has_pending_writes`] returns `true`.
     pub fn queue_frame(&mut self, seq: u32, pdu: &MuxPdu) -> std::io::Result<()> {
+        let start = std::time::Instant::now();
         self.frame_writer.queue(seq, pdu)?;
-        self.frame_writer.flush_to(&mut self.stream)
+        let queue_elapsed = start.elapsed();
+        let flush_start = std::time::Instant::now();
+        let result = self.frame_writer.flush_to(&mut self.stream);
+        let flush_elapsed = flush_start.elapsed();
+        if queue_elapsed.as_millis() > 1 || flush_elapsed.as_millis() > 1 {
+            log::warn!(
+                "[DIAG] queue_frame seq={seq}: serialize={:?} flush={:?}",
+                queue_elapsed,
+                flush_elapsed,
+            );
+        }
+        result
     }
 
     /// Flush any buffered outgoing data to the stream.

@@ -1,18 +1,18 @@
 ---
 section: "03"
 title: Resize Through MuxBackend
-status: not-started
+status: complete
 goal: Pane resize goes through MuxBackend — fixes daemon mode stuck at 80×24
 sections:
   - id: "03.1"
     title: Add resize_pane_grid to MuxBackend
-    status: not-started
+    status: complete
   - id: "03.2"
     title: Rewire GUI resize callsites
-    status: not-started
+    status: complete
   - id: "03.3"
     title: Completion Checklist
-    status: not-started
+    status: complete
 ---
 
 # Section 03: Resize Through MuxBackend

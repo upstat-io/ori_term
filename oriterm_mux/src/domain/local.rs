@@ -13,7 +13,7 @@ use super::{Domain, DomainState, SpawnConfig};
 
 use crate::mux_event::{MuxEvent, MuxEventProxy};
 use crate::pane::{Pane, PaneNotifier, PaneParts};
-use crate::pty::{PtyConfig, PtyEventLoop, spawn_pty};
+use crate::pty::{PtyConfig, PtyEventLoop, spawn_pty, spawn_pty_writer};
 
 /// Spawns shells on the local machine.
 ///
@@ -119,12 +119,16 @@ impl LocalDomain {
         );
         let terminal = Arc::new(FairMutex::new(term));
 
-        // 5. Wire the message channel.
+        // 5. Wire the message channel and shutdown flag.
         let (tx, rx) = mpsc::channel();
-        let notifier = PaneNotifier::new(writer, tx);
+        let notifier = PaneNotifier::new(tx);
+        let shutdown = Arc::new(AtomicBool::new(false));
 
-        // 6. Build and spawn the reader thread.
-        let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, rx);
+        // 6. Spawn the writer thread (owns rx + writer, sets shutdown flag).
+        let writer_thread = spawn_pty_writer(writer, rx, Arc::clone(&shutdown))?;
+
+        // 7. Spawn the reader thread (reads PTY, parses VTE, checks shutdown).
+        let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, shutdown);
         let reader_thread = event_loop.spawn()?;
 
         Ok(Pane::from_parts(PaneParts {
@@ -134,6 +138,7 @@ impl LocalDomain {
             notifier,
             pty_control: control,
             reader_thread,
+            writer_thread,
             pty,
             grid_dirty,
             wakeup_pending,

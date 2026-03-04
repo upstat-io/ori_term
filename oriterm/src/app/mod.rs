@@ -25,6 +25,7 @@ mod pane_ops;
 mod perf_stats;
 mod redraw;
 mod search_ui;
+pub(crate) mod snapshot_grid;
 mod tab_bar_input;
 mod tab_drag;
 mod tab_management;
@@ -39,8 +40,9 @@ use winit::event_loop::EventLoopProxy;
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
-use oriterm_core::TermMode;
-use oriterm_mux::{PaneId, WindowId as MuxWindowId};
+use oriterm_core::grid::StableRowIndex;
+use oriterm_core::{Selection, SelectionPoint, TermMode};
+use oriterm_mux::{MarkCursor, PaneId, WindowId as MuxWindowId};
 
 use self::cursor_blink::CursorBlink;
 use self::keyboard_input::ImeState;
@@ -55,7 +57,6 @@ use crate::gpu::{GpuRenderer, GpuState};
 use crate::keybindings::{self, KeyBinding};
 use oriterm_mux::backend::MuxBackend;
 use oriterm_mux::mux_event::MuxNotification;
-use oriterm_mux::pane::Pane;
 
 use oriterm_ui::theme::UiTheme;
 
@@ -108,6 +109,15 @@ pub(crate) struct App {
 
     // Mouse selection state (click detection, drag tracking).
     mouse: MouseState,
+
+    // Per-pane selection state (Section 07: client-side selection).
+    // Selection lives on App (not Pane) so daemon mode can operate on
+    // snapshot data without locking the terminal.
+    pane_selections: HashMap<PaneId, Selection>,
+
+    // Per-pane mark cursor state (Section 08: client-side mark mode).
+    // Mark cursor lives on App (not Pane) so daemon mode works.
+    mark_cursors: HashMap<PaneId, MarkCursor>,
 
     // System clipboard for copy/paste.
     clipboard: Clipboard,
@@ -201,6 +211,8 @@ impl App {
             cursor_blink: CursorBlink::new(blink_interval),
             blinking_active: false,
             mouse: MouseState::new(),
+            pane_selections: HashMap::new(),
+            mark_cursors: HashMap::new(),
             clipboard: Clipboard::new(),
             config,
             bindings,
@@ -257,6 +269,8 @@ impl App {
             cursor_blink: CursorBlink::new(blink_interval),
             blinking_active: false,
             mouse: MouseState::new(),
+            pane_selections: HashMap::new(),
+            mark_cursors: HashMap::new(),
             clipboard: Clipboard::new(),
             config,
             bindings,
@@ -315,8 +329,10 @@ impl App {
         // Mark all grid lines dirty so the frame extraction re-reads every
         // cell with the new cell metrics. Without this, the terminal content
         // appears stale until PTY output marks individual lines dirty.
-        if let Some(pane) = self.active_pane_for_window(winit_id) {
-            pane.terminal().lock().grid_mut().dirty_mut().mark_all();
+        if let Some(pane_id) = self.active_pane_id_for_window(winit_id) {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.mark_all_dirty(pane_id);
+            }
         }
 
         // Invalidate pane render cache (atlas + cell metrics changed).
@@ -337,13 +353,15 @@ impl App {
             winit::window::Theme::Light => oriterm_core::Theme::Light,
         };
         let theme = self.config.colors.resolve_theme(|| system_theme);
-        if let Some(pane) = self.active_pane() {
-            let mut term = pane.terminal().lock();
-            term.set_theme(theme);
-            let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
-            *term.palette_mut() = palette;
-            term.grid_mut().dirty_mut().mark_all();
+        let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
+
+        // Apply to all panes via MuxBackend.
+        if let Some(mux) = self.mux.as_mut() {
+            for pane_id in mux.pane_ids() {
+                mux.set_pane_theme(pane_id, theme, palette.clone());
+            }
         }
+
         // Update UI chrome theme (tab bar, window controls).
         self.ui_theme = resolve_ui_theme_with(&self.config, system_theme);
         for ctx in self.windows.values_mut() {
@@ -364,21 +382,19 @@ impl App {
 
     // -- Mux pane accessors --
 
-    /// The active pane for a specific winit window.
+    /// The active pane's ID for a specific winit window.
     ///
     /// Resolves the mux window from the winit window context, then walks
     /// the session model (window → active tab → active pane) to find the
-    /// pane. Used by window-specific operations (resize, DPI change) that
-    /// cannot rely on `active_pane()` which uses the globally focused window.
-    fn active_pane_for_window(&self, winit_id: WindowId) -> Option<&Pane> {
+    /// `PaneId`. Used by window-specific operations (resize, DPI change).
+    fn active_pane_id_for_window(&self, winit_id: WindowId) -> Option<PaneId> {
         let ctx = self.windows.get(&winit_id)?;
         let mux_wid = ctx.window.mux_window_id();
         let mux = self.mux.as_ref()?;
         let win = mux.session().get_window(mux_wid)?;
         let tab_id = win.active_tab()?;
         let tab = mux.session().get_tab(tab_id)?;
-        let pane_id = tab.active_pane();
-        mux.pane(pane_id)
+        Some(tab.active_pane())
     }
 
     /// The active pane's ID, derived from the mux session model.
@@ -391,41 +407,86 @@ impl App {
         Some(tab.active_pane())
     }
 
-    /// Immutable reference to the active pane.
-    fn active_pane(&self) -> Option<&Pane> {
-        let id = self.active_pane_id()?;
-        self.mux.as_ref()?.pane(id)
-    }
-
-    /// Mutable reference to the active pane.
-    fn active_pane_mut(&mut self) -> Option<&mut Pane> {
-        let id = self.active_pane_id()?;
-        self.mux.as_mut()?.pane_mut(id)
-    }
-
     /// Terminal mode flags for a pane.
     ///
-    /// In embedded mode, reads from the local `Pane` terminal state.
-    /// In daemon mode, reads from the cached pane snapshot.
+    /// Delegates to [`MuxBackend::pane_mode`] — embedded mode reads the
+    /// lock-free atomic cache, daemon mode reads the cached snapshot.
     fn pane_mode(&self, pane_id: PaneId) -> Option<TermMode> {
-        let mux = self.mux.as_ref()?;
-        if let Some(pane) = mux.pane(pane_id) {
-            Some(pane.terminal().lock().mode())
-        } else {
-            mux.pane_snapshot(pane_id)
-                .map(|s| TermMode::from_bits_truncate(s.modes))
+        self.mux
+            .as_ref()?
+            .pane_mode(pane_id)
+            .map(TermMode::from_bits_truncate)
+    }
+
+    // -- Per-pane selection accessors --
+
+    /// The active selection for a pane, if any.
+    fn pane_selection(&self, pane_id: PaneId) -> Option<&Selection> {
+        self.pane_selections.get(&pane_id)
+    }
+
+    /// Replace or create a selection for a pane.
+    fn set_pane_selection(&mut self, pane_id: PaneId, sel: Selection) {
+        self.pane_selections.insert(pane_id, sel);
+    }
+
+    /// Clear the selection for a pane.
+    fn clear_pane_selection(&mut self, pane_id: PaneId) {
+        self.pane_selections.remove(&pane_id);
+    }
+
+    /// Update the endpoint of an existing selection (drag).
+    fn update_pane_selection_end(&mut self, pane_id: PaneId, end: SelectionPoint) {
+        if let Some(sel) = self.pane_selections.get_mut(&pane_id) {
+            sel.end = end;
         }
+    }
+
+    // -- Per-pane mark cursor accessors --
+
+    /// Whether mark mode is active for a pane.
+    fn is_mark_mode(&self, pane_id: PaneId) -> bool {
+        self.mark_cursors.contains_key(&pane_id)
+    }
+
+    /// The mark cursor for a pane, if mark mode is active.
+    fn pane_mark_cursor(&self, pane_id: PaneId) -> Option<MarkCursor> {
+        self.mark_cursors.get(&pane_id).copied()
+    }
+
+    /// Enter mark mode for a pane, placing the cursor at the terminal cursor.
+    ///
+    /// Scrolls to bottom first, refreshes the snapshot, then reads the
+    /// terminal cursor position from snapshot data.
+    fn enter_mark_mode(&mut self, pane_id: PaneId) {
+        if self.mark_cursors.contains_key(&pane_id) {
+            return;
+        }
+        let mux = self.mux.as_mut().expect("mux");
+        mux.scroll_to_bottom(pane_id);
+        if mux.is_pane_snapshot_dirty(pane_id) || mux.pane_snapshot(pane_id).is_none() {
+            mux.refresh_pane_snapshot(pane_id);
+        }
+        if let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) {
+            let mc = MarkCursor {
+                row: StableRowIndex(snapshot.stable_row_base + snapshot.cursor.row as u64),
+                col: snapshot.cursor.col as usize,
+            };
+            self.mark_cursors.insert(pane_id, mc);
+        }
+    }
+
+    /// Exit mark mode for a pane.
+    fn exit_mark_mode(&mut self, pane_id: PaneId) {
+        self.mark_cursors.remove(&pane_id);
     }
 
     /// Send input bytes to a pane.
     ///
-    /// In embedded mode, writes directly to the local PTY via `Pane`.
-    /// In daemon mode, sends through the IPC transport.
+    /// Delegates to [`MuxBackend::send_input`], which writes to the local PTY
+    /// in embedded mode or sends through IPC in daemon mode.
     fn write_pane_input(&mut self, pane_id: PaneId, data: &[u8]) {
-        let Some(mux) = self.mux.as_mut() else { return };
-        if let Some(pane) = mux.pane(pane_id) {
-            pane.write_input(data);
-        } else {
+        if let Some(mux) = self.mux.as_mut() {
             mux.send_input(pane_id, data);
         }
     }
@@ -483,24 +544,6 @@ impl App {
             }
         }
     }
-}
-
-/// Drop a pane on a background thread to avoid blocking the event loop.
-///
-/// Pane destruction involves PTY kill, reader thread join, and child reap —
-/// all potentially blocking. This moves the drop to a dedicated thread.
-fn defer_pane_drop(pane: Pane) {
-    std::thread::spawn(move || drop(pane));
-}
-
-/// Apply the color palette to a pane's terminal without borrowing `App`.
-///
-/// Free function taking `&Config` directly, safe to call while `self.mux`
-/// is mutably borrowed (no `&self` conflict).
-fn apply_palette(config: &Config, pane: &Pane, theme: oriterm_core::Theme) {
-    let mut term = pane.terminal().lock();
-    let palette = config_reload::build_palette_from_config(&config.colors, theme);
-    *term.palette_mut() = palette;
 }
 
 use event_loop::{resolve_ui_theme, resolve_ui_theme_with, winit_mods_to_ui};

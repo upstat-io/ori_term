@@ -18,10 +18,7 @@ pub(crate) mod state;
 pub(crate) mod transparency;
 
 // Re-exports consumed by App and Window.
-pub(crate) use extract::{
-    extract_frame, extract_frame_from_snapshot, extract_frame_from_snapshot_into,
-    extract_frame_into,
-};
+pub(crate) use extract::{extract_frame_from_snapshot, extract_frame_from_snapshot_into};
 pub(crate) use frame_input::{
     FrameInput, FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize,
 };

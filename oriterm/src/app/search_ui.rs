@@ -7,13 +7,14 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, NamedKey};
 
 use super::App;
-use oriterm_mux::pane::Pane;
 
 impl App {
     /// Open the search bar for the active pane.
     pub(super) fn open_search(&mut self) {
-        if let Some(pane) = self.active_pane_mut() {
-            pane.open_search();
+        if let Some(pane_id) = self.active_pane_id() {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.open_search(pane_id);
+            }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
@@ -22,8 +23,10 @@ impl App {
 
     /// Close the search bar and clear search state.
     pub(super) fn close_search(&mut self) {
-        if let Some(pane) = self.active_pane_mut() {
-            pane.close_search();
+        if let Some(pane_id) = self.active_pane_id() {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.close_search(pane_id);
+            }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
@@ -32,7 +35,12 @@ impl App {
 
     /// Whether search mode is active.
     pub(super) fn is_search_active(&self) -> bool {
-        self.active_pane().is_some_and(Pane::is_search_active)
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        self.mux
+            .as_ref()
+            .is_some_and(|m| m.is_search_active(pane_id))
     }
 
     /// Dispatch a key event while search is active.
@@ -43,19 +51,21 @@ impl App {
             return true; // Consume releases to prevent leaking to PTY.
         }
 
+        let Some(pane_id) = self.active_pane_id() else {
+            return true;
+        };
+
         match &event.logical_key {
             Key::Named(NamedKey::Escape) => {
                 self.close_search();
             }
             Key::Named(NamedKey::Enter) => {
                 let shift = self.modifiers.shift_key();
-                if let Some(pane) = self.active_pane_mut() {
-                    if let Some(search) = pane.search_mut() {
-                        if shift {
-                            search.prev_match();
-                        } else {
-                            search.next_match();
-                        }
+                if let Some(mux) = self.mux.as_mut() {
+                    if shift {
+                        mux.search_prev_match(pane_id);
+                    } else {
+                        mux.search_next_match(pane_id);
                     }
                 }
                 self.scroll_to_search_match();
@@ -64,13 +74,19 @@ impl App {
                 }
             }
             Key::Named(NamedKey::Backspace) => {
-                if let Some(pane) = self.active_pane_mut() {
-                    let grid_ref = pane.terminal().clone();
-                    if let Some(search) = pane.search_mut() {
-                        let mut q = search.query().to_string();
+                // Read current query from the cached snapshot.
+                let query = self
+                    .mux
+                    .as_ref()
+                    .and_then(|m| m.pane_snapshot(pane_id))
+                    .map(|s| {
+                        let mut q = s.search_query.clone();
                         q.pop();
-                        let term = grid_ref.lock();
-                        search.set_query(q, term.grid());
+                        q
+                    });
+                if let Some(q) = query {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.search_set_query(pane_id, q);
                     }
                 }
                 self.scroll_to_search_match();
@@ -79,13 +95,19 @@ impl App {
                 }
             }
             Key::Character(c) => {
-                if let Some(pane) = self.active_pane_mut() {
-                    let grid_ref = pane.terminal().clone();
-                    if let Some(search) = pane.search_mut() {
-                        let mut q = search.query().to_string();
+                // Read current query from the cached snapshot.
+                let query = self
+                    .mux
+                    .as_ref()
+                    .and_then(|m| m.pane_snapshot(pane_id))
+                    .map(|s| {
+                        let mut q = s.search_query.clone();
                         q.push_str(c);
-                        let term = grid_ref.lock();
-                        search.set_query(q, term.grid());
+                        q
+                    });
+                if let Some(q) = query {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.search_set_query(pane_id, q);
                     }
                 }
                 self.scroll_to_search_match();
@@ -100,45 +122,62 @@ impl App {
     }
 
     /// Scroll the viewport to center the focused search match.
-    fn scroll_to_search_match(&self) {
-        let Some(pane) = self.active_pane() else {
-            return;
-        };
-        let Some(search) = pane.search() else { return };
-        let Some(focused) = search.focused_match() else {
+    fn scroll_to_search_match(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
             return;
         };
 
-        let stable_row = focused.start_row;
-        let term = pane.terminal().lock();
-        let grid = term.grid();
+        // Read match data from the cached snapshot.
+        let scroll_info = self
+            .mux
+            .as_ref()
+            .and_then(|m| m.pane_snapshot(pane_id))
+            .and_then(|snap| {
+                let focused_idx = snap.search_focused? as usize;
+                let focused = snap.search_matches.get(focused_idx)?;
+                let stable_row = focused.start_row;
 
-        let Some(abs_row) = stable_row.to_absolute(grid) else {
-            return;
-        };
+                let sb_len = snap.scrollback_len as usize;
+                let display_offset = snap.display_offset as usize;
+                let lines = snap.cells.len();
 
-        let sb_len = grid.scrollback().len();
-        let lines = grid.lines();
-        let current_offset = grid.display_offset();
+                // Compute absolute row from stable row index.
+                // stable_row_base is the stable index of viewport row 0.
+                // abs_row = stable_row - (stable_row_base - (sb_len - display_offset))
+                // But simpler: the viewport starts at absolute row (sb_len - display_offset).
+                // If stable_row < stable_row_base, it's above the viewport start.
+                // If stable_row >= stable_row_base, offset from viewport start.
+                let base = snap.stable_row_base;
+                let abs_row = if stable_row >= base {
+                    (sb_len - display_offset) + (stable_row - base) as usize
+                } else {
+                    // Row is in scrollback above the base.
+                    (sb_len - display_offset).saturating_sub((base - stable_row) as usize)
+                };
 
-        // Viewport shows rows from (sb_len - offset) to (sb_len - offset + lines - 1).
-        let view_start = sb_len.saturating_sub(current_offset);
-        let view_end = view_start + lines;
+                let view_start = sb_len.saturating_sub(display_offset);
+                let view_end = view_start + lines;
 
-        if abs_row >= view_start && abs_row < view_end {
-            return; // Already visible.
-        }
+                if abs_row >= view_start && abs_row < view_end {
+                    return None; // Already visible.
+                }
 
-        // Center the match in the viewport.
-        let target_start = abs_row.saturating_sub(lines / 2);
-        let new_offset = sb_len.saturating_sub(target_start);
-        let clamped = new_offset.min(sb_len);
-        drop(term);
+                // Center the match in the viewport.
+                let target_start = abs_row.saturating_sub(lines / 2);
+                let new_offset = sb_len.saturating_sub(target_start);
+                let clamped = new_offset.min(sb_len);
+                let delta = clamped as isize - display_offset as isize;
+                if delta != 0 {
+                    Some((pane_id, delta))
+                } else {
+                    None
+                }
+            });
 
-        // Scroll to the computed offset.
-        let delta = clamped as isize - current_offset as isize;
-        if delta != 0 {
-            pane.scroll_display(delta);
+        if let Some((pid, delta)) = scroll_info {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.scroll_display(pid, delta);
+            }
         }
     }
 }

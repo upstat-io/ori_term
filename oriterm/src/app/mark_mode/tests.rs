@@ -2,10 +2,70 @@
 
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::{Selection, SelectionMode, SelectionPoint, Side};
+use oriterm_mux::{MarkCursor, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 
 use super::motion::{self, AbsCursor, GridBounds};
-use super::{extend_or_create_selection, select_all};
-use oriterm_mux::pane::MarkCursor;
+use super::{ensure_visible, extend_or_create_selection, extract_word_context, select_all};
+use crate::app::snapshot_grid::SnapshotGrid;
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+/// Build a simple WireCell with a character and no flags.
+fn cell(ch: char) -> WireCell {
+    WireCell {
+        ch,
+        fg: WireRgb {
+            r: 255,
+            g: 255,
+            b: 255,
+        },
+        bg: WireRgb { r: 0, g: 0, b: 0 },
+        flags: 0,
+        underline_color: None,
+        hyperlink_uri: None,
+        zerowidth: Vec::new(),
+    }
+}
+
+/// Build a test snapshot with configurable scrollback and display offset.
+fn test_snapshot_full(
+    cells: Vec<Vec<WireCell>>,
+    cols: u16,
+    stable_row_base: u64,
+    scrollback_len: u32,
+    display_offset: u32,
+) -> PaneSnapshot {
+    PaneSnapshot {
+        cells,
+        cursor: WireCursor {
+            col: 0,
+            row: 0,
+            shape: WireCursorShape::Block,
+            visible: true,
+        },
+        palette: vec![[0; 3]; 270],
+        title: String::new(),
+        icon_name: None,
+        cwd: None,
+        modes: 0,
+        scrollback_len,
+        display_offset,
+        stable_row_base,
+        cols,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
+    }
+}
+
+/// Build a test snapshot with 100 rows of scrollback and no display offset.
+fn test_snapshot(cells: Vec<Vec<WireCell>>, cols: u16, stable_row_base: u64) -> PaneSnapshot {
+    test_snapshot_full(cells, cols, stable_row_base, 100, 0)
+}
 
 // ---------------------------------------------------------------------------
 // GridBounds helpers
@@ -636,162 +696,161 @@ fn selection_equal_at_col_zero_is_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// Roadmap checkbox tests (9.3 spec)
+// extend_or_create_selection (pure function tests)
 // ---------------------------------------------------------------------------
-// These verify the mark mode state transitions. Tests that require a full
-// Pane with PTY are marked #[ignore] and follow the existing pane test pattern.
 
 #[test]
-#[ignore = "requires display server (winit event loop)"]
-fn enter_mark_mode_sets_flag_exit_clears_it() {
-    let mut pane = make_pane(24, 80);
-    assert!(!pane.is_mark_mode());
-
-    pane.enter_mark_mode();
-    assert!(pane.is_mark_mode());
-    assert!(pane.mark_cursor().is_some());
-
-    pane.exit_mark_mode();
-    assert!(!pane.is_mark_mode());
-    assert!(pane.mark_cursor().is_none());
-}
-
-#[test]
-#[ignore = "requires display server (winit event loop)"]
-fn shift_right_extends_selection_by_one_column() {
-    let mut pane = make_pane(24, 80);
-    pane.enter_mark_mode();
-    let old_mc = pane.mark_cursor().expect("mark cursor");
-    let old_col = old_mc.col;
-
-    // Simulate Shift+Right: compute new cursor, then extend selection.
-    let new_mc = {
-        let term = pane.terminal().lock();
-        let g = term.grid();
-        let Some(abs_row) = old_mc.row.to_absolute(g) else {
-            panic!("row should be valid");
-        };
-        let bounds = GridBounds {
-            total_rows: g.scrollback().len() + g.lines(),
-            cols: g.cols(),
-            visible_lines: g.lines(),
-        };
-        let cur = AbsCursor {
-            abs_row,
-            col: old_col,
-        };
-        let new_abs = motion::move_right(cur, bounds);
-        let stable = StableRowIndex::from_absolute(g, new_abs.abs_row);
-        MarkCursor {
-            row: stable,
-            col: new_abs.col,
-        }
+fn extend_creates_new_selection_forward() {
+    let anchor = MarkCursor {
+        row: StableRowIndex(5),
+        col: 10,
     };
-
-    extend_or_create_selection(&mut pane, &old_mc, &new_mc);
-    pane.set_mark_cursor(new_mc);
-
-    assert!(pane.selection().is_some(), "selection should exist");
-    assert_eq!(
-        pane.mark_cursor().expect("mark cursor").col,
-        old_col + 1,
-        "cursor should have moved right by one",
-    );
+    let end = MarkCursor {
+        row: StableRowIndex(5),
+        col: 15,
+    };
+    let sel = extend_or_create_selection(None, &anchor, &end);
+    assert_eq!(sel.mode, SelectionMode::Char);
+    assert_eq!(sel.anchor.row, StableRowIndex(5));
+    assert_eq!(sel.anchor.col, 10);
+    assert_eq!(sel.anchor.side, Side::Left);
+    assert_eq!(sel.end.row, StableRowIndex(5));
+    assert_eq!(sel.end.col, 15);
+    assert_eq!(sel.end.side, Side::Right);
+    // Both endpoints included.
+    assert!(sel.contains(StableRowIndex(5), 10));
+    assert!(sel.contains(StableRowIndex(5), 15));
+    assert!(!sel.contains(StableRowIndex(5), 9));
+    assert!(!sel.contains(StableRowIndex(5), 16));
 }
 
 #[test]
-#[ignore = "requires display server (winit event loop)"]
-fn ctrl_a_selects_entire_buffer() {
-    let mut pane = make_pane(24, 80);
-    pane.enter_mark_mode();
+fn extend_creates_new_selection_backward() {
+    let anchor = MarkCursor {
+        row: StableRowIndex(5),
+        col: 15,
+    };
+    let end = MarkCursor {
+        row: StableRowIndex(5),
+        col: 10,
+    };
+    let sel = extend_or_create_selection(None, &anchor, &end);
+    assert_eq!(sel.anchor.side, Side::Right);
+    assert_eq!(sel.end.side, Side::Left);
+    assert!(sel.contains(StableRowIndex(5), 10));
+    assert!(sel.contains(StableRowIndex(5), 15));
+}
 
-    select_all(&mut pane);
+#[test]
+fn extend_preserves_anchor_from_existing_selection() {
+    let existing = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: StableRowIndex(5),
+            col: 10,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: StableRowIndex(5),
+            col: 10,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: StableRowIndex(5),
+            col: 12,
+            side: Side::Right,
+        },
+    };
+    // Extend further right: anchor stays at col 10.
+    let old_cursor = MarkCursor {
+        row: StableRowIndex(5),
+        col: 12,
+    };
+    let new_cursor = MarkCursor {
+        row: StableRowIndex(5),
+        col: 20,
+    };
+    let sel = extend_or_create_selection(Some(&existing), &old_cursor, &new_cursor);
+    assert_eq!(sel.anchor.col, 10);
+    assert_eq!(sel.end.col, 20);
+    assert!(sel.contains(StableRowIndex(5), 10));
+    assert!(sel.contains(StableRowIndex(5), 20));
+}
 
-    let sel = pane.selection().expect("selection should exist");
+#[test]
+fn extend_equal_position_produces_empty_selection() {
+    let mc = MarkCursor {
+        row: StableRowIndex(0),
+        col: 5,
+    };
+    let sel = extend_or_create_selection(None, &mc, &mc);
+    assert!(sel.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// select_all (SnapshotGrid-based)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn select_all_covers_entire_buffer() {
+    let snap = test_snapshot(
+        vec![
+            vec![cell('a'), cell('b'), cell('c')],
+            vec![cell('d'), cell('e'), cell('f')],
+        ],
+        3,
+        100,
+    );
+    let grid = SnapshotGrid::new(&snap);
+    let sel = select_all(&grid);
     assert_eq!(sel.mode, SelectionMode::Char);
     assert_eq!(sel.anchor.col, 0);
     assert_eq!(sel.anchor.side, Side::Left);
+    assert_eq!(sel.end.col, 2); // cols - 1
     assert_eq!(sel.end.side, Side::Right);
 }
 
+// ---------------------------------------------------------------------------
+// Auto-scroll (ensure_visible with SnapshotGrid)
+// ---------------------------------------------------------------------------
+
 #[test]
-#[ignore = "requires display server (winit event loop)"]
-fn escape_clears_selection_and_exits_mark_mode() {
-    let mut pane = make_pane(24, 80);
-    pane.enter_mark_mode();
-
-    // Create a selection via extend helper.
-    let old_mc = pane.mark_cursor().expect("mark cursor");
-    let new_mc = MarkCursor {
-        row: old_mc.row,
-        col: old_mc.col + 1,
+fn ensure_visible_in_viewport_returns_none() {
+    let snap = test_snapshot(vec![vec![cell('a')]; 3], 1, 100);
+    let grid = SnapshotGrid::new(&snap);
+    // Cursor at viewport row 0 (stable 100, abs 100, first_visible=100).
+    let cursor = MarkCursor {
+        row: StableRowIndex(100),
+        col: 0,
     };
-    extend_or_create_selection(&mut pane, &old_mc, &new_mc);
-    pane.set_mark_cursor(new_mc);
-    assert!(pane.selection().is_some());
-
-    // Simulate Escape: clear selection and exit mark mode.
-    pane.clear_selection();
-    pane.exit_mark_mode();
-
-    assert!(pane.selection().is_none(), "selection should be cleared");
-    assert!(!pane.is_mark_mode(), "mark mode should be exited");
+    assert!(ensure_visible(&grid, &cursor).is_none());
 }
 
-// ---------------------------------------------------------------------------
-// Auto-scroll (ensure_visible)
-// ---------------------------------------------------------------------------
+#[test]
+fn ensure_visible_above_viewport_returns_positive_delta() {
+    let snap = test_snapshot(vec![vec![cell('a')]; 3], 1, 100);
+    let grid = SnapshotGrid::new(&snap);
+    // Cursor at absolute row 0 (stable 0), viewport starts at abs 100.
+    let cursor = MarkCursor {
+        row: StableRowIndex(0),
+        col: 0,
+    };
+    let delta = ensure_visible(&grid, &cursor);
+    assert_eq!(delta, Some(100)); // scroll up 100 rows
+}
 
 #[test]
-#[ignore = "requires display server (winit event loop)"]
-fn auto_scroll_moves_viewport_when_cursor_above() {
-    use super::ensure_visible;
-
-    let mut pane = make_pane(24, 80);
-    pane.enter_mark_mode();
-
-    // Scroll the viewport into scrollback, then place cursor above viewport.
-    // First we need content in scrollback — write enough to create scrollback.
-    let lines: String = (0..50).map(|i| format!("line {i}\r\n")).collect();
-    pane.write_input(lines.as_bytes());
-    std::thread::sleep(std::time::Duration::from_millis(50));
-
-    // Scroll up so viewport shows older content.
-    pane.scroll_display(20);
-
-    // Place mark cursor at the very top of the buffer.
-    let top_cursor = {
-        let term = pane.terminal().lock();
-        let g = term.grid();
-        let stable = StableRowIndex::from_absolute(g, 0);
-        MarkCursor {
-            row: stable,
-            col: 0,
-        }
+fn ensure_visible_below_viewport_returns_negative_delta() {
+    // Viewport scrolled into history: display_offset=10, first_visible=90.
+    let snap = test_snapshot_full(vec![vec![cell('a')]; 3], 1, 90, 100, 10);
+    let grid = SnapshotGrid::new(&snap);
+    // Cursor at absolute row 100 (stable 100), last_visible = 90 + 2 = 92.
+    let cursor = MarkCursor {
+        row: StableRowIndex(100),
+        col: 0,
     };
-    pane.set_mark_cursor(top_cursor);
-
-    // ensure_visible should scroll to make the cursor visible.
-    ensure_visible(&pane, &top_cursor);
-
-    // Verify the cursor is now within the visible viewport.
-    let visible = {
-        let term = pane.terminal().lock();
-        let g = term.grid();
-        let Some(abs_row) = top_cursor.row.to_absolute(g) else {
-            panic!("row should be valid");
-        };
-        let sb_len = g.scrollback().len();
-        let offset = g.display_offset();
-        let lines = g.lines();
-        let first_visible = sb_len.saturating_sub(offset);
-        let last_visible = first_visible + lines.saturating_sub(1);
-        abs_row >= first_visible && abs_row <= last_visible
-    };
-    assert!(
-        visible,
-        "cursor should be within visible viewport after auto-scroll"
-    );
+    let delta = ensure_visible(&grid, &cursor);
+    assert_eq!(delta, Some(-8)); // scroll down 8 rows
 }
 
 // ---------------------------------------------------------------------------
@@ -945,78 +1004,43 @@ fn word_right_clamps_at_end_of_buffer() {
 }
 
 // ---------------------------------------------------------------------------
-// Word navigation with live grid (integration)
+// Word navigation with SnapshotGrid (integration)
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "requires display server (winit event loop)"]
-fn word_left_at_buffer_start_clamps_with_grid() {
-    let pane = make_pane(24, 80);
-    let term = pane.terminal().lock();
-    let g = term.grid();
-
-    let ctx = super::extract_word_context(g, 0, 0, oriterm_core::DEFAULT_WORD_DELIMITERS);
+fn word_left_at_origin_clamps_with_snapshot_grid() {
+    let snap = test_snapshot_full(
+        vec![vec![cell('h'), cell('e'), cell('l'), cell('l'), cell('o')]],
+        5,
+        0,
+        0,
+        0,
+    );
+    let grid = SnapshotGrid::new(&snap);
+    let ctx = extract_word_context(&grid, 0, 0, ",│`|:\"' ()[]{}<>\t");
     let c = AbsCursor { abs_row: 0, col: 0 };
     let r = motion::word_left(c, &ctx);
     assert_eq!(r, AbsCursor { abs_row: 0, col: 0 });
 }
 
 #[test]
-#[ignore = "requires display server (winit event loop)"]
-fn word_right_at_buffer_end_clamps_with_grid() {
-    let pane = make_pane(24, 80);
-    let term = pane.terminal().lock();
-    let g = term.grid();
-
-    let total_rows = g.scrollback().len() + g.lines();
-    let last_row = total_rows.saturating_sub(1);
-    let last_col = g.cols().saturating_sub(1);
+fn word_right_at_end_clamps_with_snapshot_grid() {
+    let snap = test_snapshot_full(
+        vec![vec![cell('h'), cell('e'), cell('l'), cell('l'), cell('o')]],
+        5,
+        0,
+        0,
+        0,
+    );
+    let grid = SnapshotGrid::new(&snap);
     let bounds = GridBounds {
-        total_rows,
-        cols: g.cols(),
-        visible_lines: g.lines(),
+        total_rows: 1,
+        cols: 5,
+        visible_lines: 1,
     };
-
-    let ctx =
-        super::extract_word_context(g, last_row, last_col, oriterm_core::DEFAULT_WORD_DELIMITERS);
-    let c = AbsCursor {
-        abs_row: last_row,
-        col: last_col,
-    };
+    let ctx = extract_word_context(&grid, 0, 4, ",│`|:\"' ()[]{}<>\t");
+    let c = AbsCursor { abs_row: 0, col: 4 };
     let r = motion::word_right(c, &ctx, bounds);
-    assert_eq!(r.abs_row, last_row);
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Create a Pane with default settings and a live PTY.
-fn make_pane(rows: u16, cols: u16) -> oriterm_mux::pane::Pane {
-    use std::sync::Arc;
-
-    use oriterm_mux::domain::SpawnConfig;
-    use oriterm_mux::{DomainId, PaneId};
-
-    use oriterm_mux::domain::LocalDomain;
-    use oriterm_mux::mux_event::MuxEvent;
-
-    let domain = LocalDomain::new(DomainId::from_raw(0));
-    let (mux_tx, _mux_rx) = std::sync::mpsc::channel::<MuxEvent>();
-    let config = SpawnConfig {
-        rows,
-        cols,
-        scrollback: 1000,
-        ..SpawnConfig::default()
-    };
-    let noop_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-    domain
-        .spawn_pane(
-            PaneId::from_raw(0),
-            &config,
-            oriterm_core::Theme::default(),
-            &mux_tx,
-            noop_wakeup,
-        )
-        .expect("pane creation should succeed")
+    assert_eq!(r.abs_row, 0);
+    assert_eq!(r.col, 4);
 }

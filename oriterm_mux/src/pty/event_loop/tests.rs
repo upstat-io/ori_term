@@ -1,28 +1,25 @@
 //! Tests for PtyEventLoop.
 //!
 //! Uses anonymous pipes to test the event loop without real PTY processes,
-//! avoiding platform-specific ConPTY issues with blocking reads.
+//! avoiding platform-specific `ConPTY` issues with blocking reads.
 
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use oriterm_core::{FairMutex, Term, Theme, VoidListener};
 
-use super::{COALESCE_DELAY, COALESCE_THRESHOLD, MAX_LOCKED_PARSE, PtyEventLoop, READ_BUFFER_SIZE};
-use crate::pty::Msg;
+use super::{MAX_LOCKED_PARSE, PtyEventLoop, READ_BUFFER_SIZE};
 
 /// Build a PtyEventLoop with the given reader.
 fn build_event_loop(
     reader: Box<dyn Read + Send>,
-    _writer: Box<dyn Write + Send>,
 ) -> (
     PtyEventLoop<VoidListener>,
     Arc<FairMutex<Term<VoidListener>>>,
-    mpsc::Sender<Msg>,
+    Arc<AtomicBool>,
 ) {
     let terminal = Arc::new(FairMutex::new(Term::new(
         24,
@@ -31,11 +28,11 @@ fn build_event_loop(
         Theme::default(),
         VoidListener,
     )));
-    let (tx, rx) = mpsc::channel();
+    let shutdown = Arc::new(AtomicBool::new(false));
 
-    let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, rx);
+    let event_loop = PtyEventLoop::new(Arc::clone(&terminal), reader, Arc::clone(&shutdown));
 
-    (event_loop, terminal, tx)
+    (event_loop, terminal, shutdown)
 }
 
 #[test]
@@ -43,8 +40,7 @@ fn shutdown_on_reader_eof() {
     // Anonymous pipe where we control the write end — dropping it produces EOF.
     let (pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, _terminal, _tx) =
-        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+    let (event_loop, _terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -58,8 +54,7 @@ fn shutdown_on_reader_eof() {
 fn processes_pty_output_into_terminal() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, _tx) =
-        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+    let (event_loop, terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -85,8 +80,8 @@ fn processes_pty_output_into_terminal() {
 }
 
 #[test]
-fn read_buffer_size_is_64kb() {
-    assert_eq!(READ_BUFFER_SIZE, 65536);
+fn read_buffer_size_is_1mb() {
+    assert_eq!(READ_BUFFER_SIZE, 0x10_0000);
 }
 
 #[test]
@@ -95,13 +90,24 @@ fn max_locked_parse_is_64kb() {
 }
 
 #[test]
-fn coalesce_threshold_below_read_buffer() {
-    assert!(COALESCE_THRESHOLD < READ_BUFFER_SIZE);
-}
+fn try_parse_is_bounded_to_max_locked_parse() {
+    let (pipe_reader, pipe_writer) = std::io::pipe().expect("pipe");
+    let (mut event_loop, _terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
+    drop(pipe_writer);
 
-#[test]
-fn coalesce_delay_is_1ms() {
-    assert_eq!(COALESCE_DELAY, Duration::from_millis(1));
+    let data = vec![b'X'; MAX_LOCKED_PARSE * 2];
+
+    let parsed_1 = event_loop.try_parse(&data);
+    assert_eq!(
+        parsed_1, MAX_LOCKED_PARSE,
+        "first parse should be capped to MAX_LOCKED_PARSE"
+    );
+
+    let parsed_2 = event_loop.try_parse(&data[parsed_1..]);
+    assert_eq!(
+        parsed_2, MAX_LOCKED_PARSE,
+        "second parse should consume the remaining chunk"
+    );
 }
 
 // --- Contention benchmarks ---
@@ -117,8 +123,7 @@ fn coalesce_delay_is_1ms() {
 fn run_contention_bench(duration: Duration) -> (usize, usize, Duration) {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, tx) =
-        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+    let (event_loop, terminal, shutdown) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -157,7 +162,7 @@ fn run_contention_bench(duration: Duration) -> (usize, usize, Duration) {
 
     // Close pipe → EOF → event loop exits.
     drop(pipe_writer);
-    let _ = tx.send(Msg::Shutdown);
+    shutdown.store(true, Ordering::Release);
     let _ = join.join();
     renderer.join().expect("renderer thread");
 
@@ -169,8 +174,8 @@ fn run_contention_bench(duration: Duration) -> (usize, usize, Duration) {
 ///
 /// The reader thread floods data through a real PtyEventLoop (with actual
 /// VTE parsing). A contending renderer thread measures how many lock
-/// acquisitions it gets. With a working fair-lock strategy, the renderer
-/// must get consistent access.
+/// acquisitions it gets. With the lease+try_lock pattern, the renderer
+/// must get consistent access between reader parse cycles.
 #[test]
 fn renderer_not_starved_during_flood() {
     let (bytes, renderer_locks, elapsed) = run_contention_bench(Duration::from_millis(500));
@@ -203,8 +208,7 @@ fn renderer_not_starved_during_flood() {
 fn reader_throughput_no_contention() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, _terminal, tx) =
-        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+    let (event_loop, _terminal, shutdown) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -224,7 +228,7 @@ fn reader_throughput_no_contention() {
     let elapsed = start.elapsed();
 
     drop(pipe_writer);
-    let _ = tx.send(Msg::Shutdown);
+    shutdown.store(true, Ordering::Release);
     let _ = join.join();
 
     let mb = total_written as f64 / (1024.0 * 1024.0);
@@ -237,23 +241,21 @@ fn reader_throughput_no_contention() {
     eprintln!("  throughput: {throughput:.1} MB/s");
 }
 
-/// Verifies that interactive-size reads (below coalesce threshold) do not
-/// trigger coalesce delays, preserving keystroke latency.
+/// Verifies that interactive-size reads do not incur excess latency.
 ///
-/// Feeds small payloads (single characters, short escape sequences) through
-/// a real PtyEventLoop with a contending renderer. Measures end-to-end
-/// latency: if the reader coalesced on small reads, latency would spike
-/// by at least 1ms per character.
+/// Feeds small payloads (single characters) through a real PtyEventLoop
+/// with a contending renderer. The lease+try_lock pattern should process
+/// small reads promptly since the reader always acquires the lock when
+/// the buffer is tiny.
 #[test]
-fn interactive_reads_skip_coalesce() {
+fn interactive_reads_low_latency() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, _tx) =
-        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+    let (event_loop, terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
-    // Renderer thread — creates contention so take_contended() would be true.
+    // Renderer thread — creates contention.
     let term_clone = Arc::clone(&terminal);
     let done = Arc::new(AtomicBool::new(false));
     let done_clone = Arc::clone(&done);
@@ -264,9 +266,7 @@ fn interactive_reads_skip_coalesce() {
         }
     });
 
-    // Feed 50 small writes (simulating keystrokes). If coalesce triggered
-    // on each, total time would be >= 50ms. Without coalesce, this should
-    // complete in under 20ms.
+    // Feed 50 small writes (simulating keystrokes).
     let start = Instant::now();
     for i in 0..50 {
         let ch = b'a' + (i % 26);
@@ -282,25 +282,23 @@ fn interactive_reads_skip_coalesce() {
     let _ = join.join();
     renderer.join().expect("renderer thread");
 
-    // 50 keystrokes at 100us spacing = ~5ms baseline. If coalesce fires
-    // (1ms each), total would be >= 50ms. Allow generous margin.
+    // 50 keystrokes at 100us spacing = ~5ms baseline. Allow generous margin.
     assert!(
         elapsed < Duration::from_millis(100),
-        "interactive reads too slow ({elapsed:?}), coalesce may be firing on small reads",
+        "interactive reads too slow ({elapsed:?})",
     );
 }
 
 /// Verifies renderer access survives bursty flood patterns.
 ///
-/// Alternates between flood bursts (above coalesce threshold) and idle
-/// periods, simulating realistic shell usage: `ls` output → prompt → `cat`.
-/// The renderer must get consistent lock access throughout.
+/// Alternates between flood bursts and idle periods, simulating realistic
+/// shell usage: `ls` output -> prompt -> `cat`. The renderer must get
+/// consistent lock access throughout.
 #[test]
 fn bursty_flood_renderer_access() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, _tx) =
-        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+    let (event_loop, terminal, _shutdown) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -320,7 +318,7 @@ fn bursty_flood_renderer_access() {
     let flood_block = ("A".repeat(79) + "\n").repeat(100); // ~8KB
     let flood_bytes = flood_block.as_bytes();
 
-    // 5 cycles of: 100ms flood → 50ms idle.
+    // 5 cycles of: 100ms flood -> 50ms idle.
     for _ in 0..5 {
         let burst_start = Instant::now();
         while burst_start.elapsed() < Duration::from_millis(100) {
@@ -339,42 +337,11 @@ fn bursty_flood_renderer_access() {
     renderer.join().expect("renderer thread");
 
     let locks = renderer_count.load(Ordering::Relaxed);
-    // 750ms total (5 × 150ms). Renderer needs at least 45 locks (60fps).
+    // 750ms total (5 x 150ms). Renderer needs at least 45 locks (60fps).
     assert!(
         locks >= 45,
         "renderer starved during bursty flood: only {locks} locks in 750ms \
          (need >= 45 for 60fps)",
-    );
-}
-
-/// Verifies the coalesce delay is approximately 1ms (not wildly inaccurate).
-///
-/// Measures 100 consecutive sleeps of `COALESCE_DELAY` and checks the
-/// average is within a reasonable range. On Windows, `Sleep(1)` rounds
-/// up to one scheduler quantum (~1-15ms), so we allow wide tolerance.
-#[test]
-fn coalesce_delay_accuracy() {
-    let iterations = 100;
-    let start = Instant::now();
-    for _ in 0..iterations {
-        thread::sleep(COALESCE_DELAY);
-    }
-    let elapsed = start.elapsed();
-    let avg = elapsed / iterations;
-
-    eprintln!("--- coalesce delay accuracy ---");
-    eprintln!("  target:  {:?}", COALESCE_DELAY);
-    eprintln!("  average: {avg:?} ({iterations} iterations)");
-
-    // Must be at least 1ms (the requested delay).
-    assert!(
-        avg >= Duration::from_micros(500),
-        "coalesce sleep too short: avg={avg:?}, expected >= 0.5ms",
-    );
-    // Must not be absurdly long (> 50ms would destroy throughput).
-    assert!(
-        avg < Duration::from_millis(50),
-        "coalesce sleep too long: avg={avg:?}, expected < 50ms",
     );
 }
 
@@ -387,8 +354,7 @@ fn coalesce_delay_accuracy() {
 fn sustained_flood_no_oom() {
     let (pipe_reader, mut pipe_writer) = std::io::pipe().expect("pipe");
 
-    let (event_loop, terminal, tx) =
-        build_event_loop(Box::new(pipe_reader), Box::new(Vec::<u8>::new()));
+    let (event_loop, terminal, shutdown) = build_event_loop(Box::new(pipe_reader));
 
     let join = event_loop.spawn().expect("spawn event loop");
 
@@ -422,10 +388,10 @@ fn sustained_flood_no_oom() {
 
     done.store(true, Ordering::Relaxed);
     drop(pipe_writer);
-    let _ = tx.send(Msg::Shutdown);
+    shutdown.store(true, Ordering::Release);
 
     // Thread must exit within 5 seconds. If it hangs, buffers are growing
-    // unbounded or the coalesce logic is deadlocking.
+    // unbounded or the lock strategy is deadlocking.
     let join_result = join.join();
     renderer.join().expect("renderer thread");
     assert!(

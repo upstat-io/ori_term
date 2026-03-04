@@ -286,13 +286,13 @@ impl App {
             ..SpawnConfig::default()
         };
 
+        let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
+
         let mux = self.mux.as_mut().ok_or("mux backend missing")?;
         let (_tab_id, pane_id) = mux.create_tab(window_id, &config, theme)?;
 
         // Apply color scheme + user overrides to the pane's terminal palette.
-        if let Some(pane) = mux.pane(pane_id) {
-            super::apply_palette(&self.config, pane, theme);
-        }
+        mux.set_pane_theme(pane_id, theme, palette);
 
         // Discard setup notifications (not useful at init time).
         mux.discard_notifications();

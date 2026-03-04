@@ -99,7 +99,7 @@ pub enum SelectionMode {
 /// - `pivot`: other end of the initial unit (word boundary, line boundary;
 ///   same as anchor for Char mode)
 /// - `end`: current drag position (moves with mouse)
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Selection {
     pub mode: SelectionMode,
     pub anchor: SelectionPoint,

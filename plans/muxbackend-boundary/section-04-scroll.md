@@ -1,24 +1,24 @@
 ---
 section: "04"
 title: Scroll Through MuxBackend
-status: not-started
+status: complete
 goal: All scroll operations go through MuxBackend — enables daemon mode scrollback
 sections:
   - id: "04.1"
     title: Add scroll methods to MuxBackend
-    status: not-started
+    status: complete
   - id: "04.2"
     title: Add scroll PDUs to protocol
-    status: not-started
+    status: complete
   - id: "04.3"
     title: Server dispatch for scroll PDUs
-    status: not-started
+    status: complete
   - id: "04.4"
     title: Rewire GUI scroll callsites
-    status: not-started
+    status: complete
   - id: "04.5"
     title: Completion Checklist
-    status: not-started
+    status: complete
 ---
 
 # Section 04: Scroll Through MuxBackend

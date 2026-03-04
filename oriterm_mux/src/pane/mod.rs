@@ -13,7 +13,6 @@ mod mark_cursor;
 mod selection;
 mod shutdown;
 
-use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
@@ -30,34 +29,30 @@ use crate::pty::{Msg, PtyControl, PtyHandle};
 
 /// Sends input to the PTY and commands to the reader thread.
 ///
-/// Duplicated from `tab::Notifier` to keep `pane` independent of `tab`.
-/// Unified when Tab is replaced in Section 31/32.
+/// All writes flow through the `mpsc` channel to the PTY reader thread,
+/// which owns the actual PTY writer. This prevents blocking the main
+/// thread when the PTY kernel buffer is full (e.g. during flood output).
 pub struct PaneNotifier {
-    /// Direct PTY writer — bypasses the reader thread's command channel.
-    writer: std::sync::Mutex<Box<dyn io::Write + Send>>,
-    /// Channel sender for commands (shutdown) to the reader thread.
+    /// Channel sender for input and shutdown commands to the reader thread.
     tx: mpsc::Sender<Msg>,
 }
 
 impl PaneNotifier {
-    /// Create a new notifier with a direct PTY writer and command channel.
-    pub fn new(writer: Box<dyn io::Write + Send>, tx: mpsc::Sender<Msg>) -> Self {
-        Self {
-            writer: std::sync::Mutex::new(writer),
-            tx,
-        }
+    /// Create a new notifier with a command channel to the reader thread.
+    pub fn new(tx: mpsc::Sender<Msg>) -> Self {
+        Self { tx }
     }
 
     /// Send raw bytes to the PTY (keyboard input, escape responses).
+    ///
+    /// Non-blocking — enqueues via the channel. The reader thread drains
+    /// the queue and writes to the PTY fd.
     pub fn notify(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
-        if let Ok(mut w) = self.writer.lock() {
-            if let Err(e) = w.write_all(bytes) {
-                log::warn!("PTY write failed: {e}");
-            }
-            let _ = w.flush();
+        if let Err(e) = self.tx.send(Msg::Input(bytes.to_vec())) {
+            log::warn!("PTY channel send failed: {e}");
         }
     }
 
@@ -84,6 +79,8 @@ pub struct PaneParts {
     pub pty_control: PtyControl,
     /// Reader thread join handle.
     pub reader_thread: JoinHandle<()>,
+    /// Writer thread join handle.
+    pub writer_thread: JoinHandle<()>,
     /// PTY handle (child lifecycle).
     pub pty: PtyHandle,
     /// Grid dirty flag (lock-free).
@@ -112,6 +109,8 @@ pub struct Pane {
     pty_control: PtyControl,
     /// PTY reader thread join handle.
     reader_thread: Option<JoinHandle<()>>,
+    /// PTY writer thread join handle.
+    writer_thread: Option<JoinHandle<()>>,
     /// Spawned PTY (reader/writer/control taken; child remains for lifecycle).
     pty: PtyHandle,
     /// Set by reader thread when new content is available.
@@ -153,6 +152,7 @@ impl Pane {
             notifier: parts.notifier,
             pty_control: parts.pty_control,
             reader_thread: Some(parts.reader_thread),
+            writer_thread: Some(parts.writer_thread),
             pty: parts.pty,
             grid_dirty: parts.grid_dirty,
             wakeup_pending: parts.wakeup_pending,

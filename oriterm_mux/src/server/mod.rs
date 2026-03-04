@@ -14,7 +14,7 @@ mod frame_io;
 mod ipc;
 mod notify;
 mod pid_file;
-mod snapshot;
+pub(crate) mod snapshot;
 
 use std::collections::HashMap;
 use std::io::{self, Read};
@@ -24,9 +24,14 @@ use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Token, Waker};
 
+use oriterm_core::RenderableContent;
+
 use crate::id::ClientId;
 use crate::pane::Pane;
-use crate::{DecodedFrame, IdAllocator, InProcessMux, MuxNotification, MuxPdu, PaneId, WindowId};
+use crate::{
+    DecodedFrame, IdAllocator, InProcessMux, MuxNotification, MuxPdu, PaneId, PaneSnapshot,
+    WindowId,
+};
 
 use self::frame_io::ReadStatus;
 use self::notify::TargetClients;
@@ -95,6 +100,12 @@ pub struct MuxServer {
     scratch_clients: Vec<ClientId>,
     /// Reusable scratch buffer for collecting pane IDs during dispatch.
     scratch_panes: Vec<PaneId>,
+
+    // Snapshot cache (allocation reuse for GetPaneSnapshot).
+    /// Cached snapshots keyed by pane ID — buffers are reused across frames.
+    snapshot_cache: HashMap<PaneId, PaneSnapshot>,
+    /// Shared renderable-content buffer for snapshot building.
+    render_buf: RenderableContent,
 }
 
 impl MuxServer {
@@ -142,6 +153,8 @@ impl MuxServer {
             notification_buf: Vec::new(),
             scratch_clients: Vec::new(),
             scratch_panes: Vec::new(),
+            snapshot_cache: HashMap::new(),
+            render_buf: RenderableContent::default(),
         })
     }
 
@@ -187,12 +200,31 @@ impl MuxServer {
                 match event.token() {
                     LISTENER => self.accept_connections()?,
                     WAKER => { /* MuxEvent arrived — handled below */ }
-                    token => self.handle_client_event(token),
+                    token => {
+                        let client_start = Instant::now();
+                        self.handle_client_event(token);
+                        let client_elapsed = client_start.elapsed();
+                        if client_elapsed.as_millis() > 5 {
+                            log::warn!(
+                                "[DIAG] server handle_client_event took {:?}",
+                                client_elapsed
+                            );
+                        }
+                    }
                 }
             }
 
             // Drain `MuxEvent`s from PTY reader threads.
+            let drain_start = Instant::now();
             self.drain_mux_events();
+            let drain_elapsed = drain_start.elapsed();
+            let notif_count = self.notification_buf.len();
+            if notif_count > 0 || drain_elapsed.as_millis() > 2 {
+                log::info!(
+                    "[DIAG] server drain_mux_events: {notif_count} notifs, took {:?}",
+                    drain_elapsed
+                );
+            }
 
             // Check exit condition: all panes exited + no clients.
             if self.should_exit() {
@@ -324,6 +356,7 @@ impl MuxServer {
 
     /// Handle a single successfully decoded frame from a client.
     fn handle_decoded_frame(&mut self, client_id: ClientId, decoded: DecodedFrame) {
+        let dispatch_start = Instant::now();
         log::trace!(
             "{client_id}: dispatch seq={} pdu={:?}",
             decoded.seq,
@@ -346,6 +379,8 @@ impl MuxServer {
             decoded.pdu,
             &self.wakeup,
             &mut self.scratch_panes,
+            &mut self.snapshot_cache,
+            &mut self.render_buf,
         );
 
         // Purge stale subscriptions for closed panes.
@@ -385,6 +420,14 @@ impl MuxServer {
                 log::info!("shutdown flag set via IPC");
                 self.shutdown.store(true, Ordering::Release);
             }
+        }
+
+        let dispatch_elapsed = dispatch_start.elapsed();
+        if dispatch_elapsed.as_millis() > 2 {
+            log::warn!(
+                "[DIAG] server handle_decoded_frame seq={seq} total={:?}",
+                dispatch_elapsed,
+            );
         }
     }
 
@@ -480,6 +523,7 @@ impl MuxServer {
             let closed_panes = self.mux.close_window(wid);
             for &pid in &closed_panes {
                 self.panes.remove(&pid);
+                self.snapshot_cache.remove(&pid);
                 self.subscriptions.remove(&pid);
                 // Remove from all other clients' subscription sets.
                 for other_conn in self.connections.values_mut() {

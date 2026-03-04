@@ -165,36 +165,8 @@ impl App {
 
         // Mark mode: consume ALL key events (including releases) to prevent
         // leaking input to the PTY while navigating.
-        if let Some(pane_id) = self.active_pane_id() {
-            if let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(pane_id)) {
-                if pane.is_mark_mode() {
-                    if event.state == ElementState::Pressed {
-                        let action = mark_mode::handle_mark_mode_key(
-                            pane,
-                            event,
-                            self.modifiers,
-                            &self.config.behavior.word_delimiters,
-                        );
-                        match action {
-                            mark_mode::MarkAction::Handled => {
-                                if let Some(ctx) = self.focused_ctx_mut() {
-                                    ctx.dirty = true;
-                                }
-                            }
-                            mark_mode::MarkAction::Exit { copy } => {
-                                if copy {
-                                    self.copy_selection();
-                                }
-                                if let Some(ctx) = self.focused_ctx_mut() {
-                                    ctx.dirty = true;
-                                }
-                            }
-                            mark_mode::MarkAction::Ignored => {}
-                        }
-                    }
-                    return;
-                }
-            }
+        if self.try_dispatch_mark_mode(event) {
+            return;
         }
 
         // Keybinding dispatch: look up the key+modifiers in the binding table.
@@ -215,6 +187,80 @@ impl App {
 
         // Normal key encoding to PTY.
         self.encode_key_to_pty(event);
+    }
+
+    /// Dispatch a key event to mark mode if active.
+    ///
+    /// Returns `true` if mark mode consumed the event (caller should return).
+    fn try_dispatch_mark_mode(&mut self, event: &winit::event::KeyEvent) -> bool {
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        if !self.is_mark_mode(pane_id) {
+            return false;
+        }
+        if event.state == ElementState::Pressed {
+            // Build SnapshotGrid from the current snapshot.
+            let mux = self.mux.as_mut().expect("mux checked at pane_id");
+            if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
+                mux.refresh_pane_snapshot(pane_id);
+            }
+            let Some(cursor) = self.pane_mark_cursor(pane_id) else {
+                return true;
+            };
+            let selection = self.pane_selection(pane_id).copied();
+            let result = {
+                let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id))
+                else {
+                    return true;
+                };
+                let grid = super::snapshot_grid::SnapshotGrid::new(snapshot);
+                mark_mode::handle_mark_mode_key(
+                    &grid,
+                    cursor,
+                    selection.as_ref(),
+                    event,
+                    self.modifiers,
+                    &self.config.behavior.word_delimiters,
+                )
+            };
+
+            // Apply state mutations from the result.
+            if let Some(mc) = result.new_cursor {
+                self.mark_cursors.insert(pane_id, mc);
+            }
+            if let Some(sel_update) = result.new_selection {
+                match sel_update {
+                    mark_mode::SelectionUpdate::Set(sel) => {
+                        self.set_pane_selection(pane_id, sel);
+                    }
+                    mark_mode::SelectionUpdate::Clear => {
+                        self.clear_pane_selection(pane_id);
+                    }
+                }
+            }
+
+            match result.action {
+                mark_mode::MarkAction::Handled { scroll_delta } => {
+                    if let Some(delta) = scroll_delta {
+                        if let Some(mux) = self.mux.as_mut() {
+                            mux.scroll_display(pane_id, delta);
+                        }
+                    }
+                }
+                mark_mode::MarkAction::Exit { copy } => {
+                    self.exit_mark_mode(pane_id);
+                    if copy {
+                        self.copy_selection();
+                    }
+                }
+                mark_mode::MarkAction::Ignored => {}
+            }
+            if let Some(ctx) = self.focused_ctx_mut() {
+                ctx.dirty = true;
+            }
+        }
+        true
     }
 
     /// Encode a key event and send the result to the PTY.
@@ -245,8 +291,8 @@ impl App {
         });
 
         if !bytes.is_empty() {
-            if let Some(pane) = self.active_pane() {
-                pane.scroll_to_bottom();
+            if let Some(mux) = self.mux.as_mut() {
+                mux.scroll_to_bottom(pane_id);
             }
             self.write_pane_input(pane_id, &bytes);
             self.cursor_blink.reset();
@@ -258,12 +304,16 @@ impl App {
 
     /// Scroll by one page in the given direction.
     fn execute_scroll(&mut self, up: bool) -> bool {
-        if let Some(pane) = self.active_pane() {
-            let term = pane.terminal().lock();
-            let lines = term.grid().lines() as isize;
-            drop(term);
-            let scroll_lines = if up { lines } else { -lines };
-            pane.scroll_display(scroll_lines);
+        if let Some(pane_id) = self.active_pane_id() {
+            let lines = self
+                .mux
+                .as_ref()
+                .and_then(|m| m.pane_snapshot(pane_id))
+                .map_or(24, |s| s.cells.len() as isize);
+            let delta = if up { lines } else { -lines };
+            if let Some(mux) = self.mux.as_mut() {
+                mux.scroll_display(pane_id, delta);
+            }
         }
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
@@ -336,8 +386,8 @@ impl App {
             return;
         };
         if !text.is_empty() {
-            if let Some(pane) = self.active_pane() {
-                pane.scroll_to_bottom();
+            if let Some(mux) = self.mux.as_mut() {
+                mux.scroll_to_bottom(pane_id);
             }
             self.write_pane_input(pane_id, text.as_bytes());
             self.cursor_blink.reset();
@@ -395,10 +445,15 @@ impl App {
             context_menu::ContextAction::SelectScheme(name) => {
                 if let Some(scheme) = crate::scheme::resolve_scheme(&name) {
                     let palette = crate::scheme::palette_from_scheme(&scheme);
-                    if let Some(pane) = self.active_pane() {
-                        let mut term = pane.terminal().lock();
-                        *term.palette_mut() = palette;
-                        term.grid_mut().dirty_mut().mark_all();
+                    let theme = self
+                        .config
+                        .colors
+                        .resolve_theme(crate::platform::theme::system_theme);
+                    // Apply to all panes via MuxBackend.
+                    if let Some(mux) = self.mux.as_mut() {
+                        for pane_id in mux.pane_ids() {
+                            mux.set_pane_theme(pane_id, theme, palette.clone());
+                        }
                     }
                     self.config.colors.scheme = name;
                     log::info!("dropdown menu: switched to scheme '{}'", scheme.name);
@@ -427,8 +482,17 @@ impl App {
                 self.paste_from_clipboard();
             }
             context_menu::ContextAction::SelectAll => {
-                if let Some(pane) = self.active_pane_mut() {
-                    mark_mode::select_all(pane);
+                if let Some(pane_id) = self.active_pane_id() {
+                    // Build SnapshotGrid for select_all.
+                    let mux = self.mux.as_mut().expect("mux checked at pane_id");
+                    if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
+                        mux.refresh_pane_snapshot(pane_id);
+                    }
+                    if let Some(snap) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) {
+                        let grid = super::snapshot_grid::SnapshotGrid::new(snap);
+                        let sel = mark_mode::select_all(&grid);
+                        self.set_pane_selection(pane_id, sel);
+                    }
                 }
             }
             context_menu::ContextAction::NewTab => {

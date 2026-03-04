@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use oriterm_core::Theme;
+use oriterm_core::selection::{self, Selection};
 
 use super::MuxBackend;
 use crate::domain::SpawnConfig;
@@ -19,7 +20,8 @@ use crate::layout::{Rect, SplitDirection};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
 use crate::registry::{PaneEntry, SessionRegistry};
-use crate::{DomainId, PaneId, TabId, WindowId};
+use crate::server::snapshot::build_snapshot;
+use crate::{DomainId, PaneId, PaneSnapshot, TabId, WindowId};
 
 /// In-process mux backend for single-process mode.
 ///
@@ -29,6 +31,8 @@ pub struct EmbeddedMux {
     mux: InProcessMux,
     panes: HashMap<PaneId, Pane>,
     wakeup: Arc<dyn Fn() + Send + Sync>,
+    snapshot_cache: HashMap<PaneId, PaneSnapshot>,
+    snapshot_dirty: HashSet<PaneId>,
 }
 
 impl EmbeddedMux {
@@ -40,6 +44,8 @@ impl EmbeddedMux {
             mux: InProcessMux::new(),
             panes: HashMap::new(),
             wakeup,
+            snapshot_cache: HashMap::new(),
+            snapshot_dirty: HashSet::new(),
         }
     }
 }
@@ -47,6 +53,14 @@ impl EmbeddedMux {
 impl MuxBackend for EmbeddedMux {
     fn poll_events(&mut self) {
         self.mux.poll_events(&mut self.panes);
+
+        // Mark panes dirty when the PTY reader thread has set grid_dirty.
+        for (&pane_id, pane) in &self.panes {
+            if pane.grid_dirty() {
+                self.snapshot_dirty.insert(pane_id);
+                pane.clear_grid_dirty();
+            }
+        }
     }
 
     fn drain_notifications(&mut self, out: &mut Vec<MuxNotification>) {
@@ -214,22 +228,185 @@ impl MuxBackend for EmbeddedMux {
         self.mux.raise_floating_pane(tab_id, pane_id);
     }
 
+    fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.resize_grid(rows, cols);
+            pane.resize_pty(rows, cols);
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn pane_mode(&self, pane_id: PaneId) -> Option<u32> {
+        self.panes.get(&pane_id).map(Pane::mode)
+    }
+
+    fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            let mut term = pane.terminal().lock();
+            term.set_theme(theme);
+            *term.palette_mut() = palette;
+            term.grid_mut().dirty_mut().mark_all();
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.terminal().lock().set_cursor_shape(shape);
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn mark_all_dirty(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.terminal().lock().grid_mut().dirty_mut().mark_all();
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn open_search(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.open_search();
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn close_search(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.close_search();
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn search_set_query(&mut self, pane_id: PaneId, query: String) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            let grid_ref = pane.terminal().clone();
+            if let Some(search) = pane.search_mut() {
+                let term = grid_ref.lock();
+                search.set_query(query, term.grid());
+            }
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn search_next_match(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            if let Some(search) = pane.search_mut() {
+                search.next_match();
+            }
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn search_prev_match(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            if let Some(search) = pane.search_mut() {
+                search.prev_match();
+            }
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn is_search_active(&self, pane_id: PaneId) -> bool {
+        self.panes.get(&pane_id).is_some_and(Pane::is_search_active)
+    }
+
+    fn extract_text(&mut self, pane_id: PaneId, sel: &Selection) -> Option<String> {
+        let pane = self.panes.get(&pane_id)?;
+        let term = pane.terminal().lock();
+        let text = selection::extract_text(term.grid(), sel);
+        (!text.is_empty()).then_some(text)
+    }
+
+    fn extract_html(
+        &mut self,
+        pane_id: PaneId,
+        sel: &Selection,
+        font_family: &str,
+        font_size: f32,
+    ) -> Option<(String, String)> {
+        let pane = self.panes.get(&pane_id)?;
+        let term = pane.terminal().lock();
+        let (html, text) = selection::extract_html_with_text(
+            term.grid(),
+            sel,
+            term.palette(),
+            font_family,
+            font_size,
+        );
+        (!text.is_empty()).then_some((html, text))
+    }
+
+    fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.scroll_display(delta);
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn scroll_to_bottom(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get(&pane_id) {
+            pane.scroll_to_bottom();
+        }
+        self.snapshot_dirty.insert(pane_id);
+    }
+
+    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) -> bool {
+        let scrolled = self
+            .panes
+            .get(&pane_id)
+            .is_some_and(Pane::scroll_to_previous_prompt);
+        if scrolled {
+            self.snapshot_dirty.insert(pane_id);
+        }
+        scrolled
+    }
+
+    fn scroll_to_next_prompt(&mut self, pane_id: PaneId) -> bool {
+        let scrolled = self
+            .panes
+            .get(&pane_id)
+            .is_some_and(Pane::scroll_to_next_prompt);
+        if scrolled {
+            self.snapshot_dirty.insert(pane_id);
+        }
+        scrolled
+    }
+
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]) {
         if let Some(pane) = self.panes.get(&pane_id) {
             pane.write_input(data);
         }
     }
 
-    fn pane(&self, pane_id: PaneId) -> Option<&Pane> {
-        self.panes.get(&pane_id)
+    fn set_bell(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.set_bell();
+        }
     }
 
-    fn pane_mut(&mut self, pane_id: PaneId) -> Option<&mut Pane> {
-        self.panes.get_mut(&pane_id)
+    fn clear_bell(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.clear_bell();
+        }
     }
 
-    fn remove_pane(&mut self, pane_id: PaneId) -> Option<Pane> {
-        self.panes.remove(&pane_id)
+    fn cleanup_closed_pane(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.remove(&pane_id) {
+            self.snapshot_cache.remove(&pane_id);
+            self.snapshot_dirty.remove(&pane_id);
+            // Drop on a background thread to avoid blocking the event loop.
+            // Pane destruction involves PTY kill, reader thread join, and child reap.
+            std::thread::spawn(move || drop(pane));
+        }
+    }
+
+    fn select_command_output(&self, pane_id: PaneId) -> Option<Selection> {
+        self.panes.get(&pane_id)?.command_output_selection()
+    }
+
+    fn select_command_input(&self, pane_id: PaneId) -> Option<Selection> {
+        self.panes.get(&pane_id)?.command_input_selection()
     }
 
     fn pane_ids(&self) -> Vec<PaneId> {
@@ -246,6 +423,26 @@ impl MuxBackend for EmbeddedMux {
 
     fn is_daemon_mode(&self) -> bool {
         false
+    }
+
+    fn pane_snapshot(&self, pane_id: PaneId) -> Option<&PaneSnapshot> {
+        self.snapshot_cache.get(&pane_id)
+    }
+
+    fn is_pane_snapshot_dirty(&self, pane_id: PaneId) -> bool {
+        self.snapshot_dirty.contains(&pane_id)
+    }
+
+    fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot> {
+        let pane = self.panes.get(&pane_id)?;
+        let snapshot = build_snapshot(pane);
+        self.snapshot_cache.insert(pane_id, snapshot);
+        self.snapshot_dirty.remove(&pane_id);
+        self.snapshot_cache.get(&pane_id)
+    }
+
+    fn clear_pane_snapshot_dirty(&mut self, pane_id: PaneId) {
+        self.snapshot_dirty.remove(&pane_id);
     }
 }
 

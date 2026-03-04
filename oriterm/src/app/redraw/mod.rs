@@ -20,8 +20,8 @@ use super::mouse_selection::{self, GridCtx};
 use crate::font::UiFontMeasurer;
 use crate::gpu::state::GpuState;
 use crate::gpu::{
-    FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize, extract_frame,
-    extract_frame_from_snapshot, extract_frame_from_snapshot_into, extract_frame_into,
+    FrameSearch, FrameSelection, MarkCursorOverride, SurfaceError, ViewportSize,
+    extract_frame_from_snapshot, extract_frame_from_snapshot_into,
 };
 
 impl App {
@@ -57,6 +57,11 @@ impl App {
             return;
         };
 
+        // Copy selection before the render block (where self.renderer is
+        // mutably borrowed, preventing immutable self borrows).
+        let pane_sel = self.pane_selection(pane_id).copied();
+        let pane_mc = self.pane_mark_cursor(pane_id);
+
         let (render_result, blinking_now) = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw: no gpu");
@@ -82,41 +87,38 @@ impl App {
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
             let mux = self.mux.as_mut().expect("mux checked at pane_id");
-            let daemon_mode = mux.is_daemon_mode();
 
-            // Extract phase: daemon mode uses snapshot wire data; embedded
-            // mode locks the local terminal.
-            if daemon_mode {
-                if mux.is_pane_snapshot_dirty(pane_id) {
-                    mux.refresh_pane_snapshot(pane_id);
-                }
-                let Some(snapshot) = mux.pane_snapshot(pane_id) else {
-                    log::warn!("redraw: no snapshot for pane {pane_id:?}");
-                    return;
-                };
-                match &mut ctx.frame {
-                    Some(existing) => {
-                        extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
-                    }
-                    slot @ None => {
-                        *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
-                    }
-                }
-                mux.clear_pane_snapshot_dirty(pane_id);
-            } else {
-                let Some(pane) = mux.pane(pane_id) else {
-                    log::warn!("redraw: no active pane");
-                    return;
-                };
-                match &mut ctx.frame {
-                    Some(existing) => {
-                        extract_frame_into(pane.terminal(), existing, viewport, cell);
-                    }
-                    slot @ None => {
-                        *slot = Some(extract_frame(pane.terminal(), viewport, cell));
-                    }
+            // Extract phase: always snapshot-based (both embedded and daemon).
+            let snap_is_none = mux.pane_snapshot(pane_id).is_none();
+            let snap_dirty = mux.is_pane_snapshot_dirty(pane_id);
+            let snap_needed = snap_is_none || snap_dirty;
+            log::info!(
+                "[DIAG] redraw: pane={pane_id:?} snap_none={snap_is_none} snap_dirty={snap_dirty} snap_needed={snap_needed}"
+            );
+            if snap_needed {
+                let snap_start = Instant::now();
+                mux.refresh_pane_snapshot(pane_id);
+                let snap_elapsed = snap_start.elapsed();
+                if snap_elapsed.as_millis() > 5 {
+                    log::warn!("[DIAG] refresh_pane_snapshot took {:?}", snap_elapsed);
                 }
             }
+            let Some(snapshot) = mux.pane_snapshot(pane_id) else {
+                log::warn!("redraw: no snapshot for pane {pane_id:?}");
+                // Keep trying on subsequent ticks. Without this, a transient
+                // snapshot miss can clear `dirty` and stall visible updates.
+                ctx.dirty = true;
+                return;
+            };
+            match &mut ctx.frame {
+                Some(existing) => {
+                    extract_frame_from_snapshot_into(snapshot, existing, viewport, cell);
+                }
+                slot @ None => {
+                    *slot = Some(extract_frame_from_snapshot(snapshot, viewport, cell));
+                }
+            }
+            mux.clear_pane_snapshot_dirty(pane_id);
 
             let frame = ctx.frame.as_mut().expect("frame just assigned");
 
@@ -131,26 +133,27 @@ impl App {
                 preedit::overlay_preedit_cells(&self.ime.preedit, &mut frame.content, cols);
             }
 
-            // Annotate frame with pane-level state (selection, search, mark
-            // cursor). In daemon mode these are deferred — the daemon owns
-            // pane state, so selection/search/mark are not yet available.
-            if !daemon_mode {
+            // Annotate frame with pane-level state (mark cursor, search)
+            // and client-side selection from App state.
+            let base = frame.content.stable_row_base;
+            // Mark cursor from App state (copied before render block).
+            frame.mark_cursor = pane_mc.and_then(|mc| {
+                let (line, col) = mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
+                Some(MarkCursorOverride {
+                    line,
+                    column: Column(col),
+                    shape: CursorShape::HollowBlock,
+                })
+            });
+            // Search from snapshot.
+            {
                 let mux = self.mux.as_ref().expect("mux checked");
-                if let Some(pane) = mux.pane(pane_id) {
-                    frame.mark_cursor = pane.mark_cursor().and_then(|mc| {
-                        let (line, col) =
-                            mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
-                        Some(MarkCursorOverride {
-                            line,
-                            column: Column(col),
-                            shape: CursorShape::HollowBlock,
-                        })
-                    });
-                    let base = frame.content.stable_row_base;
-                    frame.selection = pane.selection().map(|sel| FrameSelection::new(sel, base));
-                    frame.search = pane.search().map(|s| FrameSearch::new(s, base));
-                }
+                frame.search = mux
+                    .pane_snapshot(pane_id)
+                    .and_then(FrameSearch::from_snapshot);
             }
+            // Selection lives on App, not Pane (copied before render block).
+            frame.selection = pane_sel.map(|sel| FrameSelection::new(&sel, base));
 
             // Compute hovered cell for hyperlink underline rendering.
             let cell_metrics = renderer.cell_metrics();

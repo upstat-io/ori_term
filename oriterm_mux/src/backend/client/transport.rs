@@ -147,20 +147,24 @@ impl ClientTransport {
         }
 
         let seq = self.alloc_seq();
+        let pdu_type = pdu.msg_type();
         let (reply_tx, reply_rx) = mpsc::channel();
 
         let tx = self
             .send_tx
             .as_ref()
             .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "transport shut down"))?;
+        let send_start = Instant::now();
         tx.send(SendRequest {
             seq,
             pdu,
             reply_tx: Some(reply_tx),
         })
         .map_err(|_send_err| io::Error::new(io::ErrorKind::BrokenPipe, "reader thread gone"))?;
+        let send_elapsed = send_start.elapsed();
 
-        match reply_rx.recv_timeout(RPC_TIMEOUT) {
+        let wait_start = Instant::now();
+        let result = match reply_rx.recv_timeout(RPC_TIMEOUT) {
             Ok(MuxPdu::Error { message }) => Err(io::Error::other(message)),
             Ok(response) => Ok(response),
             Err(mpsc::RecvTimeoutError::Timeout) => Err(io::Error::new(
@@ -171,7 +175,16 @@ impl ClientTransport {
                 io::ErrorKind::BrokenPipe,
                 "reply channel disconnected",
             )),
+        };
+        let wait_elapsed = wait_start.elapsed();
+        if wait_elapsed.as_millis() > 5 {
+            log::warn!(
+                "[DIAG] transport.rpc seq={seq} type={pdu_type:?}: \
+                 send={send_elapsed:?} wait={wait_elapsed:?} ok={}",
+                result.is_ok()
+            );
         }
+        result
     }
 
     /// Send a message without waiting for a response.
@@ -328,6 +341,10 @@ fn reader_loop(
                     }
                 } else if let Some(reply_tx) = pending.remove(&seq) {
                     // Response to a pending RPC.
+                    log::trace!(
+                        "[DIAG] reader_loop: forwarding response seq={seq}, pending_left={}",
+                        pending.len()
+                    );
                     let _ = reply_tx.send(pdu);
                 } else {
                     log::warn!(

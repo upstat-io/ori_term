@@ -31,13 +31,23 @@ impl App {
         }
 
         // 1. Process incoming MuxEvents from PTY reader threads.
+        let poll_start = std::time::Instant::now();
         mux.poll_events();
+        let poll_elapsed = poll_start.elapsed();
+        if poll_elapsed.as_millis() > 2 {
+            log::warn!("[DIAG] mux.poll_events() took {:?}", poll_elapsed);
+        }
 
         // 2. Drain notifications into our reusable buffer.
         mux.drain_notifications(&mut self.notification_buf);
         if self.notification_buf.is_empty() {
             return;
         }
+
+        log::info!(
+            "[DIAG] pump: {} notifications drained",
+            self.notification_buf.len()
+        );
 
         // 3. Handle each notification.
         self.with_drained_notifications(Self::handle_mux_notification);
@@ -47,9 +57,10 @@ impl App {
     fn handle_mux_notification(&mut self, notification: MuxNotification) {
         match notification {
             MuxNotification::PaneDirty(id) => {
-                if let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(id)) {
-                    pane.check_selection_invalidation();
-                }
+                // Invalidate client-side selection when terminal content changes.
+                // New output can shift scrollback, making selection coordinates stale.
+                self.clear_pane_selection(id);
+
                 // Only invalidate URL hover when the dirty pane is focused.
                 // Background shell output in other panes shouldn't kill the
                 // URL highlight under the cursor.
@@ -64,11 +75,14 @@ impl App {
                 }
             }
             MuxNotification::PaneClosed(id) => {
-                // Remove the pane from the backend. Drop (PTY kill + reader
-                // thread join + child reap) runs on a background thread
-                // to avoid blocking the event loop.
-                if let Some(pane) = self.mux.as_mut().and_then(|m| m.remove_pane(id)) {
-                    super::defer_pane_drop(pane);
+                // Clean up client-side state for this pane.
+                self.pane_selections.remove(&id);
+                self.mark_cursors.remove(&id);
+
+                // Clean up backend-side resources (PTY kill + reader thread
+                // join + child reap on a background thread in embedded mode).
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.cleanup_closed_pane(id);
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.pane_cache.remove(id);
@@ -118,8 +132,8 @@ impl App {
                 self.handle_command_complete(pane_id, duration);
             }
             MuxNotification::Alert(id) => {
-                if let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(id)) {
-                    pane.set_bell();
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.set_bell(id);
                 }
                 if let Some(idx) = self.tab_index_for_pane(id) {
                     if let Some(ctx) = self.focused_ctx_mut() {
@@ -196,12 +210,17 @@ impl App {
         let title = self
             .mux
             .as_ref()
-            .and_then(|m| m.pane(pane_id))
-            .map_or("Command finished", |p| {
-                let t = p.effective_title();
-                if t.is_empty() { "Command finished" } else { t }
-            })
-            .to_owned();
+            .and_then(|m| m.pane_snapshot(pane_id))
+            .map_or_else(
+                || "Command finished".to_owned(),
+                |s| {
+                    if s.title.is_empty() {
+                        "Command finished".to_owned()
+                    } else {
+                        s.title.clone()
+                    }
+                },
+            );
         let body = format_duration_body(duration);
         notify::send(&title, &body);
     }

@@ -533,7 +533,7 @@ fn sample_snapshot() -> PaneSnapshot {
                     bg: WireRgb { r: 0, g: 0, b: 0 },
                     flags: 0,
                     underline_color: None,
-                    has_hyperlink: false,
+                    hyperlink_uri: None,
                     zerowidth: vec![],
                 },
                 WireCell {
@@ -550,7 +550,7 @@ fn sample_snapshot() -> PaneSnapshot {
                     },
                     flags: 0x0100, // WIDE_CHAR
                     underline_color: None,
-                    has_hyperlink: false,
+                    hyperlink_uri: None,
                     zerowidth: vec![],
                 },
             ],
@@ -564,7 +564,7 @@ fn sample_snapshot() -> PaneSnapshot {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0x0001 | 0x0004, // BOLD | ITALIC
                 underline_color: None,
-                has_hyperlink: false,
+                hyperlink_uri: None,
                 zerowidth: vec!['\u{0301}'], // combining acute accent
             }],
         ],
@@ -576,9 +576,18 @@ fn sample_snapshot() -> PaneSnapshot {
         },
         palette: (0..270).map(|i| [(i % 256) as u8, 0, 0]).collect(),
         title: "bash — ~/projects".into(),
+        icon_name: None,
+        cwd: None,
         modes: 0x0201, // SHOW_CURSOR | ALT_SCREEN
         scrollback_len: 1500,
         display_offset: 0,
+        stable_row_base: 1500,
+        cols: 2,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     }
 }
 
@@ -614,7 +623,7 @@ fn snapshot_with_cjk_emoji_combining() {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0x0100,
                 underline_color: None,
-                has_hyperlink: false,
+                hyperlink_uri: None,
                 zerowidth: vec![],
             },
             // Emoji (🦀).
@@ -628,7 +637,7 @@ fn snapshot_with_cjk_emoji_combining() {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0x0100,
                 underline_color: None,
-                has_hyperlink: false,
+                hyperlink_uri: None,
                 zerowidth: vec![],
             },
             // Combining marks (e + combining acute + combining tilde).
@@ -642,7 +651,7 @@ fn snapshot_with_cjk_emoji_combining() {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: 0,
                 underline_color: None,
-                has_hyperlink: false,
+                hyperlink_uri: None,
                 zerowidth: vec!['\u{0301}', '\u{0303}'],
             },
         ]],
@@ -654,9 +663,18 @@ fn snapshot_with_cjk_emoji_combining() {
         },
         palette: vec![[0, 0, 0]; 270],
         title: "unicode test 🚀".into(),
+        icon_name: None,
+        cwd: None,
         modes: 0,
         scrollback_len: 0,
         display_offset: 0,
+        stable_row_base: 0,
+        cols: 3,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     };
 
     roundtrip(32, MuxPdu::PaneSnapshotResp { snapshot });
@@ -1062,7 +1080,7 @@ fn roundtrip_large_pane_snapshot() {
                 bg: WireRgb { r: 0, g: 0, b: 0 },
                 flags: if c % 10 == 0 { 0x0001 } else { 0 }, // every 10th cell bold
                 underline_color: None,
-                has_hyperlink: false,
+                hyperlink_uri: None,
                 zerowidth: vec![],
             });
         }
@@ -1079,9 +1097,18 @@ fn roundtrip_large_pane_snapshot() {
         },
         palette: (0..270).map(|i| [(i % 256) as u8, 0, 0]).collect(),
         title: "large snapshot test".into(),
+        icon_name: None,
+        cwd: None,
         modes: 0x0201,
         scrollback_len: 10_000,
         display_offset: 50,
+        stable_row_base: 9_950,
+        cols: cols as u16,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     };
 
     let frame = roundtrip(

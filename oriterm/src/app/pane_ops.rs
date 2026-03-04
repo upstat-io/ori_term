@@ -86,12 +86,13 @@ impl App {
             ..SpawnConfig::default()
         };
 
+        let palette =
+            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
+
         let Some(mux) = &mut self.mux else { return };
         match mux.split_pane(tab_id, source_pane_id, direction, &config, theme) {
             Ok(new_pane_id) => {
-                if let Some(pane) = mux.pane(new_pane_id) {
-                    super::apply_palette(&self.config, pane, theme);
-                }
+                mux.set_pane_theme(new_pane_id, theme, palette);
                 log::info!("split pane: {source_pane_id:?} -> {new_pane_id:?} ({direction:?})");
             }
             Err(e) => {
@@ -176,18 +177,15 @@ impl App {
     /// each pane's terminal grid and PTY match their pixel allocation.
     /// For single-pane tabs, resizes the active pane to fill the full grid
     /// area (the layout engine returns `None` for single-pane tabs).
-    pub(super) fn resize_all_panes(&self) {
+    pub(super) fn resize_all_panes(&mut self) {
         let Some((layouts, _)) = self.compute_pane_layouts() else {
             // Single pane — resize it to fill the full grid area.
             self.resize_single_pane();
             return;
         };
-        let Some(mux) = self.mux.as_ref() else { return };
+        let Some(mux) = self.mux.as_mut() else { return };
         for layout in &layouts {
-            if let Some(pane) = mux.pane(layout.pane_id) {
-                pane.resize_grid(layout.rows, layout.cols);
-                pane.resize_pty(layout.rows, layout.cols);
-            }
+            mux.resize_pane_grid(layout.pane_id, layout.rows, layout.cols);
         }
     }
 
@@ -195,7 +193,7 @@ impl App {
     ///
     /// Computes rows/cols from the grid bounds and cell metrics, matching
     /// the same calculation `sync_grid_layout` uses during window resize.
-    fn resize_single_pane(&self) {
+    fn resize_single_pane(&mut self) {
         let Some(ctx) = self.focused_ctx() else {
             return;
         };
@@ -208,9 +206,10 @@ impl App {
         let cell = renderer.cell_metrics();
         let cols = cell.columns(bounds.width() as u32).max(1) as u16;
         let rows = cell.rows(bounds.height() as u32).max(1) as u16;
-        if let Some(pane) = self.active_pane() {
-            pane.resize_grid(rows, cols);
-            pane.resize_pty(rows, cols);
+        if let Some(pane_id) = self.active_pane_id() {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.resize_pane_grid(pane_id, rows, cols);
+            }
         }
     }
 
@@ -324,12 +323,13 @@ impl App {
             ..SpawnConfig::default()
         };
 
+        let palette =
+            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
+
         let Some(mux) = &mut self.mux else { return };
         match mux.spawn_floating_pane(tab_id, &config, theme, &available) {
             Ok(new_pane_id) => {
-                if let Some(pane) = mux.pane(new_pane_id) {
-                    super::apply_palette(&self.config, pane, theme);
-                }
+                mux.set_pane_theme(new_pane_id, theme, palette);
                 log::info!("spawn floating pane: {new_pane_id:?}");
             }
             Err(e) => {
@@ -438,14 +438,11 @@ impl App {
     /// Uses half the source pane's dimensions in the split direction.
     /// The actual size is refined when layout computes the real rects.
     fn estimate_split_size(&self, source: PaneId, direction: SplitDirection) -> (u16, u16) {
-        let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(source)) else {
+        let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(source)) else {
             return (24, 80);
         };
-        let term = pane.terminal().lock();
-        let grid = term.grid();
-        let rows = grid.lines() as u16;
-        let cols = grid.cols() as u16;
-        drop(term);
+        let rows = snapshot.cells.len() as u16;
+        let cols = snapshot.cols;
 
         match direction {
             SplitDirection::Horizontal => (rows / 2, cols),

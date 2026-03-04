@@ -8,7 +8,8 @@
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::search::MatchType;
 use oriterm_core::selection::{Selection, SelectionBounds};
-use oriterm_core::{Column, CursorShape, RenderableContent, Rgb, SearchMatch, SearchState};
+use oriterm_core::{Column, CursorShape, RenderableContent, Rgb, SearchMatch};
+use oriterm_mux::PaneSnapshot;
 
 use crate::font::CellMetrics;
 use crate::url_detect::UrlSegment;
@@ -46,8 +47,8 @@ impl FrameSelection {
 /// Search rendering snapshot for one frame.
 ///
 /// Contains the match data and viewport mapping needed to classify cells
-/// for search highlighting. Built from `SearchState` without cloning the
-/// full state — copies the match list for frame-local access.
+/// for search highlighting. Built from `PaneSnapshot` search fields —
+/// copies the match list for frame-local access.
 #[derive(Debug)]
 pub struct FrameSearch {
     /// Matches from the search state (copied per frame).
@@ -63,15 +64,34 @@ pub struct FrameSearch {
 }
 
 impl FrameSearch {
-    /// Build from an active search state and the viewport's stable row base.
-    pub fn new(state: &SearchState, stable_row_base: u64) -> Self {
-        Self {
-            matches: state.matches().to_vec(),
-            focused: state.focused_index(),
-            base_stable: stable_row_base,
-            match_count: state.matches().len(),
-            query: state.query().to_string(),
+    /// Build from snapshot search data.
+    ///
+    /// Converts wire-format search matches into `SearchMatch` values
+    /// for client-side highlight rendering. Used in daemon mode where
+    /// search state lives on the server.
+    pub fn from_snapshot(snapshot: &PaneSnapshot) -> Option<Self> {
+        if !snapshot.search_active {
+            return None;
         }
+        let matches: Vec<SearchMatch> = snapshot
+            .search_matches
+            .iter()
+            .map(|m| SearchMatch {
+                start_row: StableRowIndex(m.start_row),
+                start_col: m.start_col as usize,
+                end_row: StableRowIndex(m.end_row),
+                end_col: m.end_col as usize,
+            })
+            .collect();
+        let match_count = matches.len();
+        let focused = snapshot.search_focused.map_or(0, |f| f as usize);
+        Some(Self {
+            matches,
+            focused,
+            base_stable: snapshot.stable_row_base,
+            match_count,
+            query: snapshot.search_query.clone(),
+        })
     }
 
     /// Classify a visible cell for search match highlighting.

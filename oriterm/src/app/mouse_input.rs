@@ -125,7 +125,10 @@ impl App {
 
     /// Open the grid right-click context menu at the cursor position.
     fn open_grid_context_menu(&mut self) {
-        let has_sel = self.active_pane().is_some_and(|p| p.selection().is_some());
+        let has_sel = self
+            .active_pane_id()
+            .and_then(|id| self.pane_selection(id))
+            .is_some();
         let (entries, state) = context_menu::build_grid_context_menu(has_sel);
         let style = MenuStyle::from_theme(&self.ui_theme);
         let widget = MenuWidget::new(entries).with_style(style);
@@ -158,8 +161,6 @@ impl App {
         let Some(pane_id) = self.active_pane_id() else {
             return;
         };
-        // Borrow split: inline window lookup borrows self.windows immutably,
-        // leaving self.mux available for mutable pane access.
         let (Some(wctx), Some(renderer)) = (
             self.focused_window_id.and_then(|id| self.windows.get(&id)),
             self.renderer.as_ref(),
@@ -171,13 +172,40 @@ impl App {
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };
-        let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(pane_id)) else {
+
+        // Build SnapshotGrid from the current snapshot.
+        let mux = self.mux.as_mut().expect("mux checked at pane_id");
+        if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
+            mux.refresh_pane_snapshot(pane_id);
+        }
+        let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) else {
             return;
         };
-        if mouse_selection::handle_press(&mut self.mouse, pane, &ctx, pos, self.modifiers) {
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+        let grid = super::snapshot_grid::SnapshotGrid::new(snapshot);
+        let existing_mode = self.pane_selection(pane_id).map(|s| s.mode);
+
+        let Some(action) = mouse_selection::handle_press(
+            &mut self.mouse,
+            &grid,
+            &ctx,
+            pos,
+            self.modifiers,
+            existing_mode,
+        ) else {
+            return;
+        };
+
+        // Apply the action to App-owned selection state.
+        match action {
+            mouse_selection::PressAction::Extend(point) => {
+                self.update_pane_selection_end(pane_id, point);
             }
+            mouse_selection::PressAction::New(selection) => {
+                self.set_pane_selection(pane_id, selection);
+            }
+        }
+        if let Some(ctx) = self.focused_ctx_mut() {
+            ctx.dirty = true;
         }
     }
 
@@ -197,12 +225,59 @@ impl App {
             cell: renderer.cell_metrics(),
             word_delimiters: &self.config.behavior.word_delimiters,
         };
-        let Some(pane) = self.mux.as_mut().and_then(|m| m.pane_mut(pane_id)) else {
+
+        // Build SnapshotGrid from the current snapshot.
+        let mux = self.mux.as_mut().expect("mux checked at pane_id");
+        if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
+            mux.refresh_pane_snapshot(pane_id);
+        }
+        let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) else {
             return;
         };
-        if mouse_selection::handle_drag(&mut self.mouse, pane, &ctx, position) {
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.dirty = true;
+        let grid = super::snapshot_grid::SnapshotGrid::new(snapshot);
+        let selection = self.pane_selection(pane_id).copied();
+
+        let result = mouse_selection::handle_drag(
+            &mut self.mouse,
+            &grid,
+            selection.as_ref(),
+            &ctx,
+            position,
+        );
+
+        match result {
+            mouse_selection::DragResult::None => {}
+            mouse_selection::DragResult::Updated(endpoint) => {
+                self.update_pane_selection_end(pane_id, endpoint);
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
+            }
+            mouse_selection::DragResult::NeedsAutoScroll {
+                delta,
+                scrolling_up,
+            } => {
+                // Apply scroll through MuxBackend.
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.scroll_display(pane_id, delta);
+                }
+                // Refresh snapshot after scroll, then compute endpoint.
+                if let Some(mux) = self.mux.as_mut() {
+                    mux.refresh_pane_snapshot(pane_id);
+                }
+                if let Some(snap) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) {
+                    let grid = super::snapshot_grid::SnapshotGrid::new(snap);
+                    let endpoint = mouse_selection::helpers::compute_auto_scroll_endpoint(
+                        &grid,
+                        position,
+                        &ctx,
+                        scrolling_up,
+                    );
+                    self.update_pane_selection_end(pane_id, endpoint);
+                }
+                if let Some(ctx) = self.focused_ctx_mut() {
+                    ctx.dirty = true;
+                }
             }
         }
     }

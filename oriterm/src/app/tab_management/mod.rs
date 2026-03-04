@@ -20,7 +20,10 @@ impl App {
     /// color palette and clears the width lock. Tab bar sync happens via
     /// the `WindowTabsChanged` notification from the mux.
     pub(super) fn new_tab_in_window(&mut self, window_id: MuxWindowId) {
-        let cwd = self.active_pane().and_then(|p| p.cwd().map(PathBuf::from));
+        let cwd = self
+            .active_pane_id()
+            .and_then(|id| self.mux.as_ref()?.pane_cwd(id))
+            .map(PathBuf::from);
 
         let (rows, cols) = self.current_grid_dims();
         let theme = self
@@ -37,12 +40,13 @@ impl App {
             ..SpawnConfig::default()
         };
 
+        let palette =
+            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
+
         let Some(mux) = &mut self.mux else { return };
         match mux.create_tab(window_id, &config, theme) {
             Ok((_tab_id, pane_id)) => {
-                if let Some(pane) = mux.pane(pane_id) {
-                    super::apply_palette(&self.config, pane, theme);
-                }
+                mux.set_pane_theme(pane_id, theme, palette);
                 log::info!("new tab with pane {pane_id:?} in window {window_id:?}");
             }
             Err(e) => {
@@ -148,9 +152,11 @@ impl App {
             return;
         }
 
-        // Clear bell badge on the newly active tab.
-        if let Some(pane) = self.active_pane_mut() {
-            pane.clear_bell();
+        // Clear bell badge on the newly active pane.
+        if let Some(id) = self.active_pane_id() {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.clear_bell(id);
+            }
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
@@ -172,8 +178,10 @@ impl App {
             return;
         }
 
-        if let Some(pane) = self.active_pane_mut() {
-            pane.clear_bell();
+        if let Some(id) = self.active_pane_id() {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.clear_bell(id);
+            }
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {
@@ -361,9 +369,7 @@ impl App {
             if let Some(mux) = &mut self.mux {
                 let pane_ids = mux.close_tab(initial);
                 for pid in pane_ids {
-                    if let Some(pane) = mux.remove_pane(pid) {
-                        super::defer_pane_drop(pane);
-                    }
+                    mux.cleanup_closed_pane(pid);
                 }
             }
         }
@@ -541,12 +547,10 @@ fn build_tab_entries(
         .map(|&tab_id| {
             let tab = mux.session().get_tab(tab_id);
             let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
-            let pane = pane_id.and_then(|pid| mux.pane(pid));
-            let mut title = pane
-                .map(|p| p.effective_title().to_owned())
-                .unwrap_or_default();
-            let icon = pane
-                .and_then(|p| p.icon_name())
+            let snapshot = pane_id.and_then(|pid| mux.pane_snapshot(pid));
+            let mut title = snapshot.map(|s| s.title.clone()).unwrap_or_default();
+            let icon = snapshot
+                .and_then(|s| s.icon_name.as_deref())
                 .and_then(oriterm_ui::widgets::tab_bar::extract_emoji_icon);
             // Strip leading emoji from title when it matches the icon
             // (OSC 0 sets both title and icon_name to the same string).

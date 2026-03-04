@@ -5,14 +5,16 @@
 //! its layout-computed pixel offset, and instances accumulate into one shared
 //! `PreparedFrame` for a single GPU submission.
 
+use std::collections::HashMap;
+
 use oriterm_core::{Column, CursorShape, TermMode};
 use oriterm_mux::layout::{DividerLayout, LayoutDescriptor, PaneLayout, Rect, compute_all};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
 use crate::gpu::{
-    FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame,
-    extract_frame_from_snapshot, extract_frame_from_snapshot_into, extract_frame_into,
+    FrameSearch, FrameSelection, MarkCursorOverride, ViewportSize, extract_frame_from_snapshot,
+    extract_frame_from_snapshot_into,
 };
 
 impl App {
@@ -103,6 +105,23 @@ impl App {
         dividers: &[DividerLayout],
         mut url_segments: Vec<crate::url_detect::UrlSegment>,
     ) {
+        // Copy per-pane selections and mark cursors before the render block
+        // (where self.renderer is mutably borrowed, preventing &self borrows).
+        let pane_sels: HashMap<_, _> = layouts
+            .iter()
+            .filter_map(|l| {
+                let sel = self.pane_selection(l.pane_id).copied()?;
+                Some((l.pane_id, sel))
+            })
+            .collect();
+        let pane_mcs: HashMap<_, _> = layouts
+            .iter()
+            .filter_map(|l| {
+                let mc = self.pane_mark_cursor(l.pane_id)?;
+                Some((l.pane_id, mc))
+            })
+            .collect();
+
         let (render_result, blinking_now) = {
             let Some(gpu) = self.gpu.as_ref() else {
                 log::warn!("redraw multi: no gpu");
@@ -142,30 +161,22 @@ impl App {
             let cursor_blink_visible = !self.blinking_active || self.cursor_blink.is_visible();
 
             let mut focused_rect = None;
-            let mut focused_base = 0u64;
             let mut blinking_now = self.blinking_active;
-            let daemon_mode = self.mux.as_ref().is_some_and(|m| m.is_daemon_mode());
 
             for layout in layouts {
                 let pane_id = layout.pane_id;
 
-                // Dirty check: daemon mode checks snapshot dirty flag;
-                // embedded mode checks local grid dirty + cache.
+                // Dirty check: unified snapshot-based dirty tracking.
                 let is_cached = ctx.pane_cache.is_cached(pane_id, layout);
-                let dirty = if daemon_mode {
-                    let snap_dirty = self
-                        .mux
-                        .as_ref()
-                        .is_some_and(|m| m.is_pane_snapshot_dirty(pane_id));
-                    layout.is_focused || snap_dirty || !is_cached
-                } else {
-                    let grid_dirty = self
-                        .mux
-                        .as_ref()
-                        .and_then(|m| m.pane(pane_id))
-                        .is_some_and(oriterm_mux::Pane::grid_dirty);
-                    layout.is_focused || grid_dirty || !is_cached
-                };
+                let snap_dirty = self
+                    .mux
+                    .as_ref()
+                    .is_some_and(|m| m.is_pane_snapshot_dirty(pane_id));
+                let no_snapshot = self
+                    .mux
+                    .as_ref()
+                    .is_some_and(|m| m.pane_snapshot(pane_id).is_none());
+                let dirty = layout.is_focused || snap_dirty || no_snapshot || !is_cached;
 
                 if dirty {
                     let pane_viewport = ViewportSize::new(
@@ -173,51 +184,33 @@ impl App {
                         layout.pixel_rect.height as u32,
                     );
 
-                    // Extract phase: daemon mode uses snapshot; embedded
-                    // mode locks the local terminal.
-                    if daemon_mode {
-                        let mux = self.mux.as_mut().expect("mux checked");
-                        if mux.is_pane_snapshot_dirty(pane_id) {
-                            mux.refresh_pane_snapshot(pane_id);
+                    // Extract phase: always snapshot-based.
+                    let mux = self.mux.as_mut().expect("mux checked");
+                    if mux.pane_snapshot(pane_id).is_none() || mux.is_pane_snapshot_dirty(pane_id) {
+                        mux.refresh_pane_snapshot(pane_id);
+                    }
+                    let Some(snapshot) = mux.pane_snapshot(pane_id) else {
+                        log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
+                        // Retry next tick instead of dropping into a visually
+                        // stalled state after a transient snapshot miss.
+                        ctx.dirty = true;
+                        continue;
+                    };
+                    match &mut ctx.frame {
+                        Some(existing) => {
+                            extract_frame_from_snapshot_into(
+                                snapshot,
+                                existing,
+                                pane_viewport,
+                                cell,
+                            );
                         }
-                        if let Some(snapshot) = mux.pane_snapshot(pane_id) {
-                            match &mut ctx.frame {
-                                Some(existing) => {
-                                    extract_frame_from_snapshot_into(
-                                        snapshot,
-                                        existing,
-                                        pane_viewport,
-                                        cell,
-                                    );
-                                }
-                                slot @ None => {
-                                    *slot = Some(extract_frame_from_snapshot(
-                                        snapshot,
-                                        pane_viewport,
-                                        cell,
-                                    ));
-                                }
-                            }
-                        } else {
-                            log::warn!("multi-pane: no snapshot for pane {pane_id:?}");
-                            continue;
-                        }
-                        mux.clear_pane_snapshot_dirty(pane_id);
-                    } else {
-                        let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) else {
-                            log::warn!("multi-pane: pane {pane_id:?} not found");
-                            continue;
-                        };
-                        pane.clear_grid_dirty();
-                        match &mut ctx.frame {
-                            Some(existing) => {
-                                extract_frame_into(pane.terminal(), existing, pane_viewport, cell);
-                            }
-                            slot @ None => {
-                                *slot = Some(extract_frame(pane.terminal(), pane_viewport, cell));
-                            }
+                        slot @ None => {
+                            *slot =
+                                Some(extract_frame_from_snapshot(snapshot, pane_viewport, cell));
                         }
                     }
+                    mux.clear_pane_snapshot_dirty(pane_id);
 
                     let frame = ctx.frame.as_mut().expect("frame just assigned");
 
@@ -232,29 +225,33 @@ impl App {
                         );
                     }
 
-                    // Pane-level annotations (selection, search, mark cursor)
-                    // are only available in embedded mode.
-                    if !daemon_mode {
-                        if let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) {
-                            frame.mark_cursor = if layout.is_focused {
-                                pane.mark_cursor().and_then(|mc| {
-                                    let (line, col) = mc
-                                        .to_viewport(frame.content.stable_row_base, frame.rows())?;
-                                    Some(MarkCursorOverride {
-                                        line,
-                                        column: Column(col),
-                                        shape: CursorShape::HollowBlock,
-                                    })
-                                })
-                            } else {
-                                None
-                            };
-                            let base = frame.content.stable_row_base;
-                            frame.selection =
-                                pane.selection().map(|sel| FrameSelection::new(sel, base));
-                            frame.search = pane.search().map(|s| FrameSearch::new(s, base));
-                        }
-                    }
+                    // Pane-level annotations (mark cursor, search) and
+                    // client-side selection from App state.
+                    let base = frame.content.stable_row_base;
+                    // Mark cursor from App state (copied before render block).
+                    frame.mark_cursor = if layout.is_focused {
+                        pane_mcs.get(&pane_id).and_then(|mc| {
+                            let (line, col) =
+                                mc.to_viewport(frame.content.stable_row_base, frame.rows())?;
+                            Some(MarkCursorOverride {
+                                line,
+                                column: Column(col),
+                                shape: CursorShape::HollowBlock,
+                            })
+                        })
+                    } else {
+                        None
+                    };
+                    // Search from snapshot.
+                    frame.search = self
+                        .mux
+                        .as_ref()
+                        .and_then(|m| m.pane_snapshot(pane_id))
+                        .and_then(FrameSearch::from_snapshot);
+                    // Selection lives on App, not Pane (copied before render block).
+                    frame.selection = pane_sels
+                        .get(&pane_id)
+                        .map(|sel| FrameSelection::new(sel, base));
 
                     if layout.is_focused {
                         let cell_metrics = renderer.cell_metrics();
@@ -278,7 +275,6 @@ impl App {
                     }
 
                     if layout.is_focused {
-                        focused_base = frame.content.stable_row_base;
                         blinking_now = frame.content.mode.contains(TermMode::CURSOR_BLINKING);
                     }
 
@@ -317,14 +313,14 @@ impl App {
                 }
             }
 
-            // Restore focused pane's search for the search bar (embedded mode only).
-            if !daemon_mode {
-                if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
-                    if let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(focused.pane_id)) {
-                        if let Some(frame) = ctx.frame.as_mut() {
-                            frame.search = pane.search().map(|s| FrameSearch::new(s, focused_base));
-                        }
-                    }
+            // Restore focused pane's search for the search bar.
+            if let Some(focused) = layouts.iter().find(|l| l.is_focused) {
+                if let Some(frame) = ctx.frame.as_mut() {
+                    frame.search = self
+                        .mux
+                        .as_ref()
+                        .and_then(|m| m.pane_snapshot(focused.pane_id))
+                        .and_then(FrameSearch::from_snapshot);
                 }
             }
 

@@ -91,13 +91,6 @@ fn empty_window_no_active_tab() {
     assert!(mux.active_tab_id(wid).is_none());
 }
 
-/// `pane()` returns `None` for nonexistent pane ID.
-#[test]
-fn pane_not_found() {
-    let mux = EmbeddedMux::new(test_wakeup());
-    assert!(mux.pane(PaneId::from_raw(999)).is_none());
-}
-
 /// `is_last_pane` returns `false` when no panes exist.
 #[test]
 fn no_panes_not_last() {

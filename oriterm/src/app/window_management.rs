@@ -50,12 +50,12 @@ impl App {
             shell_integration: self.config.behavior.shell_integration,
             ..oriterm_mux::domain::SpawnConfig::default()
         };
+        let palette =
+            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
         let tab_result = mux.create_tab(mux_window_id, &spawn_config, theme);
         match tab_result {
             Ok((_tab_id, pane_id)) => {
-                if let Some(pane) = mux.pane(pane_id) {
-                    super::apply_palette(&self.config, pane, theme);
-                }
+                mux.set_pane_theme(pane_id, theme, palette);
                 mux.discard_notifications();
             }
             Err(e) => {
@@ -203,12 +203,10 @@ impl App {
             Vec::new()
         };
 
-        // Drop panes on background threads to avoid blocking the event loop.
+        // Clean up pane resources (PTY kill + background drop in embedded mode).
         if let Some(mux) = &mut self.mux {
             for id in pane_ids {
-                if let Some(pane) = mux.remove_pane(id) {
-                    super::defer_pane_drop(pane);
-                }
+                mux.cleanup_closed_pane(id);
             }
         }
 
@@ -291,9 +289,9 @@ impl App {
 
         self.with_drained_notifications(|this, notification| {
             if let oriterm_mux::mux_event::MuxNotification::PaneClosed(id) = notification {
-                // Panes already removed above — just clean up caches.
-                if let Some(pane) = this.mux.as_mut().and_then(|m| m.remove_pane(id)) {
-                    super::defer_pane_drop(pane);
+                // Clean up backend resources and caches.
+                if let Some(mux) = this.mux.as_mut() {
+                    mux.cleanup_closed_pane(id);
                 }
                 for ctx in this.windows.values_mut() {
                     ctx.pane_cache.remove(id);

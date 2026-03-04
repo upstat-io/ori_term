@@ -11,11 +11,15 @@ use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use oriterm_core::Theme;
+use oriterm_core::grid::StableRowIndex;
+use oriterm_core::selection::{Selection, SelectionMode, SelectionPoint};
+use oriterm_core::{Side, Theme};
 use oriterm_mux::backend::MuxBackend;
 use oriterm_mux::domain::SpawnConfig;
 use oriterm_mux::server::MuxServer;
-use oriterm_mux::{MuxClient, PaneId, PaneSnapshot, TabId, WindowId};
+use oriterm_mux::{
+    MuxClient, MuxNotification, PaneId, PaneSnapshot, TabId, WindowId, WireCursorShape,
+};
 
 // ---------------------------------------------------------------------------
 // Test daemon harness
@@ -350,12 +354,18 @@ fn scrollback_preserved_after_move() {
     // Let shell start.
     thread::sleep(Duration::from_millis(500));
 
-    // Generate scrollback by printing many lines.
+    // Generate scrollback and wait for completion.
     client.send_input(
         pane_a,
         b"for i in $(seq 1 100); do echo SCROLL_LINE_$i; done\n",
     );
-    thread::sleep(Duration::from_secs(2));
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_a,
+        "SCROLL_LINE_100",
+        Duration::from_secs(10),
+    );
+    thread::sleep(Duration::from_millis(200));
 
     // Get scrollback length before move.
     let snap_before = client
@@ -540,4 +550,837 @@ fn tab_tearoff_mechanics() {
         .map(|w| w.tabs().to_vec())
         .unwrap_or_default();
     assert_eq!(tabs.len(), 1, "original window should have 1 remaining tab");
+}
+
+// ---------------------------------------------------------------------------
+// Helpers: Section 14.1 — Test Harness Extensions
+// ---------------------------------------------------------------------------
+
+/// Wait until a snapshot is available for the given pane.
+///
+/// Returns an owned snapshot to avoid borrow/lifetime issues in test loops.
+fn wait_for_snapshot(client: &mut MuxClient, pane_id: PaneId, timeout: Duration) -> PaneSnapshot {
+    let deadline = Instant::now() + timeout;
+    loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            return snap.clone();
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for snapshot on pane {pane_id}"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests: Section 14.2 — Core Operation Tests
+// ---------------------------------------------------------------------------
+
+/// 14.2: Resize pane grid via IPC.
+#[test]
+fn test_resize_pane() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+
+    // Let shell initialize.
+    thread::sleep(Duration::from_millis(500));
+
+    // Resize to 40 rows × 100 cols.
+    client.resize_pane_grid(pane_id, 40, 100);
+
+    // Give the daemon time to process the fire-and-forget resize.
+    thread::sleep(Duration::from_millis(200));
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    assert_eq!(snap.cols, 100, "snapshot cols should match resize");
+    assert_eq!(snap.cells.len(), 40, "snapshot rows should match resize");
+}
+
+/// 14.2: Scroll display up and verify display_offset.
+#[test]
+fn test_scroll_display() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Generate scrollback and wait for completion. The fence output
+    // appears on 2 rows (command echo + actual output) only after the
+    // for loop finishes, guaranteeing all output has landed.
+    client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
+    client.send_input(pane_id, b"echo SCROLL_FENCE\n");
+    let fence_deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            let count = snap
+                .cells
+                .iter()
+                .filter(|row| {
+                    let line: String = row.iter().map(|c| c.ch).collect();
+                    line.contains("SCROLL_FENCE")
+                })
+                .count();
+            if count >= 2 {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < fence_deadline,
+            "timed out waiting for scroll fence"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+    // Wait for the shell prompt after the fence to settle.
+    thread::sleep(Duration::from_millis(500));
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+
+    // Scroll up by 10 lines.
+    client.scroll_display(pane_id, 10);
+    thread::sleep(Duration::from_millis(300));
+    client.poll_events();
+    notifs.clear();
+    client.drain_notifications(&mut notifs);
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    assert_eq!(
+        snap.display_offset, 10,
+        "display_offset should be 10 after scrolling up 10 lines"
+    );
+}
+
+/// 14.2: Scroll to bottom resets display_offset.
+#[test]
+fn test_scroll_to_bottom() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Generate scrollback and wait for completion via 2-row fence.
+    client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
+    client.send_input(pane_id, b"echo SCROLL_BTM_FENCE\n");
+    let fence_deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            let count = snap
+                .cells
+                .iter()
+                .filter(|row| {
+                    let line: String = row.iter().map(|c| c.ch).collect();
+                    line.contains("SCROLL_BTM_FENCE")
+                })
+                .count();
+            if count >= 2 {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < fence_deadline,
+            "timed out waiting for scroll bottom fence"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+    thread::sleep(Duration::from_millis(500));
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+
+    // Scroll up, then back to bottom.
+    client.scroll_display(pane_id, 10);
+    thread::sleep(Duration::from_millis(100));
+    client.scroll_to_bottom(pane_id);
+    thread::sleep(Duration::from_millis(200));
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    assert_eq!(
+        snap.display_offset, 0,
+        "display_offset should be 0 after scroll_to_bottom"
+    );
+}
+
+/// 14.2: Query pane mode bits — verify bracketed paste mode.
+///
+/// Uses `printf` to emit the DECSET sequence through stdout so the terminal
+/// emulator processes it (raw escape bytes written to stdin may not be echoed).
+#[test]
+fn test_pane_mode() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Enable bracketed paste mode via printf (stdout path ensures the
+    // terminal emulator processes the escape sequence).
+    client.send_input(pane_id, b"printf '\\033[?2004h'\n");
+
+    // Poll until the mode bit is set (avoids flaky fixed timeouts).
+    let bracketed_paste_bit = 1u32 << 13;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+        let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(2));
+        if snap.modes & bracketed_paste_bit != 0 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for bracketed paste mode bit"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// 14.2: Set cursor shape via IPC.
+#[test]
+fn test_set_cursor_shape() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Set cursor to bar shape.
+    client.set_cursor_shape(pane_id, oriterm_core::CursorShape::Bar);
+    thread::sleep(Duration::from_millis(200));
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    assert_eq!(
+        snap.cursor.shape,
+        WireCursorShape::Bar,
+        "cursor shape should be Bar after set_cursor_shape"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests: Section 14.3 — Snapshot + Rendering Contract Tests
+// ---------------------------------------------------------------------------
+
+/// 14.3: Snapshot cols reflect resize.
+#[test]
+fn test_snapshot_cols() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Resize to 120 cols.
+    client.resize_pane_grid(pane_id, 24, 120);
+    thread::sleep(Duration::from_millis(200));
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    assert_eq!(snap.cols, 120, "snapshot cols should match resized width");
+}
+
+/// 14.3: Dirty flag lifecycle — dirty after output, clean after clear.
+#[test]
+fn test_snapshot_dirty_flag() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Clear initial dirty state.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+    client.refresh_pane_snapshot(pane_id);
+    client.clear_pane_snapshot_dirty(pane_id);
+
+    assert!(
+        !client.is_pane_snapshot_dirty(pane_id),
+        "dirty flag should be false after clear"
+    );
+
+    // Generate output to make it dirty.
+    client.send_input(pane_id, b"echo DIRTY_TEST\n");
+
+    // Wait for PaneDirty notification.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+
+        if client.is_pane_snapshot_dirty(pane_id) {
+            break;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for dirty flag to be set"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(
+        client.is_pane_snapshot_dirty(pane_id),
+        "dirty flag should be true after pane output"
+    );
+
+    // Clear and verify.
+    client.clear_pane_snapshot_dirty(pane_id);
+    assert!(
+        !client.is_pane_snapshot_dirty(pane_id),
+        "dirty flag should be false after clear again"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tests: Section 14.4 — Search + Clipboard + Notification Integration
+// ---------------------------------------------------------------------------
+
+/// 14.4: Search lifecycle — open, query, verify matches, close.
+#[test]
+fn test_search_lifecycle() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+
+    // Send known text.
+    thread::sleep(Duration::from_millis(500));
+    client.send_input(pane_id, b"echo NEEDLE_HAYSTACK\n");
+    wait_for_text_in_snapshot(
+        &mut client,
+        pane_id,
+        "NEEDLE_HAYSTACK",
+        Duration::from_secs(5),
+    );
+
+    // Open search.
+    client.open_search(pane_id);
+    thread::sleep(Duration::from_millis(200));
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    assert!(
+        snap.search_active,
+        "search should be active after open_search"
+    );
+
+    // Set query.
+    client.search_set_query(pane_id, "NEEDLE".to_string());
+    thread::sleep(Duration::from_millis(200));
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    assert_eq!(snap.search_query, "NEEDLE", "search query should match");
+    assert!(
+        !snap.search_matches.is_empty(),
+        "search should find at least one match for NEEDLE"
+    );
+
+    // Close search.
+    client.close_search(pane_id);
+    thread::sleep(Duration::from_millis(200));
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    assert!(
+        !snap.search_active,
+        "search should be inactive after close_search"
+    );
+    assert!(
+        snap.search_matches.is_empty(),
+        "search matches should be cleared after close"
+    );
+}
+
+/// 14.4: Search navigation — next/prev match changes focused index.
+#[test]
+fn test_search_navigation() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Generate multiple matches.
+    client.send_input(pane_id, b"echo AAA; echo AAA; echo AAA\n");
+    wait_for_text_in_snapshot(&mut client, pane_id, "AAA", Duration::from_secs(5));
+
+    // Open search and set query.
+    client.open_search(pane_id);
+    thread::sleep(Duration::from_millis(100));
+    client.search_set_query(pane_id, "AAA".to_string());
+    thread::sleep(Duration::from_millis(200));
+
+    let snap = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+    let match_count = snap.search_matches.len();
+    assert!(
+        match_count >= 3,
+        "should find at least 3 matches for AAA, found {match_count}"
+    );
+    let initial_focused = snap.search_focused;
+
+    // Navigate next.
+    client.search_next_match(pane_id);
+    thread::sleep(Duration::from_millis(200));
+
+    let snap2 = wait_for_snapshot(&mut client, pane_id, Duration::from_secs(5));
+
+    // The focused match should have changed (or wrapped).
+    assert_ne!(
+        snap2.search_focused, initial_focused,
+        "focused match should change after search_next_match"
+    );
+
+    // Close search.
+    client.close_search(pane_id);
+}
+
+/// 14.4: Extract text via IPC — send known text, select, extract.
+#[test]
+fn test_extract_text() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Send echo command and wait until the marker appears on at least
+    // 2 rows: the command echo and the actual output. This guarantees
+    // the output has arrived before we build the selection.
+    client.send_input(pane_id, b"echo EXTR_MARKER\n");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let snap = loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            let count = snap
+                .cells
+                .iter()
+                .filter(|row| {
+                    let line: String = row.iter().map(|c| c.ch).collect();
+                    line.contains("EXTR_MARKER")
+                })
+                .count();
+            if count >= 2 {
+                break snap.clone();
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for EXTR_MARKER on 2 rows"
+        );
+        thread::sleep(Duration::from_millis(50));
+    };
+
+    // The output row has "EXTR_MARKER" but not "echo".
+    let (target_row, row_text) = snap
+        .cells
+        .iter()
+        .enumerate()
+        .filter_map(|(i, row)| {
+            let line: String = row.iter().map(|c| c.ch).collect();
+            if line.contains("EXTR_MARKER") {
+                Some((i, line))
+            } else {
+                None
+            }
+        })
+        .find(|(_, line)| !line.contains("echo"))
+        .expect("should find output row with EXTR_MARKER");
+
+    let col_start = row_text
+        .find("EXTR_MARKER")
+        .expect("should find EXTR_MARKER in row text");
+    let col_end = col_start + "EXTR_MARKER".len() - 1;
+
+    // Build a selection covering that text.
+    // `stable_row_base` is the absolute row index of viewport row 0.
+    let abs_row = snap.stable_row_base + target_row as u64;
+
+    let selection = Selection {
+        mode: SelectionMode::Char,
+        anchor: SelectionPoint {
+            row: StableRowIndex(abs_row),
+            col: col_start,
+            side: Side::Left,
+        },
+        pivot: SelectionPoint {
+            row: StableRowIndex(abs_row),
+            col: col_start,
+            side: Side::Left,
+        },
+        end: SelectionPoint {
+            row: StableRowIndex(abs_row),
+            col: col_end,
+            side: Side::Right,
+        },
+    };
+
+    let text = client
+        .extract_text(pane_id, &selection)
+        .expect("extract_text should return text");
+
+    assert_eq!(
+        text.trim(),
+        "EXTR_MARKER",
+        "extracted text should match the marker"
+    );
+}
+
+/// 14.4: PaneDirty notification flow — output triggers dirty notification.
+#[test]
+fn test_notification_pane_dirty() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Clear initial state.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+    client.clear_pane_snapshot_dirty(pane_id);
+
+    // Send input.
+    client.send_input(pane_id, b"echo NOTIF_TEST\n");
+
+    // Wait for PaneDirty notification.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut got_dirty = false;
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+
+        for notif in &notifs {
+            if let MuxNotification::PaneDirty(id) = notif {
+                if *id == pane_id {
+                    got_dirty = true;
+                }
+            }
+        }
+
+        if got_dirty {
+            break;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for PaneDirty notification"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(
+        got_dirty,
+        "should receive PaneDirty notification after output"
+    );
+}
+
+/// Flood output does not hang the event loop.
+///
+/// Sends a command that generates massive output and verifies the pane
+/// remains responsive afterwards. Before the fix, `PaneNotifier::notify()`
+/// blocked on the PTY writer when the kernel buffer was full, freezing the
+/// main thread. Now writes go through the reader thread's channel.
+#[test]
+fn test_flood_output_no_hang() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+
+    // Let shell initialize.
+    thread::sleep(Duration::from_millis(500));
+
+    // Generate massive output: 5000 lines of 200-char padded numbers.
+    client.send_input(
+        pane_id,
+        b"for i in $(seq 1 5000); do printf '%0200d\\n' $i; done\n",
+    );
+
+    // Poll events in a loop with a 15-second deadline. If the main thread
+    // blocks on PTY writes, this loop stalls and the test times out.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+
+        // Check if the shell has returned to a prompt (output complete).
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            // Look for the last flood line — when this appears, the bulk
+            // output is finishing or done.
+            if snapshot_contains(snap, "5000") {
+                break;
+            }
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "timed out during flood output — main thread likely blocked on PTY write"
+        );
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    // Verify the pane is still responsive by sending a marker command.
+    client.send_input(pane_id, b"echo FLOOD_ALIVE\n");
+    let snap =
+        wait_for_text_in_snapshot(&mut client, pane_id, "FLOOD_ALIVE", Duration::from_secs(10));
+    assert!(
+        snapshot_contains(&snap, "FLOOD_ALIVE"),
+        "pane should be responsive after flood output"
+    );
+}
+
+/// Infinite flood output should still stream visible updates.
+///
+/// Reproduces the user's manual stress case (`while true` flood loop) and
+/// verifies the daemon can continue serving snapshots while output is
+/// unbounded.
+#[test]
+fn test_infinite_flood_streams_updates() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Start an unbounded flood loop.
+    client.send_input(pane_id, b"while true; do printf '%0200d\\n' 1; done\n");
+
+    // Keep polling and refreshing snapshots. We should see flood text.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut saw_output = false;
+    let mut refresh_ok = 0usize;
+
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            refresh_ok += 1;
+            if snapshot_contains(snap, "0000000000") {
+                saw_output = true;
+                break;
+            }
+        }
+
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    // Stop the flood loop.
+    client.send_input(pane_id, b"\x03");
+
+    assert!(
+        saw_output,
+        "no visible flood output in snapshots (successful refreshes: {refresh_ok})"
+    );
+}
+
+/// Exact user flood payload with concatenated `$RANDOM` values should stream.
+#[test]
+fn test_infinite_flood_random_streams_updates() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    client.send_input(
+        pane_id,
+        b"while true; do printf '%0200d\\n' $RANDOM$RANDOM$RANDOM$RANDOM; done\n",
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut saw_output = false;
+    let mut refresh_ok = 0usize;
+
+    while Instant::now() < deadline {
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+
+        if let Some(snap) = client.refresh_pane_snapshot(pane_id) {
+            refresh_ok += 1;
+            if snapshot_contains(snap, "0000000000") || snapshot_contains(snap, "printf: warning:")
+            {
+                saw_output = true;
+                break;
+            }
+        }
+
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    client.send_input(pane_id, b"\x03");
+
+    assert!(
+        saw_output,
+        "no visible random flood output in snapshots (successful refreshes: {refresh_ok})"
+    );
+}
+
+/// 14.4: PaneTitleChanged notification fires on title change.
+///
+/// The shell's prompt may subsequently overwrite the title via OSC 0/7,
+/// so we only verify the notification arrives, not the final snapshot
+/// title (which races with shell integration).
+#[test]
+fn test_notification_title_changed() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Clear any pending notifications.
+    client.poll_events();
+    let mut notifs = Vec::new();
+    client.drain_notifications(&mut notifs);
+
+    // Set title via OSC 0.
+    client.send_input(pane_id, b"\x1b]0;E2E_TITLE_TEST\x07");
+
+    // Wait for PaneTitleChanged notification.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut got_title = false;
+    loop {
+        client.poll_events();
+        notifs.clear();
+        client.drain_notifications(&mut notifs);
+
+        for notif in &notifs {
+            if let MuxNotification::PaneTitleChanged(id) = notif {
+                if *id == pane_id {
+                    got_title = true;
+                }
+            }
+        }
+
+        if got_title {
+            break;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for PaneTitleChanged notification"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(
+        got_title,
+        "should receive PaneTitleChanged notification after OSC 0"
+    );
+}
+
+/// Flood responsiveness: daemon snapshot path handles sustained flood at >= 20fps.
+///
+/// Simulates the real UI render loop (poll → dirty check → refresh → clear)
+/// during infinite flood output. Verifies that:
+/// 1. At least 20 snapshots complete in 3 seconds (no sustained hang).
+/// 2. No single snapshot takes longer than 500ms (no momentary freeze).
+#[test]
+fn test_flood_snapshot_responsiveness() {
+    let daemon = TestDaemon::start();
+    let mut client = daemon.connect_client();
+
+    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
+    client.claim_window(window_id).expect("claim_window");
+    thread::sleep(Duration::from_millis(500));
+
+    // Start infinite flood: `yes` outputs lines continuously until killed.
+    client.send_input(pane_id, b"yes \"$(printf '%0200d' 0)\"\n");
+
+    // Let the flood build momentum before measuring.
+    thread::sleep(Duration::from_millis(300));
+
+    // Simulate the UI render loop for 3 seconds at ~60fps cadence.
+    let test_duration = Duration::from_secs(3);
+    let max_frame_time = Duration::from_millis(500);
+    let start = Instant::now();
+    let mut snapshot_count = 0u32;
+    let mut max_snapshot_time = Duration::ZERO;
+
+    while start.elapsed() < test_duration {
+        let frame_start = Instant::now();
+
+        // Phase 1: poll events (matches real about_to_wait path).
+        client.poll_events();
+        let mut notifs = Vec::new();
+        client.drain_notifications(&mut notifs);
+
+        // Phase 2: refresh snapshot if dirty (matches redraw/mod.rs:110).
+        if client.is_pane_snapshot_dirty(pane_id) || client.pane_snapshot(pane_id).is_none() {
+            client.refresh_pane_snapshot(pane_id);
+            snapshot_count += 1;
+        }
+        client.clear_pane_snapshot_dirty(pane_id);
+
+        let frame_time = frame_start.elapsed();
+        if frame_time > max_snapshot_time {
+            max_snapshot_time = frame_time;
+        }
+
+        assert!(
+            frame_time < max_frame_time,
+            "snapshot {snapshot_count} took {frame_time:?} (max {max_frame_time:?}) — \
+             daemon snapshot path blocked during flood output"
+        );
+
+        // Simulate GPU render time (~16ms for 60fps VSync).
+        thread::sleep(Duration::from_millis(16));
+    }
+
+    // Stop the flood.
+    client.send_input(pane_id, b"\x03");
+    thread::sleep(Duration::from_millis(200));
+
+    let elapsed = start.elapsed();
+    let fps = snapshot_count as f64 / elapsed.as_secs_f64();
+
+    eprintln!("--- flood snapshot responsiveness ---");
+    eprintln!("  snapshots:       {snapshot_count}");
+    eprintln!("  fps:             {fps:.1}");
+    eprintln!("  max frame time:  {max_snapshot_time:?}");
+
+    assert!(
+        snapshot_count >= 20,
+        "only {snapshot_count} snapshots in {elapsed:?} ({fps:.1} fps) — need >= 20"
+    );
 }

@@ -37,10 +37,11 @@ pub use in_process::{ClosePaneResult, InProcessMux};
 pub use layout::{SplitDirection, SplitTree};
 pub use mux_event::{MuxEvent, MuxEventProxy, MuxNotification};
 pub use nav::Direction;
-pub use pane::Pane;
+pub use pane::{MarkCursor, Pane};
 pub use protocol::{
     DecodeError, DecodedFrame, FrameHeader, MsgType, MuxPdu, MuxTabInfo, MuxWindowInfo,
-    PaneSnapshot, ProtocolCodec, WireCell, WireColor, WireCursor, WireCursorShape, WireRgb,
+    PaneSnapshot, ProtocolCodec, WireCell, WireCellFlags, WireColor, WireCursor, WireCursorShape,
+    WireRgb, WireSearchMatch, WireSelection,
 };
 pub use pty::{ExitStatus, PtyConfig, PtyControl, PtyHandle, spawn_pty};
 pub use registry::{PaneEntry, PaneRegistry, SessionRegistry};

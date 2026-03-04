@@ -66,7 +66,7 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
                 bg: wire_rgb_to_rgb(wire.bg),
                 flags: CellFlags::from_bits_truncate(wire.flags),
                 underline_color: wire.underline_color.map(wire_rgb_to_rgb),
-                has_hyperlink: wire.has_hyperlink,
+                has_hyperlink: wire.hyperlink_uri.is_some(),
                 zerowidth: wire.zerowidth.clone(),
             });
         }
@@ -78,7 +78,7 @@ fn snapshot_to_renderable(snapshot: &PaneSnapshot) -> RenderableContent {
         cells,
         cursor,
         display_offset: snapshot.display_offset as usize,
-        stable_row_base: 0,
+        stable_row_base: snapshot.stable_row_base,
         mode: TermMode::from_bits_truncate(snapshot.modes),
         all_dirty: true,
         damage: Vec::new(),
@@ -105,7 +105,7 @@ fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableCont
                 bg: wire_rgb_to_rgb(wire.bg),
                 flags: CellFlags::from_bits_truncate(wire.flags),
                 underline_color: wire.underline_color.map(wire_rgb_to_rgb),
-                has_hyperlink: wire.has_hyperlink,
+                has_hyperlink: wire.hyperlink_uri.is_some(),
                 zerowidth: wire.zerowidth.clone(),
             });
         }
@@ -113,7 +113,7 @@ fn snapshot_to_renderable_into(snapshot: &PaneSnapshot, out: &mut RenderableCont
 
     out.cursor = wire_cursor_to_renderable(snapshot.cursor);
     out.display_offset = snapshot.display_offset as usize;
-    out.stable_row_base = 0;
+    out.stable_row_base = snapshot.stable_row_base;
     out.mode = TermMode::from_bits_truncate(snapshot.modes);
     out.all_dirty = true;
     out.damage.clear();

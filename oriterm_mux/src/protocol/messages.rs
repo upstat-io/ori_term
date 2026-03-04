@@ -11,7 +11,7 @@ use oriterm_core::Theme;
 use crate::id::{ClientId, DomainId, PaneId, TabId, WindowId};
 use crate::layout::SplitDirection;
 
-use super::snapshot::{MuxTabInfo, MuxWindowInfo, PaneSnapshot};
+use super::snapshot::{MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireSelection};
 
 /// Message type IDs for the wire header.
 ///
@@ -40,6 +40,19 @@ pub enum MsgType {
     ClaimWindow = 0x0112,
     Ping = 0x0113,
     Shutdown = 0x0114,
+    ScrollDisplay = 0x0115,
+    ScrollToBottom = 0x0116,
+    ScrollToPrompt = 0x0117,
+    SetTheme = 0x0118,
+    SetCursorShape = 0x0119,
+    MarkAllDirty = 0x011A,
+    OpenSearch = 0x011B,
+    CloseSearch = 0x011C,
+    SearchSetQuery = 0x011D,
+    SearchNextMatch = 0x011E,
+    SearchPrevMatch = 0x011F,
+    ExtractText = 0x0120,
+    ExtractHtml = 0x0121,
 
     // Responses (daemon → window).
     HelloAck = 0x0201,
@@ -59,6 +72,9 @@ pub enum MsgType {
     WindowClaimed = 0x020F,
     PingAck = 0x0210,
     ShutdownAck = 0x0211,
+    ScrollToPromptAck = 0x0212,
+    ExtractTextResp = 0x0213,
+    ExtractHtmlResp = 0x0214,
     Error = 0x02FF,
 
     // Push notifications (daemon → window).
@@ -94,6 +110,19 @@ impl MsgType {
             0x0112 => Some(Self::ClaimWindow),
             0x0113 => Some(Self::Ping),
             0x0114 => Some(Self::Shutdown),
+            0x0115 => Some(Self::ScrollDisplay),
+            0x0116 => Some(Self::ScrollToBottom),
+            0x0117 => Some(Self::ScrollToPrompt),
+            0x0118 => Some(Self::SetTheme),
+            0x0119 => Some(Self::SetCursorShape),
+            0x011A => Some(Self::MarkAllDirty),
+            0x011B => Some(Self::OpenSearch),
+            0x011C => Some(Self::CloseSearch),
+            0x011D => Some(Self::SearchSetQuery),
+            0x011E => Some(Self::SearchNextMatch),
+            0x011F => Some(Self::SearchPrevMatch),
+            0x0120 => Some(Self::ExtractText),
+            0x0121 => Some(Self::ExtractHtml),
             0x0201 => Some(Self::HelloAck),
             0x0202 => Some(Self::WindowCreated),
             0x0203 => Some(Self::TabCreated),
@@ -111,6 +140,9 @@ impl MsgType {
             0x020F => Some(Self::WindowClaimed),
             0x0210 => Some(Self::PingAck),
             0x0211 => Some(Self::ShutdownAck),
+            0x0212 => Some(Self::ScrollToPromptAck),
+            0x0213 => Some(Self::ExtractTextResp),
+            0x0214 => Some(Self::ExtractHtmlResp),
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),
@@ -271,6 +303,111 @@ pub enum MuxPdu {
     /// [`ShutdownAck`](Self::ShutdownAck) and then exits.
     Shutdown,
 
+    /// Scroll a pane's viewport by `delta` lines (positive = toward history).
+    /// Fire-and-forget.
+    ScrollDisplay {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Lines to scroll (positive = up into scrollback, negative = down).
+        delta: i32,
+    },
+
+    /// Scroll a pane to the live terminal position (bottom). Fire-and-forget.
+    ScrollToBottom {
+        /// Target pane.
+        pane_id: PaneId,
+    },
+
+    /// Scroll to the nearest prompt in the given direction.
+    ///
+    /// Returns [`ScrollToPromptAck`](Self::ScrollToPromptAck) with whether
+    /// a prompt was found and scrolled to.
+    ScrollToPrompt {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Direction: `-1` = previous (up), `+1` = next (down).
+        direction: i8,
+    },
+
+    /// Set the theme and palette for a pane. Fire-and-forget.
+    SetTheme {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Theme name: `"dark"` or `"light"`.
+        theme: String,
+        /// Full palette as 270 RGB triplets (same format as snapshot).
+        palette_rgb: Vec<[u8; 3]>,
+    },
+
+    /// Set the cursor shape for a pane. Fire-and-forget.
+    SetCursorShape {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Cursor shape discriminant (maps to `WireCursorShape`).
+        shape: u8,
+    },
+
+    /// Mark all grid lines dirty in a pane (forces full re-render).
+    /// Fire-and-forget.
+    MarkAllDirty {
+        /// Target pane.
+        pane_id: PaneId,
+    },
+
+    /// Open search for a pane (initializes empty search state).
+    /// Fire-and-forget.
+    OpenSearch {
+        /// Target pane.
+        pane_id: PaneId,
+    },
+
+    /// Close search and clear search state. Fire-and-forget.
+    CloseSearch {
+        /// Target pane.
+        pane_id: PaneId,
+    },
+
+    /// Update the search query. Recomputes matches against the full grid.
+    /// Fire-and-forget.
+    SearchSetQuery {
+        /// Target pane.
+        pane_id: PaneId,
+        /// New search query text.
+        query: String,
+    },
+
+    /// Navigate to the next search match. Fire-and-forget.
+    SearchNextMatch {
+        /// Target pane.
+        pane_id: PaneId,
+    },
+
+    /// Navigate to the previous search match. Fire-and-forget.
+    SearchPrevMatch {
+        /// Target pane.
+        pane_id: PaneId,
+    },
+
+    /// Extract plain text from a selection.
+    ExtractText {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Selection to extract from.
+        selection: WireSelection,
+    },
+
+    /// Extract HTML and plain text from a selection.
+    ExtractHtml {
+        /// Target pane.
+        pane_id: PaneId,
+        /// Selection to extract from.
+        selection: WireSelection,
+        /// Font family name for the HTML wrapper.
+        font_family: String,
+        /// Font size in points × 100 (for `MuxPdu: Eq` compliance).
+        font_size_x100: u16,
+    },
+
     // -- Responses (daemon → window) --
     /// Handshake acknowledgment.
     HelloAck {
@@ -359,6 +496,26 @@ pub enum MuxPdu {
     /// Acknowledgment that the daemon will shut down.
     ShutdownAck,
 
+    /// Response to [`ScrollToPrompt`](Self::ScrollToPrompt).
+    ScrollToPromptAck {
+        /// Whether a prompt was found and the viewport scrolled.
+        scrolled: bool,
+    },
+
+    /// Response to [`ExtractText`](Self::ExtractText).
+    ExtractTextResp {
+        /// Extracted plain text.
+        text: String,
+    },
+
+    /// Response to [`ExtractHtml`](Self::ExtractHtml).
+    ExtractHtmlResp {
+        /// Extracted HTML with inline styles.
+        html: String,
+        /// Plain text (same as `ExtractTextResp::text`).
+        text: String,
+    },
+
     /// Error response for a failed request.
     Error {
         /// Human-readable error description.
@@ -433,6 +590,19 @@ impl MuxPdu {
             Self::ClaimWindow { .. } => MsgType::ClaimWindow,
             Self::Ping => MsgType::Ping,
             Self::Shutdown => MsgType::Shutdown,
+            Self::ScrollDisplay { .. } => MsgType::ScrollDisplay,
+            Self::ScrollToBottom { .. } => MsgType::ScrollToBottom,
+            Self::ScrollToPrompt { .. } => MsgType::ScrollToPrompt,
+            Self::SetTheme { .. } => MsgType::SetTheme,
+            Self::SetCursorShape { .. } => MsgType::SetCursorShape,
+            Self::MarkAllDirty { .. } => MsgType::MarkAllDirty,
+            Self::OpenSearch { .. } => MsgType::OpenSearch,
+            Self::CloseSearch { .. } => MsgType::CloseSearch,
+            Self::SearchSetQuery { .. } => MsgType::SearchSetQuery,
+            Self::SearchNextMatch { .. } => MsgType::SearchNextMatch,
+            Self::SearchPrevMatch { .. } => MsgType::SearchPrevMatch,
+            Self::ExtractText { .. } => MsgType::ExtractText,
+            Self::ExtractHtml { .. } => MsgType::ExtractHtml,
             Self::HelloAck { .. } => MsgType::HelloAck,
             Self::WindowCreated { .. } => MsgType::WindowCreated,
             Self::TabCreated { .. } => MsgType::TabCreated,
@@ -450,6 +620,9 @@ impl MuxPdu {
             Self::WindowClaimed => MsgType::WindowClaimed,
             Self::PingAck => MsgType::PingAck,
             Self::ShutdownAck => MsgType::ShutdownAck,
+            Self::ScrollToPromptAck { .. } => MsgType::ScrollToPromptAck,
+            Self::ExtractTextResp { .. } => MsgType::ExtractTextResp,
+            Self::ExtractHtmlResp { .. } => MsgType::ExtractHtmlResp,
             Self::Error { .. } => MsgType::Error,
             Self::NotifyPaneOutput { .. } => MsgType::NotifyPaneOutput,
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,
@@ -462,7 +635,21 @@ impl MuxPdu {
 
     /// Whether this PDU is a fire-and-forget message (no response expected).
     pub fn is_fire_and_forget(&self) -> bool {
-        matches!(self, Self::Input { .. } | Self::Resize { .. })
+        matches!(
+            self,
+            Self::Input { .. }
+                | Self::Resize { .. }
+                | Self::ScrollDisplay { .. }
+                | Self::ScrollToBottom { .. }
+                | Self::SetTheme { .. }
+                | Self::SetCursorShape { .. }
+                | Self::MarkAllDirty { .. }
+                | Self::OpenSearch { .. }
+                | Self::CloseSearch { .. }
+                | Self::SearchSetQuery { .. }
+                | Self::SearchNextMatch { .. }
+                | Self::SearchPrevMatch { .. }
+        )
     }
 
     /// Whether this PDU is a push notification from the daemon.

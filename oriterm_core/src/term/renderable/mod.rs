@@ -88,6 +88,25 @@ pub struct RenderableContent {
     pub damage: Vec<DamageLine>,
 }
 
+impl Default for RenderableContent {
+    fn default() -> Self {
+        Self {
+            cells: Vec::new(),
+            cursor: RenderableCursor {
+                line: 0,
+                column: Column(0),
+                shape: CursorShape::default(),
+                visible: false,
+            },
+            display_offset: 0,
+            stable_row_base: 0,
+            mode: TermMode::empty(),
+            all_dirty: false,
+            damage: Vec::new(),
+        }
+    }
+}
+
 impl RenderableContent {
     /// Clear all fields, keeping allocated capacity for reuse.
     ///

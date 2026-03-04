@@ -1,27 +1,27 @@
 ---
 section: "05"
 title: Theme + Palette + Cursor Shape Through MuxBackend
-status: not-started
+status: complete
 goal: Config reload applies theme/palette/cursor changes through MuxBackend
 sections:
   - id: "05.1"
     title: Add theme/palette/cursor methods to MuxBackend
-    status: not-started
+    status: complete
   - id: "05.2"
     title: Add PDUs for theme changes
-    status: not-started
+    status: complete
   - id: "05.3"
     title: Server dispatch for theme PDUs
-    status: not-started
+    status: complete
   - id: "05.4"
     title: Rewire config_reload.rs
-    status: not-started
+    status: complete
   - id: "05.5"
     title: Rewire apply_palette callsites
-    status: not-started
+    status: complete
   - id: "05.6"
     title: Completion Checklist
-    status: not-started
+    status: complete
 ---
 
 # Section 05: Theme + Palette + Cursor Shape Through MuxBackend

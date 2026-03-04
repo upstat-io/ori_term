@@ -449,8 +449,8 @@ impl App {
         } else {
             -(lines as isize)
         };
-        if let Some(pane) = self.active_pane() {
-            pane.scroll_display(scroll_lines);
+        if let Some(mux) = self.mux.as_mut() {
+            mux.scroll_display(pane_id, scroll_lines);
         }
 
         if let Some(ctx) = self.focused_ctx_mut() {

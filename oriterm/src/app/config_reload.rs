@@ -158,28 +158,22 @@ impl App {
     /// Resolves the effective theme (honoring config override), resolves the
     /// color scheme, builds the palette, applies overrides, and marks all lines
     /// dirty so colors are re-resolved.
-    fn apply_color_changes(&self, new: &Config) {
+    fn apply_color_changes(&mut self, new: &Config) {
         if new.colors == self.config.colors {
             return;
         }
-
-        let Some(pane) = self.active_pane() else {
-            return;
-        };
-        let mut term = pane.terminal().lock();
 
         // Resolve theme: config override takes priority over system detection.
         let theme = new
             .colors
             .resolve_theme(crate::platform::theme::system_theme);
-
-        // Update the terminal's stored theme and rebuild from scheme.
-        term.set_theme(theme);
         let palette = build_palette_from_config(&new.colors, theme);
 
-        // Replace the palette and mark all lines dirty.
-        *term.palette_mut() = palette;
-        term.grid_mut().dirty_mut().mark_all();
+        // Apply to all panes, not just the active one.
+        let Some(mux) = self.mux.as_mut() else { return };
+        for pane_id in mux.pane_ids() {
+            mux.set_pane_theme(pane_id, theme, palette.clone());
+        }
 
         log::info!("config reload: colors updated (theme={theme:?})");
     }
@@ -188,8 +182,10 @@ impl App {
     fn apply_cursor_changes(&mut self, new: &Config) {
         if new.terminal.cursor_style != self.config.terminal.cursor_style {
             let shape = new.terminal.cursor_style.to_shape();
-            if let Some(pane) = self.active_pane() {
-                pane.terminal().lock().set_cursor_shape(shape);
+            if let Some(mux) = self.mux.as_mut() {
+                for pane_id in mux.pane_ids() {
+                    mux.set_cursor_shape(pane_id, shape);
+                }
             }
         }
 
@@ -229,11 +225,13 @@ impl App {
     ///
     /// Behavior flags are read from `self.config` at usage sites, so
     /// storing the new config is sufficient. If `bold_is_bright` changed,
-    /// marks all lines dirty since existing cells may render differently.
-    fn apply_behavior_changes(&self, new: &Config) {
+    /// marks all panes dirty since existing cells may render differently.
+    fn apply_behavior_changes(&mut self, new: &Config) {
         if new.behavior.bold_is_bright != self.config.behavior.bold_is_bright {
-            if let Some(pane) = self.active_pane() {
-                pane.terminal().lock().grid_mut().dirty_mut().mark_all();
+            if let Some(mux) = self.mux.as_mut() {
+                for pane_id in mux.pane_ids() {
+                    mux.mark_all_dirty(pane_id);
+                }
             }
             log::info!("config reload: bold_is_bright changed");
         }

@@ -10,7 +10,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use oriterm_core::{CellFlags, Column, Grid, extract_row_text};
+use oriterm_core::CellFlags;
+use oriterm_mux::{PaneSnapshot, WireCell, WireCellFlags};
 
 /// A single row-segment of a detected URL: `(abs_row, start_col, end_col)` inclusive.
 pub type UrlSegment = (usize, usize, usize);
@@ -46,33 +47,47 @@ pub struct UrlDetectCache {
 }
 
 impl UrlDetectCache {
-    /// Finds a URL at the specified grid position, computing and caching
-    /// the logical line if needed.
+    /// Finds a URL at the specified snapshot viewport position.
     ///
-    /// Returns the detected URL if one covers this position.
-    pub fn url_at(&mut self, grid: &Grid, abs_row: usize, col: usize) -> Option<DetectedUrl> {
-        let line_start = self.ensure_logical_line(grid, abs_row);
-        let urls = self.lines.get(&line_start)?;
+    /// Operates on [`PaneSnapshot`] cell data instead of `&Grid`. Logical line
+    /// boundaries are determined within the visible viewport only — URLs
+    /// spanning beyond viewport edges may be truncated.
+    pub fn url_at_snapshot(
+        &mut self,
+        snapshot: &PaneSnapshot,
+        viewport_line: usize,
+        col: usize,
+    ) -> Option<DetectedUrl> {
+        let abs_row = snapshot.stable_row_base as usize + viewport_line;
+        let line_start_abs = self.ensure_snapshot_logical_line(snapshot, viewport_line);
+        let urls = self.lines.get(&line_start_abs)?;
         urls.iter().find(|u| u.contains(abs_row, col)).cloned()
     }
 
-    /// Ensures the logical line containing the row is computed and cached.
-    ///
-    /// Returns the absolute row index of the logical line start.
-    fn ensure_logical_line(&mut self, grid: &Grid, abs_row: usize) -> usize {
+    /// Ensures the logical line containing the viewport row is computed from
+    /// snapshot data and cached.
+    fn ensure_snapshot_logical_line(
+        &mut self,
+        snapshot: &PaneSnapshot,
+        viewport_line: usize,
+    ) -> usize {
+        let abs_row = snapshot.stable_row_base as usize + viewport_line;
         if let Some(&ls) = self.row_to_line.get(&abs_row) {
             return ls;
         }
-        let line_start = url_logical_line_start(grid, abs_row);
-        let line_end = url_logical_line_end(grid, abs_row);
+        let vp_start = snapshot_logical_line_start(snapshot, viewport_line);
+        let vp_end = snapshot_logical_line_end(snapshot, viewport_line);
 
-        let urls = detect_urls_in_logical_line(grid, line_start, line_end);
+        let abs_start = snapshot.stable_row_base as usize + vp_start;
+        let abs_end = snapshot.stable_row_base as usize + vp_end;
 
-        for r in line_start..=line_end {
-            self.row_to_line.insert(r, line_start);
+        let urls = detect_urls_in_snapshot_lines(snapshot, vp_start, vp_end);
+
+        for abs in abs_start..=abs_end {
+            self.row_to_line.insert(abs, abs_start);
         }
-        self.lines.insert(line_start, urls);
-        line_start
+        self.lines.insert(abs_start, urls);
+        abs_start
     }
 
     /// Invalidates the entire cache.
@@ -115,15 +130,198 @@ fn trim_url_trailing(url: &str) -> &str {
     s
 }
 
-/// Detects URLs across a logical line spanning `line_start..=line_end` (absolute rows).
+/// Build per-row segments from a character span.
+fn build_segments(
+    char_to_pos: &[(usize, usize)],
+    char_start: usize,
+    char_end: usize,
+) -> Vec<UrlSegment> {
+    let mut segments: Vec<UrlSegment> = Vec::new();
+    let mut current_row = char_to_pos[char_start].0;
+    let mut seg_start_col = char_to_pos[char_start].1;
+    let mut seg_end_col = seg_start_col;
+
+    for &(ar, col) in &char_to_pos[char_start..=char_end] {
+        if ar != current_row {
+            segments.push((current_row, seg_start_col, seg_end_col));
+            current_row = ar;
+            seg_start_col = col;
+        }
+        seg_end_col = col;
+    }
+    segments.push((current_row, seg_start_col, seg_end_col));
+
+    segments
+}
+
+// -- Snapshot-based helpers --------------------------------------------------
+
+/// WRAP flag bit in `WireCellFlags`.
+const WIRE_WRAP: WireCellFlags = CellFlags::WRAP.bits();
+/// Wide char spacer flag bit in `WireCellFlags`.
+const WIRE_WIDE_CHAR_SPACER: WireCellFlags = CellFlags::WIDE_CHAR_SPACER.bits();
+/// Leading wide char spacer flag bit in `WireCellFlags`.
+const WIRE_LEADING_WIDE_CHAR_SPACER: WireCellFlags = CellFlags::LEADING_WIDE_CHAR_SPACER.bits();
+
+/// Check whether a snapshot viewport row continues onto the next row.
 ///
-/// Concatenates text from all rows, runs the regex, then maps byte spans
-/// back to per-row segments. Skips cells with OSC 8 hyperlinks.
+/// Uses the `WrapOrFilled` heuristic: a row continues if the WRAP flag is set
+/// OR the last cell is non-empty. This catches application-driven wrapping
+/// where programs break long output at the terminal width.
+fn snapshot_row_continues(row: &[WireCell]) -> bool {
+    let Some(last) = row.last() else {
+        return false;
+    };
+    (last.flags & WIRE_WRAP) != 0 || (last.ch != '\0' && last.ch != ' ')
+}
+
+/// Walk backward in the snapshot to find the start of a logical line.
+fn snapshot_logical_line_start(snapshot: &PaneSnapshot, viewport_line: usize) -> usize {
+    let mut current = viewport_line;
+    while current > 0 {
+        if snapshot_row_continues(&snapshot.cells[current - 1]) {
+            current -= 1;
+        } else {
+            break;
+        }
+    }
+    current
+}
+
+/// Walk forward in the snapshot to find the end of a logical line.
+fn snapshot_logical_line_end(snapshot: &PaneSnapshot, viewport_line: usize) -> usize {
+    let mut current = viewport_line;
+    while current < snapshot.cells.len().saturating_sub(1) {
+        if snapshot_row_continues(&snapshot.cells[current]) {
+            current += 1;
+        } else {
+            break;
+        }
+    }
+    current
+}
+
+/// Extract text and column mapping from a snapshot row.
+///
+/// Mirrors [`oriterm_core::extract_row_text`] but operates on `&[WireCell]`.
+fn extract_snapshot_row_text(row: &[WireCell]) -> (String, Vec<usize>) {
+    let mut text = String::new();
+    let mut col_map = Vec::new();
+
+    for (col, cell) in row.iter().enumerate() {
+        if (cell.flags & (WIRE_WIDE_CHAR_SPACER | WIRE_LEADING_WIDE_CHAR_SPACER)) != 0 {
+            continue;
+        }
+        let c = if cell.ch == '\0' { ' ' } else { cell.ch };
+        text.push(c);
+        col_map.push(col);
+
+        for &zw in &cell.zerowidth {
+            text.push(zw);
+            col_map.push(col);
+        }
+    }
+
+    (text, col_map)
+}
+
+/// Detect URLs across snapshot viewport lines `vp_start..=vp_end`.
+///
+/// Segments use absolute row indices (`stable_row_base + viewport_line`).
 #[expect(
     clippy::string_slice,
     reason = "char-to-byte offset mapping is validated"
 )]
-fn detect_urls_in_logical_line(
+fn detect_urls_in_snapshot_lines(
+    snapshot: &PaneSnapshot,
+    vp_start: usize,
+    vp_end: usize,
+) -> Vec<DetectedUrl> {
+    let mut text = String::new();
+    let mut char_to_pos: Vec<(usize, usize)> = Vec::new();
+
+    for vp_line in vp_start..=vp_end {
+        let Some(row) = snapshot.cells.get(vp_line) else {
+            continue;
+        };
+        let abs_row = snapshot.stable_row_base as usize + vp_line;
+        let (row_text, col_map) = extract_snapshot_row_text(row);
+        for (ci, _ch) in row_text.chars().enumerate() {
+            let col = col_map.get(ci).copied().unwrap_or(0);
+            char_to_pos.push((abs_row, col));
+        }
+        text.push_str(&row_text);
+    }
+
+    let mut urls = Vec::new();
+
+    for m in URL_RE.find_iter(&text) {
+        let trimmed = trim_url_trailing(m.as_str());
+        if trimmed.len() <= "https://".len() {
+            continue;
+        }
+
+        let char_start = text[..m.start()].chars().count();
+        let trimmed_char_len = trimmed.chars().count();
+        let char_end = char_start + trimmed_char_len - 1;
+
+        if char_end >= char_to_pos.len() {
+            continue;
+        }
+
+        let segments = build_segments(&char_to_pos, char_start, char_end);
+        urls.push(DetectedUrl {
+            segments,
+            url: trimmed.to_string(),
+        });
+    }
+
+    urls
+}
+
+// -- Grid-based helpers (test-only) ------------------------------------------
+//
+// These operate on `&Grid` directly and are used by unit tests to validate the
+// URL detection logic with grid fixtures. Production code uses the snapshot-
+// based path above.
+
+#[cfg(test)]
+use oriterm_core::{Column, Grid, extract_row_text};
+
+#[cfg(test)]
+impl UrlDetectCache {
+    /// Finds a URL at the specified grid position (test-only).
+    pub fn url_at(&mut self, grid: &Grid, abs_row: usize, col: usize) -> Option<DetectedUrl> {
+        let line_start = self.ensure_logical_line(grid, abs_row);
+        let urls = self.lines.get(&line_start)?;
+        urls.iter().find(|u| u.contains(abs_row, col)).cloned()
+    }
+
+    /// Ensures the logical line containing the row is computed (test-only).
+    fn ensure_logical_line(&mut self, grid: &Grid, abs_row: usize) -> usize {
+        if let Some(&ls) = self.row_to_line.get(&abs_row) {
+            return ls;
+        }
+        let line_start = url_logical_line_start(grid, abs_row);
+        let line_end = url_logical_line_end(grid, abs_row);
+
+        let urls = detect_urls_in_logical_line(grid, line_start, line_end);
+
+        for r in line_start..=line_end {
+            self.row_to_line.insert(r, line_start);
+        }
+        self.lines.insert(line_start, urls);
+        line_start
+    }
+}
+
+/// Detects URLs across a logical line spanning `line_start..=line_end` (absolute rows).
+#[cfg(test)]
+#[expect(
+    clippy::string_slice,
+    reason = "char-to-byte offset mapping is validated"
+)]
+pub(crate) fn detect_urls_in_logical_line(
     grid: &Grid,
     line_start: usize,
     line_end: usize,
@@ -151,10 +349,9 @@ fn detect_urls_in_logical_line(
             continue;
         }
 
-        // Convert byte offsets to char offsets.
         let char_start = text[..m.start()].chars().count();
         let trimmed_char_len = trimmed.chars().count();
-        let char_end = char_start + trimmed_char_len - 1; // inclusive
+        let char_end = char_start + trimmed_char_len - 1;
 
         if char_end >= char_to_pos.len() {
             continue;
@@ -170,37 +367,9 @@ fn detect_urls_in_logical_line(
     urls
 }
 
-/// Build per-row segments from a character span.
-fn build_segments(
-    char_to_pos: &[(usize, usize)],
-    char_start: usize,
-    char_end: usize,
-) -> Vec<UrlSegment> {
-    let mut segments: Vec<UrlSegment> = Vec::new();
-    let mut current_row = char_to_pos[char_start].0;
-    let mut seg_start_col = char_to_pos[char_start].1;
-    let mut seg_end_col = seg_start_col;
-
-    for &(ar, col) in &char_to_pos[char_start..=char_end] {
-        if ar != current_row {
-            segments.push((current_row, seg_start_col, seg_end_col));
-            current_row = ar;
-            seg_start_col = col;
-        }
-        seg_end_col = col;
-    }
-    segments.push((current_row, seg_start_col, seg_end_col));
-
-    segments
-}
-
-/// Check whether a row continues onto the next row for URL detection.
-///
-/// Uses the `WrapOrFilled` heuristic from the old prototype: a row continues
-/// if the WRAP flag is set OR the last cell is non-empty. This catches
-/// application-driven wrapping where programs break long output (including
-/// URLs) at the terminal width without the terminal auto-wrapping.
-fn row_continues_for_url(grid: &Grid, abs_row: usize) -> bool {
+/// Check whether a row continues onto the next row for URL detection (test-only).
+#[cfg(test)]
+pub(crate) fn row_continues_for_url(grid: &Grid, abs_row: usize) -> bool {
     let Some(row) = grid.absolute_row(abs_row) else {
         return false;
     };
@@ -212,9 +381,8 @@ fn row_continues_for_url(grid: &Grid, abs_row: usize) -> bool {
     last.flags.contains(CellFlags::WRAP) || (last.ch != '\0' && last.ch != ' ')
 }
 
-/// Walk backwards to find the start of a logical line for URL detection.
-///
-/// Uses `WrapOrFilled` heuristic — see [`row_continues_for_url`].
+/// Walk backwards to find the start of a logical line (test-only).
+#[cfg(test)]
 fn url_logical_line_start(grid: &Grid, abs_row: usize) -> usize {
     let mut current = abs_row;
     while current > 0 {
@@ -227,9 +395,8 @@ fn url_logical_line_start(grid: &Grid, abs_row: usize) -> usize {
     current
 }
 
-/// Walk forwards to find the end of a logical line for URL detection.
-///
-/// Uses `WrapOrFilled` heuristic — see [`row_continues_for_url`].
+/// Walk forwards to find the end of a logical line (test-only).
+#[cfg(test)]
 fn url_logical_line_end(grid: &Grid, abs_row: usize) -> usize {
     let mut current = abs_row;
     loop {

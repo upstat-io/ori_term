@@ -4,19 +4,20 @@
 //! click, shift-extend, alt-block), drag (mode-aware endpoint updates with
 //! word/line boundary snapping), and auto-scroll when dragging outside the
 //! grid viewport.
+//!
+//! All grid queries operate on [`SnapshotGrid`] — no terminal lock required.
+//! Selection state lives on [`App::pane_selections`](super::App), not on `Pane`.
 
-mod helpers;
+pub(crate) mod helpers;
 
 use winit::dpi::PhysicalPosition;
 use winit::keyboard::ModifiersState;
 
-use oriterm_core::grid::StableRowIndex;
-use oriterm_core::selection::{logical_line_end, logical_line_start, word_boundaries};
 use oriterm_core::{ClickDetector, Selection, SelectionMode, SelectionPoint, Side};
 
+use super::snapshot_grid::SnapshotGrid;
 use crate::font::CellMetrics;
 use crate::widgets::terminal_grid::TerminalGridWidget;
-use oriterm_mux::pane::Pane;
 
 /// Compact bitfield tracking which mouse buttons are currently pressed.
 #[derive(Debug, Clone, Copy, Default)]
@@ -213,17 +214,21 @@ pub(crate) fn pixel_to_side(pos: PhysicalPosition<f64>, ctx: &GridCtx<'_>) -> Si
 /// Handle a left mouse button press in the grid area.
 ///
 /// Creates or extends a selection based on click count and modifiers.
-/// Returns `true` if the press was handled (redraw needed).
+/// Returns `Some(PressAction)` if the press was handled, or `None` if the
+/// click was outside the grid. The caller applies the action to App state.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "selection press: mouse state, grid data, layout, position, modifiers, existing mode"
+)]
 pub(crate) fn handle_press(
     mouse: &mut MouseState,
-    pane: &mut Pane,
+    grid: &SnapshotGrid<'_>,
     ctx: &GridCtx<'_>,
     pos: PhysicalPosition<f64>,
     modifiers: ModifiersState,
-) -> bool {
-    let Some((col, line)) = pixel_to_cell(pos, ctx) else {
-        return false;
-    };
+    existing_mode: Option<SelectionMode>,
+) -> Option<PressAction> {
+    let (col, line) = pixel_to_cell(pos, ctx)?;
     let side = pixel_to_side(pos, ctx);
 
     // Record touchdown for drag threshold.
@@ -236,60 +241,50 @@ pub(crate) fn handle_press(
     let shift = modifiers.shift_key();
     let alt = modifiers.alt_key();
 
-    // Single lock: clamp, compute stable row, and conditionally compute
+    // Clamp, compute stable row, and conditionally compute
     // word/line boundaries for multi-click selections.
-    let (col, stable_row, word_bounds, line_bounds) = {
-        let term = pane.terminal().lock();
-        let g = term.grid();
-        let c = col.min(g.cols().saturating_sub(1));
-        let l = line.min(g.lines().saturating_sub(1));
-        let abs = g.scrollback().len().saturating_sub(g.display_offset()) + l;
-        let c = redirect_spacer(g, abs, c);
-        let stable = StableRowIndex::from_absolute(g, abs);
+    let c = col.min(grid.cols().saturating_sub(1));
+    let l = line.min(grid.lines().saturating_sub(1));
+    let c = grid.redirect_spacer(l, c);
+    let stable = grid.viewport_to_stable_row(l);
 
-        let wb = if click_count == 2 {
-            Some(word_boundaries(g, abs, c, ctx.word_delimiters))
-        } else {
-            None
-        };
-        let lb = if click_count >= 3 {
-            Some((
-                StableRowIndex::from_absolute(g, logical_line_start(g, abs)),
-                StableRowIndex::from_absolute(g, logical_line_end(g, abs)),
-                g.cols(),
-            ))
-        } else {
-            None
-        };
-
-        (c, stable, wb, lb)
+    let wb = if click_count == 2 {
+        Some(grid.word_boundaries(l, c, ctx.word_delimiters))
+    } else {
+        None
+    };
+    let lb = if click_count >= 3 {
+        let ls = grid.logical_line_start(l);
+        let le = grid.logical_line_end(l);
+        Some((
+            grid.viewport_to_stable_row(ls),
+            grid.viewport_to_stable_row(le),
+            grid.cols(),
+        ))
+    } else {
+        None
     };
 
     let action = classify_press(&PressInput {
         click_count,
         shift,
         alt,
-        col,
+        col: c,
         side,
-        stable_row,
-        word_bounds,
-        line_bounds,
-        existing_mode: pane.selection().map(|s| s.mode),
+        stable_row: stable,
+        word_bounds: wb,
+        line_bounds: lb,
+        existing_mode,
     });
 
-    match action {
-        PressAction::Extend(point) => {
-            pane.update_selection_end(point);
-            mouse.drag_active = true;
-        }
-        PressAction::New(selection) => {
-            pane.set_selection(selection);
-            if click_count >= 2 {
-                mouse.drag_active = true;
-            }
-        }
+    // Multi-click selections (word, line) activate drag immediately.
+    match &action {
+        PressAction::Extend(_) => mouse.drag_active = true,
+        PressAction::New(_) if click_count >= 2 => mouse.drag_active = true,
+        PressAction::New(_) => {}
     }
-    true
+
+    Some(action)
 }
 
 /// Result of classifying a mouse press for selection creation.
@@ -317,11 +312,15 @@ pub(crate) struct PressInput {
     /// Which half of the cell was clicked.
     pub side: Side,
     /// Stable row of the click.
-    pub stable_row: StableRowIndex,
+    pub stable_row: oriterm_core::grid::StableRowIndex,
     /// Word boundaries (start, end) for double-click.
     pub word_bounds: Option<(usize, usize)>,
     /// Line boundaries (`start_row`, `end_row`, cols) for triple-click.
-    pub line_bounds: Option<(StableRowIndex, StableRowIndex, usize)>,
+    pub line_bounds: Option<(
+        oriterm_core::grid::StableRowIndex,
+        oriterm_core::grid::StableRowIndex,
+        usize,
+    )>,
     /// Selection mode of the existing selection, if any.
     pub existing_mode: Option<SelectionMode>,
 }
@@ -390,19 +389,39 @@ pub(crate) fn classify_press(input: &PressInput) -> PressAction {
     PressAction::New(selection)
 }
 
+/// Result of a drag operation.
+pub(crate) enum DragResult {
+    /// Not dragging (no button or below threshold).
+    None,
+    /// Selection endpoint updated within the grid.
+    Updated(SelectionPoint),
+    /// Mouse is outside the grid; auto-scroll is needed.
+    ///
+    /// The caller must apply the scroll via `MuxBackend::scroll_display`,
+    /// then call [`compute_auto_scroll_endpoint`](helpers::compute_auto_scroll_endpoint)
+    /// to update the selection endpoint.
+    NeedsAutoScroll {
+        /// Scroll delta (+1 = up into history, -1 = down toward live).
+        delta: isize,
+        /// Whether the mouse is above the grid (scrolling into history).
+        scrolling_up: bool,
+    },
+}
+
 /// Handle mouse drag (cursor moved while button held).
 ///
-/// Updates the selection endpoint. For word/line modes, snaps the endpoint
-/// to the nearest boundary in the drag direction. Returns `true` if the
-/// selection changed (redraw needed).
+/// Computes the new selection endpoint. For word/line modes, snaps the
+/// endpoint to the nearest boundary in the drag direction. Returns a
+/// [`DragResult`] indicating what happened — the caller applies state changes.
 pub(crate) fn handle_drag(
     mouse: &mut MouseState,
-    pane: &mut Pane,
+    grid: &SnapshotGrid<'_>,
+    selection: Option<&Selection>,
     ctx: &GridCtx<'_>,
     pos: PhysicalPosition<f64>,
-) -> bool {
+) -> DragResult {
     if !mouse.buttons.left() {
-        return false;
+        return DragResult::None;
     }
 
     // Check drag threshold before first activation.
@@ -412,7 +431,7 @@ pub(crate) fn handle_drag(
             let dx = pos.x - td.x;
             let dy = pos.y - td.y;
             if dx * dx + dy * dy < threshold * threshold {
-                return false;
+                return DragResult::None;
             }
         }
         mouse.drag_active = true;
@@ -421,26 +440,32 @@ pub(crate) fn handle_drag(
     // Try to convert pixel to cell within the grid area.
     if let Some((col, line)) = pixel_to_cell(pos, ctx) {
         let side = pixel_to_side(pos, ctx);
-        helpers::update_drag_endpoint(pane, col, line, side, ctx.word_delimiters);
-        return true;
+        if let Some(endpoint) =
+            helpers::compute_drag_endpoint(grid, selection, col, line, side, ctx.word_delimiters)
+        {
+            return DragResult::Updated(endpoint);
+        }
+        return DragResult::None;
     }
 
-    // Mouse is outside the grid — handle auto-scroll.
-    helpers::handle_auto_scroll(pane, pos, ctx);
-    true
+    // Mouse is outside the grid — compute auto-scroll delta.
+    match helpers::auto_scroll_delta(grid, pos, ctx) {
+        Some((delta, scrolling_up)) => DragResult::NeedsAutoScroll {
+            delta,
+            scrolling_up,
+        },
+        None => DragResult::None,
+    }
 }
 
 /// Handle left mouse button release.
 ///
-/// Clears the drag state. The selection (if any) remains on the pane.
+/// Clears the drag state. The selection (if any) remains on App state.
 pub(crate) fn handle_release(mouse: &mut MouseState) {
     mouse.buttons.set(winit::event::MouseButton::Left, false);
     mouse.drag_active = false;
     mouse.touchdown = None;
 }
-
-// Re-exported for use in tests.
-pub(crate) use helpers::redirect_spacer;
 
 #[cfg(test)]
 mod tests;

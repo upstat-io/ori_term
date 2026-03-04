@@ -33,7 +33,7 @@ pub use selection::{
     ClickDetector, DEFAULT_WORD_DELIMITERS, Selection, SelectionBounds, SelectionMode,
     SelectionPoint, logical_line_end, logical_line_start,
 };
-pub use sync::{FairMutex, FairMutexGuard};
+pub use sync::{FairMutex, FairMutexGuard, FairMutexLease};
 pub use term::{
     DamageLine, Notification, PromptMarker, PromptState, RenderableCell, RenderableContent,
     RenderableCursor, Term, TermDamage, TermMode,

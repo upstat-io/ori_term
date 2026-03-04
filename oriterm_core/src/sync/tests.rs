@@ -54,17 +54,17 @@ fn two_threads_take_turns() {
 }
 
 #[test]
-fn try_lock_unfair_returns_none_when_locked() {
+fn try_lock_returns_none_when_locked() {
     let mutex = FairMutex::new(());
     let _guard = mutex.lock_unfair();
 
-    assert!(mutex.try_lock_unfair().is_none());
+    assert!(mutex.try_lock().is_none());
 }
 
 #[test]
-fn try_lock_unfair_succeeds_when_unlocked() {
+fn try_lock_succeeds_when_unlocked() {
     let mutex = FairMutex::new(7);
-    let guard = mutex.try_lock_unfair();
+    let guard = mutex.try_lock();
     assert!(guard.is_some());
     assert_eq!(*guard.unwrap(), 7);
 }
@@ -531,7 +531,7 @@ fn take_contended_resets_per_contention_event() {
     let h2 = thread::spawn(move || {
         let _g = m.lock();
     });
-    thread::sleep(Duration::from_millis(20));
+    thread::sleep(Duration::from_millis(50));
     assert!(
         mutex.take_contended(),
         "contended should be re-set on new contention"

@@ -1,27 +1,27 @@
 ---
 section: "02"
 title: Unified Snapshot Rendering
-status: not-started
+status: complete
 goal: EmbeddedMux produces real snapshots; rendering uses one code path (snapshot-only)
 sections:
   - id: "02.1"
     title: EmbeddedMux snapshot infrastructure
-    status: not-started
+    status: complete
   - id: "02.2"
     title: Remove default trait impls for snapshot methods
-    status: not-started
+    status: complete
   - id: "02.3"
     title: Unify single-pane rendering
-    status: not-started
+    status: complete
   - id: "02.4"
     title: Unify multi-pane rendering
-    status: not-started
+    status: complete
   - id: "02.5"
     title: Remove dead extract_frame functions
-    status: not-started
+    status: complete
   - id: "02.6"
     title: Completion Checklist
-    status: not-started
+    status: complete
 ---
 
 # Section 02: Unified Snapshot Rendering

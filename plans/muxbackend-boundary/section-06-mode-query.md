@@ -1,18 +1,18 @@
 ---
 section: "06"
 title: Pane Mode Query Through MuxBackend
-status: not-started
+status: complete
 goal: Terminal mode queries go through MuxBackend — single code path, no branching
 sections:
   - id: "06.1"
     title: Add pane_mode to MuxBackend
-    status: not-started
+    status: complete
   - id: "06.2"
     title: Simplify App::pane_mode helper
-    status: not-started
+    status: complete
   - id: "06.3"
     title: Completion Checklist
-    status: not-started
+    status: complete
 ---
 
 # Section 06: Pane Mode Query Through MuxBackend

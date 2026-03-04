@@ -109,6 +109,22 @@ impl Pane {
         }
     }
 
+    /// Build a selection for the nearest command output zone (non-mutating).
+    ///
+    /// Returns the selection without storing it on the pane. Used by
+    /// `MuxBackend::select_command_output` to return a selection to the caller.
+    pub fn command_output_selection(&self) -> Option<Selection> {
+        self.build_zone_selection(Term::command_output_range)
+    }
+
+    /// Build a selection for the nearest command input zone (non-mutating).
+    ///
+    /// Returns the selection without storing it on the pane. Used by
+    /// `MuxBackend::select_command_input` to return a selection to the caller.
+    pub fn command_input_selection(&self) -> Option<Selection> {
+        self.build_zone_selection(Term::command_input_range)
+    }
+
     /// Build a line selection from a range-finding function on the terminal.
     fn build_zone_selection(
         &self,

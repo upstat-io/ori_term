@@ -409,9 +409,10 @@ impl App {
 
         // Resize the active pane in this specific window (not the globally
         // focused one). Multi-pane layouts are recomputed by resize_all_panes.
-        if let Some(pane) = self.active_pane_for_window(winit_id) {
-            pane.resize_grid(rows as u16, cols as u16);
-            pane.resize_pty(rows as u16, cols as u16);
+        if let Some(pane_id) = self.active_pane_id_for_window(winit_id) {
+            if let Some(mux) = self.mux.as_mut() {
+                mux.resize_pane_grid(pane_id, rows as u16, cols as u16);
+            }
         }
         self.resize_all_panes();
         if let Some(ctx) = self.windows.get_mut(&winit_id) {

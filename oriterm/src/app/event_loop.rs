@@ -288,6 +288,7 @@ impl ApplicationHandler<TermEvent> for App {
             }
             TermEvent::MuxWakeup => {
                 self.perf.record_wakeup();
+                log::trace!("[DIAG] MuxWakeup received");
                 // The real work happens in `pump_mux_events()` during
                 // `about_to_wait`. This wakeup ensures the event loop
                 // doesn't sleep past pending mux events. The dirty flag
@@ -301,6 +302,7 @@ impl ApplicationHandler<TermEvent> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let atw_start = std::time::Instant::now();
         self.perf.record_tick();
 
         // Process deferred window creation (keybinding actions lack
@@ -332,7 +334,12 @@ impl ApplicationHandler<TermEvent> for App {
 
         // Pump mux events: drain PTY reader thread messages and process
         // resulting notifications before rendering.
+        let pump_start = std::time::Instant::now();
         self.pump_mux_events();
+        let pump_elapsed = pump_start.elapsed();
+        if pump_elapsed.as_millis() > 5 {
+            log::warn!("[DIAG] pump_mux_events took {:?}", pump_elapsed);
+        }
 
         // Drive cursor blink timer only when blinking is active.
         if self.blinking_active && self.cursor_blink.update() {
@@ -388,9 +395,22 @@ impl ApplicationHandler<TermEvent> for App {
             // mouse movement delays painting indefinitely, causing visible
             // lag for hover effects. Rendering here — at the end of the
             // event batch — ensures the frame reflects the latest state.
+            let render_start = std::time::Instant::now();
             self.handle_redraw();
+            let render_elapsed = render_start.elapsed();
+            if render_elapsed.as_millis() > 10 {
+                log::warn!("[DIAG] handle_redraw took {:?}", render_elapsed);
+            }
             self.last_render = std::time::Instant::now();
             self.perf.record_render();
+        }
+
+        let atw_elapsed = atw_start.elapsed();
+        if atw_elapsed.as_millis() > 16 {
+            log::warn!(
+                "[DIAG] about_to_wait TOTAL {:?} (dirty={any_dirty}, budget_ok={budget_elapsed})",
+                atw_elapsed
+            );
         }
 
         // Periodic performance stats.

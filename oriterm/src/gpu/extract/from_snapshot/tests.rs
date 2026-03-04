@@ -30,7 +30,7 @@ fn test_snapshot() -> PaneSnapshot {
                     bg: black,
                     flags: 0,
                     underline_color: None,
-                    has_hyperlink: false,
+                    hyperlink_uri: None,
                     zerowidth: vec![],
                 },
                 WireCell {
@@ -39,7 +39,7 @@ fn test_snapshot() -> PaneSnapshot {
                     bg: black,
                     flags: CellFlags::BOLD.bits(),
                     underline_color: None,
-                    has_hyperlink: false,
+                    hyperlink_uri: None,
                     zerowidth: vec![],
                 },
             ],
@@ -50,7 +50,7 @@ fn test_snapshot() -> PaneSnapshot {
                     bg: black,
                     flags: 0,
                     underline_color: None,
-                    has_hyperlink: false,
+                    hyperlink_uri: None,
                     zerowidth: vec![],
                 },
                 WireCell {
@@ -63,7 +63,7 @@ fn test_snapshot() -> PaneSnapshot {
                         g: 128,
                         b: 255,
                     }),
-                    has_hyperlink: true,
+                    hyperlink_uri: Some("https://test.example".to_string()),
                     zerowidth: vec!['\u{0301}'],
                 },
             ],
@@ -76,9 +76,18 @@ fn test_snapshot() -> PaneSnapshot {
         },
         palette: (0..270).map(|i| [(i % 256) as u8, 0, 0]).collect(),
         title: "test".into(),
+        icon_name: None,
+        cwd: None,
         modes: TermMode::SHOW_CURSOR.bits(),
         scrollback_len: 0,
         display_offset: 0,
+        stable_row_base: 0,
+        cols: 2,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     }
 }
 
@@ -298,9 +307,18 @@ fn empty_snapshot_no_cells() {
         },
         palette: vec![[0, 0, 0]; 270],
         title: String::new(),
+        icon_name: None,
+        cwd: None,
         modes: 0,
         scrollback_len: 0,
         display_offset: 0,
+        stable_row_base: 0,
+        cols: 0,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     };
 
     let content = snapshot_to_renderable(&snap);
@@ -321,9 +339,18 @@ fn empty_snapshot_frame_input() {
         },
         palette: vec![[0, 0, 0]; 270],
         title: String::new(),
+        icon_name: None,
+        cwd: None,
         modes: 0,
         scrollback_len: 0,
         display_offset: 0,
+        stable_row_base: 0,
+        cols: 0,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     };
 
     let viewport = ViewportSize::new(160, 320);
@@ -369,7 +396,7 @@ fn wide_char_flag_preserved() {
             bg: WireRgb { r: 0, g: 0, b: 0 },
             flags: CellFlags::WIDE_CHAR.bits(),
             underline_color: None,
-            has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: vec![],
         }]],
         cursor: WireCursor {
@@ -380,9 +407,18 @@ fn wide_char_flag_preserved() {
         },
         palette: vec![[0, 0, 0]; 270],
         title: String::new(),
+        icon_name: None,
+        cwd: None,
         modes: 0,
         scrollback_len: 0,
         display_offset: 0,
+        stable_row_base: 0,
+        cols: 1,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     };
 
     let content = snapshot_to_renderable(&snap);
@@ -502,7 +538,7 @@ fn large_snapshot_through_extract() {
                     bg: black,
                     flags: 0,
                     underline_color: None,
-                    has_hyperlink: false,
+                    hyperlink_uri: None,
                     zerowidth: vec![],
                 })
                 .collect()
@@ -519,9 +555,18 @@ fn large_snapshot_through_extract() {
         },
         palette: (0..270).map(|i| [(i % 256) as u8, 0, 0]).collect(),
         title: "large".into(),
+        icon_name: None,
+        cwd: None,
         modes: TermMode::SHOW_CURSOR.bits(),
         scrollback_len: 10_000,
         display_offset: 50,
+        stable_row_base: 9_950,
+        cols: cols as u16,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     };
 
     let viewport = ViewportSize::new(1600, 800);

@@ -3,11 +3,11 @@
 //! Detects implicitly detected URLs (regex-based) and explicit OSC 8 hyperlinks
 //! under the mouse cursor when Ctrl is held. On Ctrl+click, opens the URL in the
 //! system browser. Provides cursor icon feedback (pointer vs default).
+//!
+//! All grid data is read from [`PaneSnapshot`] — no `pane.terminal().lock()`.
 
 use winit::dpi::PhysicalPosition;
 use winit::window::CursorIcon;
-
-use oriterm_core::Column;
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
@@ -25,7 +25,8 @@ impl App {
     /// Detect URL under the cursor when Ctrl is held.
     ///
     /// Converts the pixel position to a grid cell, checks for OSC 8 hyperlinks
-    /// first, then falls back to implicit URL detection via the cache.
+    /// (from snapshot `hyperlink_uri`) first, then falls back to implicit URL
+    /// detection via the cache operating on snapshot cell data.
     pub(super) fn detect_hover_url(&mut self, pos: PhysicalPosition<f64>) -> HoverResult {
         let no_hit = HoverResult {
             cursor_icon: CursorIcon::Default,
@@ -45,9 +46,6 @@ impl App {
         let Some(ctx) = self.focused_ctx() else {
             return no_hit;
         };
-        let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) else {
-            return no_hit;
-        };
 
         let grid_ctx = GridCtx {
             widget: &ctx.terminal_grid,
@@ -59,20 +57,17 @@ impl App {
             return no_hit;
         };
 
-        let term = pane.terminal().lock();
-        let grid = term.grid();
-        let abs_row = grid.scrollback().len() + line - grid.display_offset();
-
-        let Some(row) = grid.absolute_row(abs_row) else {
+        let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) else {
             return no_hit;
         };
 
-        if col >= row.cols() {
+        // Bounds check against snapshot viewport.
+        let wire_cell = snapshot.cells.get(line).and_then(|row| row.get(col));
+        let Some(wire_cell) = wire_cell else {
             return no_hit;
-        }
+        };
 
-        // Borrow split: inline window lookup borrows only self.windows,
-        // leaving self.mux available (pane/term still borrowed above).
+        // Implicit URL detection via cache, operating on snapshot cells.
         let url_hit = {
             let Some(ctx) = self
                 .focused_window_id
@@ -80,16 +75,8 @@ impl App {
             else {
                 return no_hit;
             };
-            ctx.url_cache.url_at(grid, abs_row, col)
+            ctx.url_cache.url_at_snapshot(snapshot, line, col)
         };
-
-        // OSC 8 hyperlink fallback: only used when implicit detection misses.
-        let osc8_url = if url_hit.is_none() {
-            row[Column(col)].hyperlink().map(|h| h.uri.clone())
-        } else {
-            None
-        };
-        drop(term);
 
         if let Some(hit) = url_hit {
             return HoverResult {
@@ -98,12 +85,13 @@ impl App {
             };
         }
 
-        if let Some(uri) = osc8_url {
+        // OSC 8 hyperlink fallback: only used when implicit detection misses.
+        if let Some(uri) = &wire_cell.hyperlink_uri {
             return HoverResult {
                 cursor_icon: CursorIcon::Pointer,
                 url: Some(DetectedUrl {
                     segments: vec![],
-                    url: uri,
+                    url: uri.clone(),
                 }),
             };
         }
@@ -174,8 +162,7 @@ impl App {
     /// Fill `out` with hovered URL segments in viewport-relative coordinates.
     ///
     /// Clears `out` and pushes viewport-mapped segments, reusing the Vec's
-    /// existing capacity. Used by the redraw path after frame extraction to
-    /// avoid a per-frame allocation.
+    /// existing capacity. Uses snapshot metadata for coordinate conversion.
     pub(super) fn fill_hovered_url_viewport_segments(&self, out: &mut Vec<UrlSegment>) {
         out.clear();
 
@@ -189,23 +176,25 @@ impl App {
             // OSC 8 hyperlink — no implicit segments to render.
             return;
         }
-        let Some(pane) = self.active_pane() else {
+
+        let pane_id = match self.active_pane_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(pane_id)) else {
             return;
         };
-        let term = pane.terminal().lock();
-        let grid = term.grid();
-        let sb_len = grid.scrollback().len();
-        let display_offset = grid.display_offset();
+
+        let base = snapshot.stable_row_base as usize;
+        let lines = snapshot.cells.len();
 
         // Convert absolute rows to viewport lines.
         for &(abs_row, start_col, end_col) in &url.segments {
-            // viewport_line = abs_row - (scrollback_len - display_offset)
-            let base = sb_len.saturating_sub(display_offset);
             if abs_row < base {
                 continue; // Above visible viewport.
             }
             let vp_line = abs_row - base;
-            if vp_line >= grid.lines() {
+            if vp_line >= lines {
                 continue; // Below visible viewport.
             }
             out.push((vp_line, start_col, end_col));

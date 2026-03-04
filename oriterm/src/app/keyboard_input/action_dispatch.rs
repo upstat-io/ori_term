@@ -33,7 +33,10 @@ impl App {
                 true
             }
             Action::SmartCopy => {
-                let has_sel = self.active_pane().is_some_and(|p| p.selection().is_some());
+                let has_sel = self
+                    .active_pane_id()
+                    .and_then(|id| self.pane_selection(id))
+                    .is_some();
                 if has_sel {
                     self.copy_selection();
                     if let Some(ctx) = self.focused_ctx_mut() {
@@ -47,8 +50,10 @@ impl App {
             Action::ScrollPageUp => self.execute_scroll(true),
             Action::ScrollPageDown => self.execute_scroll(false),
             Action::ScrollToTop => {
-                if let Some(pane) = self.active_pane() {
-                    pane.scroll_display(isize::MAX);
+                if let Some(pane_id) = self.active_pane_id() {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.scroll_display(pane_id, isize::MAX);
+                    }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;
@@ -56,8 +61,10 @@ impl App {
                 true
             }
             Action::ScrollToBottom => {
-                if let Some(pane) = self.active_pane() {
-                    pane.scroll_to_bottom();
+                if let Some(pane_id) = self.active_pane_id() {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.scroll_to_bottom(pane_id);
+                    }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;
@@ -76,8 +83,8 @@ impl App {
                 true
             }
             Action::EnterMarkMode => {
-                if let Some(pane) = self.active_pane_mut() {
-                    pane.enter_mark_mode();
+                if let Some(pane_id) = self.active_pane_id() {
+                    self.enter_mark_mode(pane_id);
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;
@@ -86,8 +93,8 @@ impl App {
             }
             Action::SendText(text) => {
                 if let Some(pane_id) = self.active_pane_id() {
-                    if let Some(pane) = self.active_pane() {
-                        pane.scroll_to_bottom();
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.scroll_to_bottom(pane_id);
                     }
                     self.write_pane_input(pane_id, text.as_bytes());
                     self.cursor_blink.reset();
@@ -153,8 +160,10 @@ impl App {
                 true
             }
             Action::PreviousPrompt => {
-                if let Some(pane) = self.active_pane() {
-                    pane.scroll_to_previous_prompt();
+                if let Some(pane_id) = self.active_pane_id() {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.scroll_to_previous_prompt(pane_id);
+                    }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;
@@ -162,8 +171,10 @@ impl App {
                 true
             }
             Action::NextPrompt => {
-                if let Some(pane) = self.active_pane() {
-                    pane.scroll_to_next_prompt();
+                if let Some(pane_id) = self.active_pane_id() {
+                    if let Some(mux) = self.mux.as_mut() {
+                        mux.scroll_to_next_prompt(pane_id);
+                    }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;
@@ -171,8 +182,14 @@ impl App {
                 true
             }
             Action::SelectCommandOutput => {
-                if let Some(pane) = self.active_pane_mut() {
-                    pane.select_command_output();
+                if let Some(pane_id) = self.active_pane_id() {
+                    if let Some(sel) = self
+                        .mux
+                        .as_ref()
+                        .and_then(|m| m.select_command_output(pane_id))
+                    {
+                        self.set_pane_selection(pane_id, sel);
+                    }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;
@@ -180,8 +197,14 @@ impl App {
                 true
             }
             Action::SelectCommandInput => {
-                if let Some(pane) = self.active_pane_mut() {
-                    pane.select_command_input();
+                if let Some(pane_id) = self.active_pane_id() {
+                    if let Some(sel) = self
+                        .mux
+                        .as_ref()
+                        .and_then(|m| m.select_command_input(pane_id))
+                    {
+                        self.set_pane_selection(pane_id, sel);
+                    }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;

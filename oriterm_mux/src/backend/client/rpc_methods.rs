@@ -12,6 +12,7 @@ use std::io;
 use std::sync::mpsc;
 
 use oriterm_core::Theme;
+use oriterm_core::selection::Selection;
 
 use crate::PaneSnapshot;
 use crate::backend::MuxBackend;
@@ -19,9 +20,9 @@ use crate::domain::SpawnConfig;
 use crate::in_process::ClosePaneResult;
 use crate::layout::{Rect, SplitDirection};
 use crate::mux_event::{MuxEvent, MuxNotification};
-use crate::pane::Pane;
-use crate::protocol::MuxPdu;
+
 use crate::protocol::messages::theme_to_wire;
+use crate::protocol::{MuxPdu, WireSelection};
 use crate::registry::{PaneEntry, SessionRegistry};
 use crate::session::{MuxTab, MuxWindow};
 use crate::{DomainId, PaneId, TabId, WindowId};
@@ -37,7 +38,10 @@ impl MuxBackend for MuxClient {
         // Scan buffered notifications to mark panes dirty for rendering.
         for notif in &self.notifications {
             if let MuxNotification::PaneDirty(pane_id) = notif {
+                log::info!("[DIAG] poll_events: PaneDirty({pane_id})");
                 self.dirty_panes.insert(*pane_id);
+            } else {
+                log::info!("[DIAG] poll_events: {notif:?}");
             }
         }
     }
@@ -417,6 +421,212 @@ impl MuxBackend for MuxClient {
 
     fn raise_floating_pane(&mut self, _tab_id: TabId, _pane_id: PaneId) {}
 
+    fn resize_pane_grid(&mut self, pane_id: PaneId, rows: u16, cols: u16) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::Resize {
+                pane_id,
+                cols,
+                rows,
+            });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn pane_mode(&self, pane_id: PaneId) -> Option<u32> {
+        self.pane_snapshots.get(&pane_id).map(|s| s.modes)
+    }
+
+    fn set_pane_theme(&mut self, pane_id: PaneId, theme: Theme, palette: oriterm_core::Palette) {
+        let theme_str = theme_to_wire(theme).unwrap_or("dark").to_owned();
+        let palette_rgb: Vec<[u8; 3]> = (0..270)
+            .map(|i| {
+                let rgb = palette.color(i);
+                [rgb.r, rgb.g, rgb.b]
+            })
+            .collect();
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SetTheme {
+                pane_id,
+                theme: theme_str,
+                palette_rgb,
+            });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape) {
+        let wire = match shape {
+            oriterm_core::CursorShape::Block => 0,
+            oriterm_core::CursorShape::Underline => 1,
+            oriterm_core::CursorShape::Bar => 2,
+            oriterm_core::CursorShape::HollowBlock => 3,
+            oriterm_core::CursorShape::Hidden => 4,
+        };
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SetCursorShape {
+                pane_id,
+                shape: wire,
+            });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn mark_all_dirty(&mut self, pane_id: PaneId) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::MarkAllDirty { pane_id });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn open_search(&mut self, pane_id: PaneId) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::OpenSearch { pane_id });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn close_search(&mut self, pane_id: PaneId) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::CloseSearch { pane_id });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn search_set_query(&mut self, pane_id: PaneId, query: String) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SearchSetQuery { pane_id, query });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn search_next_match(&mut self, pane_id: PaneId) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SearchNextMatch { pane_id });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn search_prev_match(&mut self, pane_id: PaneId) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::SearchPrevMatch { pane_id });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn is_search_active(&self, pane_id: PaneId) -> bool {
+        self.pane_snapshots
+            .get(&pane_id)
+            .is_some_and(|s| s.search_active)
+    }
+
+    fn extract_text(&mut self, pane_id: PaneId, selection: &Selection) -> Option<String> {
+        let pdu = MuxPdu::ExtractText {
+            pane_id,
+            selection: WireSelection::from_selection(selection),
+        };
+        match self.rpc(pdu) {
+            Ok(MuxPdu::ExtractTextResp { text }) => (!text.is_empty()).then_some(text),
+            Ok(other) => {
+                log::error!("extract_text: unexpected response: {other:?}");
+                None
+            }
+            Err(e) => {
+                log::error!("extract_text: RPC failed: {e}");
+                None
+            }
+        }
+    }
+
+    fn extract_html(
+        &mut self,
+        pane_id: PaneId,
+        selection: &Selection,
+        font_family: &str,
+        font_size: f32,
+    ) -> Option<(String, String)> {
+        let pdu = MuxPdu::ExtractHtml {
+            pane_id,
+            selection: WireSelection::from_selection(selection),
+            font_family: font_family.to_string(),
+            font_size_x100: (font_size * 100.0) as u16,
+        };
+        match self.rpc(pdu) {
+            Ok(MuxPdu::ExtractHtmlResp { html, text }) => {
+                (!text.is_empty()).then_some((html, text))
+            }
+            Ok(other) => {
+                log::error!("extract_html: unexpected response: {other:?}");
+                None
+            }
+            Err(e) => {
+                log::error!("extract_html: RPC failed: {e}");
+                None
+            }
+        }
+    }
+
+    fn scroll_display(&mut self, pane_id: PaneId, delta: isize) {
+        let wire_delta = delta.clamp(i32::MIN as isize, i32::MAX as isize) as i32;
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::ScrollDisplay {
+                pane_id,
+                delta: wire_delta,
+            });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn scroll_to_bottom(&mut self, pane_id: PaneId) {
+        if let Some(transport) = &mut self.transport {
+            transport.fire_and_forget(MuxPdu::ScrollToBottom { pane_id });
+        }
+        self.dirty_panes.insert(pane_id);
+    }
+
+    fn scroll_to_previous_prompt(&mut self, pane_id: PaneId) -> bool {
+        match self.rpc(MuxPdu::ScrollToPrompt {
+            pane_id,
+            direction: -1,
+        }) {
+            Ok(MuxPdu::ScrollToPromptAck { scrolled }) => {
+                if scrolled {
+                    self.dirty_panes.insert(pane_id);
+                }
+                scrolled
+            }
+            Ok(other) => {
+                log::error!("scroll_to_previous_prompt: unexpected response: {other:?}");
+                false
+            }
+            Err(e) => {
+                log::error!("scroll_to_previous_prompt: RPC failed: {e}");
+                false
+            }
+        }
+    }
+
+    fn scroll_to_next_prompt(&mut self, pane_id: PaneId) -> bool {
+        match self.rpc(MuxPdu::ScrollToPrompt {
+            pane_id,
+            direction: 1,
+        }) {
+            Ok(MuxPdu::ScrollToPromptAck { scrolled }) => {
+                if scrolled {
+                    self.dirty_panes.insert(pane_id);
+                }
+                scrolled
+            }
+            Ok(other) => {
+                log::error!("scroll_to_next_prompt: unexpected response: {other:?}");
+                false
+            }
+            Err(e) => {
+                log::error!("scroll_to_next_prompt: RPC failed: {e}");
+                false
+            }
+        }
+    }
+
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]) {
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::Input {
@@ -424,21 +634,6 @@ impl MuxBackend for MuxClient {
                 data: data.to_vec(),
             });
         }
-    }
-
-    // -- Pane data access --
-
-    fn pane(&self, _pane_id: PaneId) -> Option<&Pane> {
-        // Daemon owns pane data — not available locally.
-        None
-    }
-
-    fn pane_mut(&mut self, _pane_id: PaneId) -> Option<&mut Pane> {
-        None
-    }
-
-    fn remove_pane(&mut self, _pane_id: PaneId) -> Option<Pane> {
-        None
     }
 
     fn pane_ids(&self) -> Vec<PaneId> {
@@ -519,8 +714,24 @@ impl MuxBackend for MuxClient {
     }
 
     fn refresh_pane_snapshot(&mut self, pane_id: PaneId) -> Option<&PaneSnapshot> {
-        match self.rpc(MuxPdu::GetPaneSnapshot { pane_id }) {
+        let rpc_start = std::time::Instant::now();
+        let result = self.rpc(MuxPdu::GetPaneSnapshot { pane_id });
+        let rpc_elapsed = rpc_start.elapsed();
+        if rpc_elapsed.as_millis() > 5 {
+            log::warn!(
+                "[DIAG] GetPaneSnapshot RPC took {:?} (ok={})",
+                rpc_elapsed,
+                result.is_ok()
+            );
+        }
+        match result {
             Ok(MuxPdu::PaneSnapshotResp { snapshot }) => {
+                let rows = snapshot.cells.len();
+                let cols = snapshot.cols;
+                log::trace!(
+                    "[DIAG] snapshot received: {rows}x{cols}, rpc={:?}",
+                    rpc_elapsed
+                );
                 self.pane_snapshots.insert(pane_id, snapshot);
                 self.pane_snapshots.get(&pane_id)
             }
@@ -529,7 +740,10 @@ impl MuxBackend for MuxClient {
                 None
             }
             Err(e) => {
-                log::error!("refresh_pane_snapshot: RPC failed: {e}");
+                log::error!(
+                    "refresh_pane_snapshot: RPC failed after {:?}: {e}",
+                    rpc_elapsed
+                );
                 None
             }
         }

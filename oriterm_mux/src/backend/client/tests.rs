@@ -14,20 +14,6 @@ fn object_safe() {
     let _boxed: Box<dyn MuxBackend> = Box::new(client);
 }
 
-/// `pane()` returns `None` in client mode.
-#[test]
-fn pane_returns_none() {
-    let client = MuxClient::new();
-    assert!(client.pane(PaneId::from_raw(1)).is_none());
-}
-
-/// `pane_mut()` returns `None` in client mode.
-#[test]
-fn pane_mut_returns_none() {
-    let mut client = MuxClient::new();
-    assert!(client.pane_mut(PaneId::from_raw(1)).is_none());
-}
-
 /// `drain_notifications` returns empty initially.
 #[test]
 fn drain_empty() {
@@ -142,7 +128,7 @@ fn test_snapshot(title: &str) -> crate::PaneSnapshot {
             bg: WireRgb { r: 0, g: 0, b: 0 },
             flags: 0,
             underline_color: None,
-            has_hyperlink: false,
+            hyperlink_uri: None,
             zerowidth: vec![],
         }]],
         cursor: WireCursor {
@@ -153,9 +139,18 @@ fn test_snapshot(title: &str) -> crate::PaneSnapshot {
         },
         palette: vec![[0, 0, 0]; 270],
         title: title.into(),
+        icon_name: None,
+        cwd: None,
         modes: 0,
         scrollback_len: 0,
         display_offset: 0,
+        stable_row_base: 0,
+        cols: 1,
+        search_active: false,
+        search_query: String::new(),
+        search_matches: Vec::new(),
+        search_focused: None,
+        search_total_matches: 0,
     }
 }
 

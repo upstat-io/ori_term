@@ -13,7 +13,7 @@
 ## Keyword Clusters by Section
 
 ### Section 01: Enrich PaneSnapshot
-**File:** `section-01-enrich-snapshot.md` | **Status:** Not Started
+**File:** `section-01-enrich-snapshot.md` | **Status:** Complete
 
 ```
 PaneSnapshot, snapshot, WireCell, WireCursor, WireRgb, WireCellFlags
@@ -25,7 +25,7 @@ wire format, serialization, serde, bincode
 ---
 
 ### Section 02: Unified Snapshot Rendering
-**File:** `section-02-unified-rendering.md` | **Status:** Not Started
+**File:** `section-02-unified-rendering.md` | **Status:** Complete
 
 ```
 EmbeddedMux, pane_snapshot, refresh_pane_snapshot, snapshot cache
@@ -38,7 +38,7 @@ grid_dirty, clear_grid_dirty, is_pane_snapshot_dirty
 ---
 
 ### Section 03: Resize Through MuxBackend
-**File:** `section-03-resize.md` | **Status:** Not Started
+**File:** `section-03-resize.md` | **Status:** Complete
 
 ```
 resize, resize_pane_grid, resize_pty, resize_grid
@@ -50,7 +50,7 @@ pane_ops, chrome/mod.rs, Resize PDU
 ---
 
 ### Section 04: Scroll Through MuxBackend
-**File:** `section-04-scroll.md` | **Status:** Not Started
+**File:** `section-04-scroll.md` | **Status:** Complete
 
 ```
 scroll, scroll_display, scroll_to_bottom, display_offset
@@ -62,7 +62,7 @@ action_dispatch, auto-scroll, mouse drag scroll
 ---
 
 ### Section 05: Theme + Palette + Cursor Shape
-**File:** `section-05-theme-palette.md` | **Status:** Not Started
+**File:** `section-05-theme-palette.md` | **Status:** Complete
 
 ```
 theme, palette, set_theme, palette_mut, set_cursor_shape
@@ -77,7 +77,7 @@ SelectScheme context menu, window_management reconnect
 ---
 
 ### Section 06: Pane Mode Query
-**File:** `section-06-mode-query.md` | **Status:** Not Started
+**File:** `section-06-mode-query.md` | **Status:** Complete
 
 ```
 pane_mode, TermMode, mode bits, mode_cache
@@ -89,7 +89,7 @@ keyboard input, kitty protocol
 ---
 
 ### Section 07: Client-Side Selection (SnapshotGrid)
-**File:** `section-07-selection.md` | **Status:** Not Started
+**File:** `section-07-selection.md` | **Status:** Complete
 
 ```
 selection, Selection, SelectionPoint, SelectionMode
@@ -102,7 +102,7 @@ StableRowIndex, stable_row_base, viewport math
 ---
 
 ### Section 08: Client-Side Mark Mode
-**File:** `section-08-mark-mode.md` | **Status:** Not Started
+**File:** `section-08-mark-mode.md` | **Status:** Complete
 
 ```
 mark mode, MarkCursor, mark_cursor, enter_mark_mode, exit_mark_mode
@@ -116,7 +116,7 @@ context menu SelectAll, is_mark_mode dispatch
 ---
 
 ### Section 09: Search Through MuxBackend
-**File:** `section-09-search.md` | **Status:** Not Started
+**File:** `section-09-search.md` | **Status:** Complete
 
 ```
 search, SearchState, search_ui, open_search, close_search
@@ -129,7 +129,7 @@ OpenSearch PDU, CloseSearch PDU, SearchSetQuery PDU
 ---
 
 ### Section 10: Clipboard Through MuxBackend
-**File:** `section-10-clipboard.md` | **Status:** Not Started
+**File:** `section-10-clipboard.md` | **Status:** Complete
 
 ```
 clipboard, extract_text, extract_html, clipboard_ops
@@ -140,7 +140,7 @@ ExtractText PDU, ExtractHtml PDU
 ---
 
 ### Section 11: URL Detection on Snapshot
-**File:** `section-11-url-detection.md` | **Status:** Not Started
+**File:** `section-11-url-detection.md` | **Status:** Complete
 
 ```
 URL, hover, cursor_hover, detect_hover_url, update_url_hover
@@ -152,7 +152,7 @@ url_detect, UrlDetectCache, implicit URL, regex
 ---
 
 ### Section 12: Config Reload Cleanup
-**File:** `section-12-config-reload.md` | **Status:** Not Started
+**File:** `section-12-config-reload.md` | **Status:** Complete
 
 ```
 config_reload, apply_config_reload, apply_color_changes
@@ -164,7 +164,7 @@ set_pane_theme, set_cursor_shape
 ---
 
 ### Section 13: Remove Pane from oriterm
-**File:** `section-13-remove-pane.md` | **Status:** Not Started
+**File:** `section-13-remove-pane.md` | **Status:** Complete
 
 ```
 Pane, pane(), pane_mut(), remove_pane(), pane_ids()
@@ -179,7 +179,7 @@ pane_cwd, cleanup_closed_pane, select_command_output/input
 ---
 
 ### Section 14: E2E MuxServer Integration Tests
-**File:** `section-14-e2e-tests.md` | **Status:** Not Started
+**File:** `section-14-e2e-tests.md` | **Status:** Complete
 
 ```
 integration test, e2e, MuxServer, MuxClient

@@ -12,9 +12,7 @@ use oriterm_ui::theme::UiTheme;
 use oriterm_ui::widgets::text_measurer::TextMeasurer;
 use oriterm_ui::widgets::{DrawCtx, Widget};
 
-use super::{
-    DRAG_THRESHOLD_PX, GridCtx, MouseState, pixel_to_cell, pixel_to_side, redirect_spacer,
-};
+use super::{DRAG_THRESHOLD_PX, GridCtx, MouseState, pixel_to_cell, pixel_to_side};
 use crate::font::CellMetrics;
 use crate::widgets::terminal_grid::TerminalGridWidget;
 
@@ -545,51 +543,6 @@ fn drag_threshold_distance_check() {
     assert!(dx3 * dx3 + dy3 * dy3 >= threshold * threshold);
 }
 
-// --- redirect_spacer ---
-
-#[test]
-fn redirect_spacer_normal_cell() {
-    use oriterm_core::grid::Grid;
-    let grid = Grid::new(5, 10);
-    // Col 3 on an empty grid has no WIDE_CHAR_SPACER flag.
-    assert_eq!(redirect_spacer(&grid, 0, 3), 3);
-}
-
-#[test]
-fn redirect_spacer_col_zero() {
-    use oriterm_core::grid::Grid;
-    let grid = Grid::new(5, 10);
-    // Col 0 can never redirect (would go to -1).
-    assert_eq!(redirect_spacer(&grid, 0, 0), 0);
-}
-
-#[test]
-fn redirect_spacer_out_of_bounds_row() {
-    use oriterm_core::grid::Grid;
-    let grid = Grid::new(5, 10);
-    // Absolute row 999 doesn't exist — should return col unchanged.
-    assert_eq!(redirect_spacer(&grid, 999, 5), 5);
-}
-
-#[test]
-fn redirect_spacer_wide_char() {
-    use oriterm_core::grid::Grid;
-    use oriterm_core::{CellFlags, Column, Line};
-
-    let mut grid = Grid::new(5, 10);
-    // Set up a wide char at col 2, spacer at col 3.
-    // Grid is scrollback(0) + visible(5), so abs row 0 = visible row 0.
-    grid[Line(0)][Column(2)].flags |= CellFlags::WIDE_CHAR;
-    grid[Line(0)][Column(3)].flags |= CellFlags::WIDE_CHAR_SPACER;
-
-    // Click on spacer at col 3 → redirected to col 2.
-    assert_eq!(redirect_spacer(&grid, 0, 3), 2);
-    // Click on base cell at col 2 → stays at col 2.
-    assert_eq!(redirect_spacer(&grid, 0, 2), 2);
-    // Click on normal cell at col 4 → stays at col 4.
-    assert_eq!(redirect_spacer(&grid, 0, 4), 4);
-}
-
 // --- classify_press ---
 
 use oriterm_core::SelectionMode;
@@ -696,33 +649,6 @@ fn shift_click_extends_existing_selection() {
         matches!(action, PressAction::New(_)),
         "shift+click without selection should create new, got {action:?}",
     );
-}
-
-// --- Emoji wide char spacer redirect (ref: WezTerm drag_selection emoji) ---
-
-#[test]
-fn redirect_spacer_emoji_wide_char() {
-    use oriterm_core::grid::Grid;
-    use oriterm_core::{CellFlags, Column, Line};
-
-    let mut grid = Grid::new(1, 10);
-    grid.move_to(0, Column(0));
-    grid.put_char('💀'); // width 2: col 0 = base, col 1 = spacer
-    grid.put_char('A'); // col 2
-
-    // Verify spacer flag was set by put_char.
-    assert!(
-        grid[Line(0)][Column(1)]
-            .flags
-            .contains(CellFlags::WIDE_CHAR_SPACER)
-    );
-
-    // Click on emoji spacer → redirected to base cell.
-    assert_eq!(redirect_spacer(&grid, 0, 1), 0);
-    // Click on emoji base → stays.
-    assert_eq!(redirect_spacer(&grid, 0, 0), 0);
-    // Click on 'A' → stays.
-    assert_eq!(redirect_spacer(&grid, 0, 2), 2);
 }
 
 // --- Zero-size cell metrics guard ---

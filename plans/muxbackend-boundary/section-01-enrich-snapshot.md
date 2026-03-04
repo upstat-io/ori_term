@@ -1,24 +1,24 @@
 ---
 section: "01"
 title: Enrich PaneSnapshot
-status: not-started
+status: complete
 goal: Add stable_row_base and cols fields to PaneSnapshot so client-side selection math works
 sections:
   - id: "01.1"
     title: Add stable_row_base field
-    status: not-started
+    status: complete
   - id: "01.2"
     title: Add cols field
-    status: not-started
+    status: complete
   - id: "01.3"
     title: Populate new fields in build_snapshot
-    status: not-started
+    status: complete
   - id: "01.4"
     title: Update frame extraction from snapshot
-    status: not-started
+    status: complete
   - id: "01.5"
     title: Completion Checklist
-    status: not-started
+    status: complete
 ---
 
 # Section 01: Enrich PaneSnapshot

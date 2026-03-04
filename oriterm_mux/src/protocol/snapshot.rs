@@ -7,6 +7,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use oriterm_core::Side;
+use oriterm_core::grid::StableRowIndex;
+use oriterm_core::selection::{Selection, SelectionMode, SelectionPoint};
+
 use crate::id::{PaneId, TabId, WindowId};
 
 /// RGB color on the wire.
@@ -57,8 +61,8 @@ pub struct WireCell {
     pub flags: WireCellFlags,
     /// Resolved underline color (`None` = use foreground).
     pub underline_color: Option<WireRgb>,
-    /// Whether this cell has an OSC 8 hyperlink.
-    pub has_hyperlink: bool,
+    /// OSC 8 hyperlink URI (`None` if no hyperlink).
+    pub hyperlink_uri: Option<String>,
     /// Combining marks / zero-width characters.
     pub zerowidth: Vec<char>,
 }
@@ -66,10 +70,11 @@ pub struct WireCell {
 /// Cursor shape on the wire.
 ///
 /// Stable `#[repr(u8)]` encoding decoupled from `oriterm_core::CursorShape`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum WireCursorShape {
     /// Filled block cursor.
+    #[default]
     Block = 0,
     /// Underline cursor.
     Underline = 1,
@@ -82,7 +87,7 @@ pub enum WireCursorShape {
 }
 
 /// Cursor state on the wire.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireCursor {
     /// Column (0-indexed).
     pub col: u16,
@@ -94,11 +99,30 @@ pub struct WireCursor {
     pub visible: bool,
 }
 
+/// A search match position on the wire.
+///
+/// Uses raw `u64` for stable row indices and `u16` for columns,
+/// decoupled from `oriterm_core::SearchMatch` (which uses `StableRowIndex`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WireSearchMatch {
+    /// Stable row of match start.
+    pub start_row: u64,
+    /// Start column.
+    pub start_col: u16,
+    /// Stable row of match end.
+    pub end_row: u64,
+    /// End column (inclusive).
+    pub end_col: u16,
+}
+
 /// Full snapshot of a pane's visible state.
 ///
 /// Transferred when a client subscribes to a pane or explicitly requests
 /// a snapshot. Contains everything needed to render the pane from scratch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Default` produces an empty snapshot suitable as an initial cache entry
+/// for [`build_snapshot_into`](crate::server::snapshot::build_snapshot_into).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaneSnapshot {
     /// Visible grid contents (rows × cols).
     pub cells: Vec<Vec<WireCell>>,
@@ -106,8 +130,12 @@ pub struct PaneSnapshot {
     pub cursor: WireCursor,
     /// Color palette as 270 RGB triplets.
     pub palette: Vec<[u8; 3]>,
-    /// Pane title (from OSC 0/2).
+    /// Pane title (resolved via `effective_title()`).
     pub title: String,
+    /// Icon name (from OSC 0/1), if set.
+    pub icon_name: Option<String>,
+    /// Current working directory (from OSC 7), if known.
+    pub cwd: Option<String>,
     /// Terminal mode flags as raw bits.
     ///
     /// # Wire format
@@ -146,6 +174,117 @@ pub struct PaneSnapshot {
     pub scrollback_len: u32,
     /// Current scroll position (0 = bottom, `scrollback_len` = top).
     pub display_offset: u32,
+    /// Absolute row index of the first viewport row.
+    ///
+    /// Matches `StableRowIndex` semantics: accounts for scrollback eviction,
+    /// not just current buffer length.
+    pub stable_row_base: u64,
+    /// Grid column count.
+    ///
+    /// Explicit to avoid fragile `cells[0].len()` inference.
+    pub cols: u16,
+
+    // -- Search state --
+    /// Whether search is currently active for this pane.
+    pub search_active: bool,
+    /// Current search query (may be empty while search UI is still open).
+    pub search_query: String,
+    /// All search matches (sorted by position).
+    pub search_matches: Vec<WireSearchMatch>,
+    /// Index of the focused match (`None` if no matches).
+    pub search_focused: Option<u32>,
+    /// Total match count across the full scrollback.
+    pub search_total_matches: u32,
+}
+
+/// A selection on the wire.
+///
+/// Encodes the three-point selection model (`anchor`, `pivot`, `end`) with
+/// mode, stable row indices, and side information. Decoupled from
+/// `oriterm_core::Selection` (which uses `StableRowIndex` and `Side` enums).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WireSelection {
+    /// Selection mode: 0=Char, 1=Word, 2=Line, 3=Block.
+    pub mode: u8,
+    /// Anchor point.
+    pub anchor_row: u64,
+    /// Anchor column.
+    pub anchor_col: u32,
+    /// Anchor side: 0=Left, 1=Right.
+    pub anchor_side: u8,
+    /// Pivot point.
+    pub pivot_row: u64,
+    /// Pivot column.
+    pub pivot_col: u32,
+    /// Pivot side.
+    pub pivot_side: u8,
+    /// End point.
+    pub end_row: u64,
+    /// End column.
+    pub end_col: u32,
+    /// End side.
+    pub end_side: u8,
+}
+
+impl WireSelection {
+    /// Convert from an `oriterm_core::Selection`.
+    pub fn from_selection(sel: &Selection) -> Self {
+        Self {
+            mode: match sel.mode {
+                SelectionMode::Char => 0,
+                SelectionMode::Word => 1,
+                SelectionMode::Line => 2,
+                SelectionMode::Block => 3,
+            },
+            anchor_row: sel.anchor.row.0,
+            anchor_col: sel.anchor.col as u32,
+            anchor_side: match sel.anchor.side {
+                Side::Left => 0,
+                Side::Right => 1,
+            },
+            pivot_row: sel.pivot.row.0,
+            pivot_col: sel.pivot.col as u32,
+            pivot_side: match sel.pivot.side {
+                Side::Left => 0,
+                Side::Right => 1,
+            },
+            end_row: sel.end.row.0,
+            end_col: sel.end.col as u32,
+            end_side: match sel.end.side {
+                Side::Left => 0,
+                Side::Right => 1,
+            },
+        }
+    }
+
+    /// Convert to an `oriterm_core::Selection`.
+    pub fn to_selection(&self) -> Selection {
+        let mode = match self.mode {
+            1 => SelectionMode::Word,
+            2 => SelectionMode::Line,
+            3 => SelectionMode::Block,
+            _ => SelectionMode::Char,
+        };
+        let side = |s: u8| if s == 1 { Side::Right } else { Side::Left };
+        Selection {
+            mode,
+            anchor: SelectionPoint {
+                row: StableRowIndex(self.anchor_row),
+                col: self.anchor_col as usize,
+                side: side(self.anchor_side),
+            },
+            pivot: SelectionPoint {
+                row: StableRowIndex(self.pivot_row),
+                col: self.pivot_col as usize,
+                side: side(self.pivot_side),
+            },
+            end: SelectionPoint {
+                row: StableRowIndex(self.end_row),
+                col: self.end_col as usize,
+                side: side(self.end_side),
+            },
+        }
+    }
 }
 
 /// Summary info for a mux window (used in `ListWindows` response).

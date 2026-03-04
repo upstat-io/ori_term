@@ -11,7 +11,6 @@ use winit::keyboard::ModifiersState;
 use oriterm_core::TermMode;
 use oriterm_core::event::ClipboardType;
 use oriterm_core::paste;
-use oriterm_core::selection::{extract_html_with_text, extract_text};
 
 use oriterm_ui::overlay::Placement;
 use oriterm_ui::widgets::dialog::{DialogButton, DialogButtons, DialogWidget};
@@ -20,17 +19,15 @@ use super::App;
 use crate::config::PasteWarning;
 
 impl App {
-    /// Extract text from the active pane's selection.
+    /// Extract text from the active pane's selection via `MuxBackend`.
     ///
     /// Returns `None` if there is no active pane, no selection, or the
-    /// selection is empty. Borrow of `self.active_pane()` is confined to
-    /// this method so callers can mutate `self.clipboard` after.
-    fn extract_selection_text(&self) -> Option<String> {
-        let pane = self.active_pane()?;
-        let sel = pane.selection()?;
-        let term = pane.terminal().lock();
-        let text = extract_text(term.grid(), sel);
-        (!text.is_empty()).then_some(text)
+    /// selection is empty.
+    fn extract_selection_text(&mut self) -> Option<String> {
+        let pane_id = self.active_pane_id()?;
+        let sel = self.pane_selection(pane_id).copied()?;
+        let mux = self.mux.as_mut()?;
+        mux.extract_text(pane_id, &sel)
     }
 
     /// Copy the active selection to the system clipboard.
@@ -80,22 +77,13 @@ impl App {
     ///
     /// Returns `None` if there is no active pane, no selection, the selection
     /// is empty, or no renderer is available for font metrics.
-    fn extract_selection_html(&self) -> Option<(String, String)> {
-        let pane = self.active_pane()?;
-        let sel = pane.selection()?;
-        let renderer = self.renderer.as_ref()?;
-        let term = pane.terminal().lock();
-        let (html, text) = extract_html_with_text(
-            term.grid(),
-            sel,
-            term.palette(),
-            renderer.family_name(),
-            self.config.font.size,
-        );
-        if text.is_empty() {
-            return None;
-        }
-        Some((html, text))
+    fn extract_selection_html(&mut self) -> Option<(String, String)> {
+        let pane_id = self.active_pane_id()?;
+        let sel = self.pane_selection(pane_id).copied()?;
+        let family = self.renderer.as_ref()?.family_name().to_string();
+        let font_size = self.config.font.size;
+        let mux = self.mux.as_mut()?;
+        mux.extract_html(pane_id, &sel, &family, font_size)
     }
 
     /// Copy the active selection to the X11/Wayland primary selection.
@@ -191,8 +179,8 @@ impl App {
             return;
         }
 
-        if let Some(pane) = self.active_pane() {
-            pane.scroll_to_bottom();
+        if let Some(mux) = self.mux.as_mut() {
+            mux.scroll_to_bottom(pane_id);
         }
         self.write_pane_input(pane_id, &bytes);
         log::debug!(
