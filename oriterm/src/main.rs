@@ -56,7 +56,6 @@ fn main() {
     // CLI flag > config for process model decision.
     let embedded = args.embedded || config.process_model == ProcessModel::Embedded;
 
-    #[cfg(unix)]
     let mut app = if let Some(ref socket) = args.connect {
         // Explicit --connect always uses daemon mode (regardless of config).
         app::App::new_daemon(proxy, config, socket, args.window)
@@ -72,15 +71,6 @@ fn main() {
                 app::App::new(proxy, config)
             }
         }
-    };
-
-    #[cfg(not(unix))]
-    let mut app = {
-        let _ = embedded; // Daemon mode not supported on this platform.
-        if args.connect.is_some() {
-            log::error!("--connect is not supported on this platform");
-        }
-        app::App::new(proxy, config)
     };
 
     if let Err(e) = event_loop.run_app(&mut app) {
@@ -157,7 +147,6 @@ fn install_panic_hook() {
 }
 
 /// Try to start the daemon up to 3 times before giving up.
-#[cfg(unix)]
 fn ensure_daemon_with_retry() -> std::io::Result<std::path::PathBuf> {
     const MAX_ATTEMPTS: u32 = 3;
     let mut last_err = None;

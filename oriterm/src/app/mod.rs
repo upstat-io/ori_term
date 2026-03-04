@@ -159,7 +159,6 @@ impl App {
     /// Instead of an embedded mux, connects to a running `oriterm-mux`
     /// daemon at `socket_path`. If `window_id` is provided, claims an
     /// existing mux window; otherwise creates a new one during init.
-    #[cfg(unix)]
     pub(crate) fn new_daemon(
         event_proxy: EventLoopProxy<TermEvent>,
         config: Config,
@@ -359,7 +358,8 @@ impl App {
     ///
     /// Returns `None` if no active pane is present.
     fn terminal_mode(&self) -> Option<TermMode> {
-        self.active_pane().map(|p| p.terminal().lock().mode())
+        let id = self.active_pane_id()?;
+        self.pane_mode(id)
     }
 
     // -- Mux pane accessors --
@@ -401,6 +401,33 @@ impl App {
     fn active_pane_mut(&mut self) -> Option<&mut Pane> {
         let id = self.active_pane_id()?;
         self.mux.as_mut()?.pane_mut(id)
+    }
+
+    /// Terminal mode flags for a pane.
+    ///
+    /// In embedded mode, reads from the local `Pane` terminal state.
+    /// In daemon mode, reads from the cached pane snapshot.
+    fn pane_mode(&self, pane_id: PaneId) -> Option<TermMode> {
+        let mux = self.mux.as_ref()?;
+        if let Some(pane) = mux.pane(pane_id) {
+            Some(pane.terminal().lock().mode())
+        } else {
+            mux.pane_snapshot(pane_id)
+                .map(|s| TermMode::from_bits_truncate(s.modes))
+        }
+    }
+
+    /// Send input bytes to a pane.
+    ///
+    /// In embedded mode, writes directly to the local PTY via `Pane`.
+    /// In daemon mode, sends through the IPC transport.
+    fn write_pane_input(&mut self, pane_id: PaneId, data: &[u8]) {
+        let Some(mux) = self.mux.as_mut() else { return };
+        if let Some(pane) = mux.pane(pane_id) {
+            pane.write_input(data);
+        } else {
+            mux.send_input(pane_id, data);
+        }
     }
 
     /// Tab index for a given pane within the active window's tab list.

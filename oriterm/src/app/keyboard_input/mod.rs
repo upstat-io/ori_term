@@ -218,12 +218,16 @@ impl App {
     }
 
     /// Encode a key event and send the result to the PTY.
+    ///
+    /// Works in both embedded mode (local pane) and daemon mode (snapshot
+    /// for mode flags, IPC transport for input).
     fn encode_key_to_pty(&mut self, event: &winit::event::KeyEvent) {
-        let Some(pane) = self.active_pane() else {
+        let Some(pane_id) = self.active_pane_id() else {
             return;
         };
-
-        let mode = pane.terminal().lock().mode();
+        let Some(mode) = self.pane_mode(pane_id) else {
+            return;
+        };
 
         let event_type = match (event.state, event.repeat) {
             (ElementState::Released, _) => KeyEventType::Release,
@@ -241,8 +245,10 @@ impl App {
         });
 
         if !bytes.is_empty() {
-            pane.scroll_to_bottom();
-            pane.write_input(&bytes);
+            if let Some(pane) = self.active_pane() {
+                pane.scroll_to_bottom();
+            }
+            self.write_pane_input(pane_id, &bytes);
             self.cursor_blink.reset();
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.dirty = true;
@@ -326,12 +332,14 @@ impl App {
 
     /// Handle IME commit: send committed text directly to the PTY.
     pub(super) fn handle_ime_commit(&mut self, text: &str) {
-        let Some(pane) = self.active_pane() else {
+        let Some(pane_id) = self.active_pane_id() else {
             return;
         };
         if !text.is_empty() {
-            pane.scroll_to_bottom();
-            pane.write_input(text.as_bytes());
+            if let Some(pane) = self.active_pane() {
+                pane.scroll_to_bottom();
+            }
+            self.write_pane_input(pane_id, text.as_bytes());
             self.cursor_blink.reset();
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.dirty = true;

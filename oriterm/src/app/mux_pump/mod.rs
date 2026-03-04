@@ -151,9 +151,7 @@ impl App {
             } => {
                 let text = self.clipboard.load(clipboard_type);
                 let response = formatter(&text);
-                if let Some(pane) = self.mux.as_ref().and_then(|m| m.pane(pane_id)) {
-                    pane.write_input(response.as_bytes());
-                }
+                self.write_pane_input(pane_id, response.as_bytes());
             }
         }
     }

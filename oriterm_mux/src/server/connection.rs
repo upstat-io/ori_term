@@ -11,7 +11,9 @@ use mio::Token;
 use crate::id::ClientId;
 use crate::{PaneId, WindowId};
 
-use super::frame_io::FrameReader;
+use crate::MuxPdu;
+
+use super::frame_io::{FrameReader, FrameWriter};
 use super::ipc::IpcStream;
 
 /// A connected window process.
@@ -24,6 +26,8 @@ pub struct ClientConnection {
     token: Token,
     /// Non-blocking frame reader accumulating partial frames.
     frame_reader: FrameReader,
+    /// Non-blocking frame writer buffering outgoing frames.
+    frame_writer: FrameWriter,
     /// Which mux window this client renders (set after handshake).
     window_id: Option<WindowId>,
     /// Panes this client is subscribed to for push notifications.
@@ -38,6 +42,7 @@ impl ClientConnection {
             stream,
             token,
             frame_reader: FrameReader::new(),
+            frame_writer: FrameWriter::new(),
             window_id: None,
             subscribed_panes: HashSet::new(),
         }
@@ -61,6 +66,26 @@ impl ClientConnection {
     /// Mutable access to the frame reader.
     pub fn frame_reader_mut(&mut self) -> &mut FrameReader {
         &mut self.frame_reader
+    }
+
+    /// Queue a frame for sending and attempt to flush.
+    ///
+    /// If the stream returns `WouldBlock`, the remaining bytes are kept
+    /// in the write buffer. The caller should register `WRITABLE` interest
+    /// when [`has_pending_writes`] returns `true`.
+    pub fn queue_frame(&mut self, seq: u32, pdu: &MuxPdu) -> std::io::Result<()> {
+        self.frame_writer.queue(seq, pdu)?;
+        self.frame_writer.flush_to(&mut self.stream)
+    }
+
+    /// Flush any buffered outgoing data to the stream.
+    pub fn flush_writes(&mut self) -> std::io::Result<()> {
+        self.frame_writer.flush_to(&mut self.stream)
+    }
+
+    /// Whether there is unsent data in the write buffer.
+    pub fn has_pending_writes(&self) -> bool {
+        self.frame_writer.has_pending()
     }
 
     /// Which mux window this client is rendering.

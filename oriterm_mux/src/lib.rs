@@ -15,7 +15,6 @@
 #![deny(unsafe_code)]
 
 pub mod backend;
-#[cfg(unix)]
 pub mod discovery;
 pub mod domain;
 pub mod id;
@@ -27,7 +26,6 @@ pub mod pane;
 pub mod protocol;
 pub mod pty;
 pub mod registry;
-#[cfg(unix)]
 pub mod server;
 pub mod session;
 pub mod shell_integration;

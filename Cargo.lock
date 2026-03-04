@@ -1851,6 +1851,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oriterm_ipc"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "libc",
+ "log",
+ "mio",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "oriterm_mux"
 version = "0.1.0-alpha.3"
 dependencies = [
@@ -1859,12 +1869,14 @@ dependencies = [
  "log",
  "mio",
  "oriterm_core",
+ "oriterm_ipc",
  "parking_lot",
  "portable-pty",
  "serde",
  "signal-hook",
  "tempfile",
  "vte",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

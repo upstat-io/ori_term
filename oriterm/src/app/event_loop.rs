@@ -62,16 +62,18 @@ impl App {
     ///
     /// Only sends when the terminal has `FOCUS_IN_OUT` mode enabled (mode 1004).
     /// Focus-in: `CSI I` (`\x1b[I`), focus-out: `CSI O` (`\x1b[O`).
-    fn send_focus_event(&self, focused: bool) {
-        let Some(pane) = self.active_pane() else {
+    fn send_focus_event(&mut self, focused: bool) {
+        let Some(pane_id) = self.active_pane_id() else {
             return;
         };
-        let mode = pane.mode();
-        if mode & oriterm_core::TermMode::FOCUS_IN_OUT.bits() == 0 {
+        let Some(mode) = self.pane_mode(pane_id) else {
+            return;
+        };
+        if !mode.contains(oriterm_core::TermMode::FOCUS_IN_OUT) {
             return;
         }
-        let seq = if focused { b"\x1b[I" } else { b"\x1b[O" };
-        pane.write_input(seq);
+        let seq: &[u8] = if focused { b"\x1b[I" } else { b"\x1b[O" };
+        self.write_pane_input(pane_id, seq);
     }
 }
 

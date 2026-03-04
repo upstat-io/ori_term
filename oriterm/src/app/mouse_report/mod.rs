@@ -288,7 +288,7 @@ impl App {
     /// Encodes the event using the provided terminal mode, then writes to
     /// the PTY. No-op if the cursor is outside the grid.
     pub(super) fn report_mouse_button(
-        &self,
+        &mut self,
         button: MouseButton,
         kind: MouseEventKind,
         mode: TermMode,
@@ -297,7 +297,7 @@ impl App {
             return;
         };
 
-        let Some(pane) = self.active_pane() else {
+        let Some(pane_id) = self.active_pane_id() else {
             return;
         };
         let event = MouseEvent {
@@ -310,7 +310,7 @@ impl App {
         let report = encode_mouse_event(&event, mode);
         let bytes = report.as_bytes();
         if !bytes.is_empty() {
-            pane.write_input(bytes);
+            self.write_pane_input(pane_id, bytes);
         }
     }
 
@@ -372,8 +372,8 @@ impl App {
         let report = encode_mouse_event(&event, mode);
         let bytes = report.as_bytes();
         if !bytes.is_empty() {
-            if let Some(pane) = self.active_pane() {
-                pane.write_input(bytes);
+            if let Some(pane_id) = self.active_pane_id() {
+                self.write_pane_input(pane_id, bytes);
                 self.mouse.set_last_reported_cell(Some((col, line)));
             }
         }
@@ -394,7 +394,7 @@ impl App {
             return;
         };
 
-        let Some(pane) = self.active_pane() else {
+        let Some(pane_id) = self.active_pane_id() else {
             return;
         };
 
@@ -420,7 +420,7 @@ impl App {
             let bytes = report.as_bytes();
             if !bytes.is_empty() {
                 for _ in 0..lines {
-                    pane.write_input(bytes);
+                    self.write_pane_input(pane_id, bytes);
                 }
             }
             if let Some(ctx) = self.focused_ctx_mut() {
@@ -433,9 +433,9 @@ impl App {
         if mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
             && !self.modifiers.shift_key()
         {
-            let arrow = if scroll_up { b"\x1bOA" } else { b"\x1bOB" };
+            let arrow: &[u8] = if scroll_up { b"\x1bOA" } else { b"\x1bOB" };
             for _ in 0..lines {
-                pane.write_input(arrow);
+                self.write_pane_input(pane_id, arrow);
             }
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.dirty = true;
@@ -449,7 +449,9 @@ impl App {
         } else {
             -(lines as isize)
         };
-        pane.scroll_display(scroll_lines);
+        if let Some(pane) = self.active_pane() {
+            pane.scroll_display(scroll_lines);
+        }
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;

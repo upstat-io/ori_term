@@ -44,15 +44,10 @@ impl Drop for PidFile {
 
 /// Default PID file path.
 ///
-/// Prefers `$XDG_RUNTIME_DIR/oriterm-mux.pid`. Falls back to
-/// `/tmp/oriterm-$USER/mux.pid`.
+/// Delegates to `oriterm_ipc::pid_file_path()` for platform-appropriate
+/// path selection.
 pub fn pid_file_path() -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        PathBuf::from(dir).join("oriterm-mux.pid")
-    } else {
-        let user = std::env::var("USER").unwrap_or_else(|_| String::from("unknown"));
-        PathBuf::from(format!("/tmp/oriterm-{user}")).join("mux.pid")
-    }
+    oriterm_ipc::pid_file_path()
 }
 
 /// Read the PID from an existing PID file.

@@ -1,9 +1,31 @@
-[workspace]
-members = ["oriterm_core", "oriterm", "oriterm_ui", "oriterm_ipc", "oriterm_mux"]
-resolver = "2"
+[package]
+name = "oriterm_ipc"
+version = "0.1.0-alpha.1"
+edition = "2024"
+description = "Platform-specific IPC abstraction for oriterm daemon mode"
+license = "MIT"
 
-[workspace.lints.rust]
-unsafe_code = "deny"
+[dependencies]
+log = "0.4"
+mio = { version = "1", features = ["os-poll", "os-ext", "net"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Pipes",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+] }
+
+# Cannot use `workspace = true` and override `unsafe_code` simultaneously.
+# Copy the workspace lints here with `unsafe_code = "allow"`.
+[lints.rust]
+unsafe_code = "allow"
 dead_code = "deny"
 rust_2018_idioms = { level = "warn", priority = -1 }
 future_incompatible = { level = "warn", priority = -1 }
@@ -11,19 +33,12 @@ unused_import_braces = "warn"
 unused_lifetimes = "warn"
 unused_qualifications = "warn"
 
-[workspace.lints.clippy]
-# Deny all default clippy warnings (from Alacritty)
+[lints.clippy]
 all = { level = "deny", priority = -1 }
-# Pedantic as warnings (from Ratatui)
 pedantic = { level = "warn", priority = -1 }
-# Nursery as warnings
 nursery = { level = "warn", priority = -1 }
-
-# Specific denies (from Alacritty)
 enum_glob_use = "deny"
 if_not_else = "deny"
-
-# Specific warns from Ratatui (restriction group, not covered by pedantic/nursery)
 as_underscore = "warn"
 deref_by_slicing = "warn"
 else_if_without_else = "warn"
@@ -40,8 +55,6 @@ rest_pat_in_fully_bound_structs = "warn"
 string_lit_chars_any = "warn"
 string_slice = "warn"
 unnecessary_self_imports = "warn"
-
-# Allow noisy pedantic/nursery lints (from Ratatui + Alacritty common practice)
 cast_lossless = "allow"
 cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
@@ -64,6 +77,3 @@ too_many_lines = "deny"
 uninlined_format_args = "allow"
 unreadable_literal = "deny"
 unused_self = "deny"
-
-[patch.crates-io]
-vte = { path = "crates/vte" }

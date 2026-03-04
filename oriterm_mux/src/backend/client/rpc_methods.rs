@@ -30,7 +30,6 @@ use super::MuxClient;
 
 impl MuxBackend for MuxClient {
     fn poll_events(&mut self) {
-        #[cfg(unix)]
         if let Some(transport) = &self.transport {
             transport.poll_notifications(&mut self.notifications);
         }
@@ -419,16 +418,11 @@ impl MuxBackend for MuxClient {
     fn raise_floating_pane(&mut self, _tab_id: TabId, _pane_id: PaneId) {}
 
     fn send_input(&mut self, pane_id: PaneId, data: &[u8]) {
-        #[cfg(unix)]
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::Input {
                 pane_id,
                 data: data.to_vec(),
             });
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (pane_id, data);
         }
     }
 

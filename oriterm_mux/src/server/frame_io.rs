@@ -7,7 +7,7 @@
 use std::io::{self, Write};
 
 use crate::protocol::{HEADER_LEN, MAX_PAYLOAD};
-use crate::{DecodeError, DecodedFrame, FrameHeader, MsgType, MuxPdu, ProtocolCodec};
+use crate::{DecodeError, DecodedFrame, FrameHeader, MsgType, MuxPdu};
 
 /// Result of a single `read_from` call.
 #[derive(Debug, PartialEq, Eq)]
@@ -94,7 +94,72 @@ impl FrameReader {
     }
 }
 
-/// Encode and send a single frame to a writer.
-pub fn send_frame<W: Write>(writer: &mut W, seq: u32, pdu: &MuxPdu) -> io::Result<()> {
-    ProtocolCodec::encode_frame(writer, seq, pdu)
+/// Per-connection outgoing frame buffer.
+///
+/// Frames are serialized to an internal buffer via [`queue`]. The caller
+/// then calls [`flush_to`] to write as much as possible to the non-blocking
+/// stream. If a write returns `WouldBlock`, the remaining bytes stay in the
+/// buffer and are retried on the next writable event.
+pub struct FrameWriter {
+    buf: Vec<u8>,
+}
+
+impl FrameWriter {
+    /// Create a new empty writer.
+    pub fn new() -> Self {
+        Self {
+            buf: Vec::with_capacity(256),
+        }
+    }
+
+    /// Serialize a frame and append it to the outgoing buffer.
+    pub fn queue(&mut self, seq: u32, pdu: &MuxPdu) -> io::Result<()> {
+        let payload =
+            bincode::serialize(pdu).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let payload_len: u32 = payload.len().try_into().map_err(|_overflow| {
+            io::Error::new(io::ErrorKind::InvalidData, "payload exceeds u32 capacity")
+        })?;
+
+        if payload_len > MAX_PAYLOAD {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("payload too large: {payload_len} bytes (max {MAX_PAYLOAD})"),
+            ));
+        }
+
+        let header = FrameHeader {
+            msg_type: pdu.msg_type() as u16,
+            seq,
+            payload_len,
+        };
+
+        self.buf.extend_from_slice(&header.encode());
+        self.buf.extend_from_slice(&payload);
+        Ok(())
+    }
+
+    /// Write as much buffered data as possible to the stream.
+    ///
+    /// Returns `Ok(())` even if some data remains (caller should check
+    /// [`has_pending`] and register `WRITABLE` interest if so).
+    pub fn flush_to<W: Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        while !self.buf.is_empty() {
+            match writer.write(&self.buf) {
+                Ok(0) => return Err(io::Error::from(io::ErrorKind::WriteZero)),
+                Ok(n) => {
+                    self.buf.drain(..n);
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether there is unsent data in the buffer.
+    pub fn has_pending(&self) -> bool {
+        !self.buf.is_empty()
+    }
 }

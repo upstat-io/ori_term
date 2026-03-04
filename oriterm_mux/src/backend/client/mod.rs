@@ -5,16 +5,12 @@
 //! is not available locally — `pane()`/`pane_mut()` return `None`.
 //! Rendering in daemon mode uses `PaneSnapshot` (a later step).
 
-#[cfg(unix)]
 mod notification;
 mod rpc_methods;
-#[cfg(unix)]
 mod transport;
 
 use std::collections::{HashMap, HashSet};
 use std::io;
-
-#[cfg(unix)]
 use std::sync::Arc;
 
 use crate::PaneId;
@@ -23,7 +19,6 @@ use crate::mux_event::MuxNotification;
 use crate::protocol::MuxPdu;
 use crate::registry::{PaneRegistry, SessionRegistry};
 
-#[cfg(unix)]
 use self::transport::ClientTransport;
 
 /// IPC client backend for daemon mode.
@@ -39,7 +34,6 @@ use self::transport::ClientTransport;
 /// snapshot via RPC, and clears the flag.
 pub struct MuxClient {
     /// IPC transport (reader thread + socket). `None` when test-only stub.
-    #[cfg(unix)]
     transport: Option<ClientTransport>,
 
     /// Mirrored session state, synced from daemon responses/notifications.
@@ -63,7 +57,6 @@ impl MuxClient {
     ///
     /// Performs the Hello handshake and spawns the background reader thread.
     /// `wakeup` is called when push notifications arrive (wakes the event loop).
-    #[cfg(unix)]
     pub fn connect(
         socket_path: &std::path::Path,
         wakeup: Arc<dyn Fn() + Send + Sync>,
@@ -86,7 +79,6 @@ impl MuxClient {
     #[cfg(test)]
     pub fn new() -> Self {
         Self {
-            #[cfg(unix)]
             transport: None,
             local_session: SessionRegistry::new(),
             pane_registry: PaneRegistry::new(),
@@ -142,52 +134,23 @@ impl MuxClient {
     }
 
     /// The client ID assigned by the daemon, if connected.
-    #[cfg(unix)]
     pub fn client_id(&self) -> Option<crate::id::ClientId> {
         self.transport.as_ref().map(ClientTransport::client_id)
     }
 
     /// Whether the daemon connection is alive.
-    #[cfg(unix)]
     pub fn is_connected(&self) -> bool {
         self.transport
             .as_ref()
             .is_some_and(ClientTransport::is_alive)
     }
 
-    /// Stub: always disconnected on non-unix platforms.
-    #[cfg(not(unix))]
-    #[expect(
-        clippy::unused_self,
-        reason = "signature must match the unix cfg variant"
-    )]
-    pub fn is_connected(&self) -> bool {
-        false
-    }
-
     /// Send an RPC request to the daemon and return the response.
-    ///
-    /// Centralizes the `#[cfg(unix)]` transport gate — callers use
-    /// `self.rpc(pdu)?` without any platform-specific branching.
-    #[cfg(unix)]
     fn rpc(&mut self, pdu: MuxPdu) -> io::Result<MuxPdu> {
         self.transport
             .as_mut()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "not connected to daemon"))?
             .rpc(pdu)
-    }
-
-    /// Stub: daemon mode is not supported on this platform.
-    #[cfg(not(unix))]
-    #[expect(
-        clippy::unused_self,
-        clippy::needless_pass_by_ref_mut,
-        reason = "signature must match the unix cfg variant"
-    )]
-    fn rpc(&mut self, _pdu: MuxPdu) -> io::Result<MuxPdu> {
-        Err(io::Error::other(
-            "daemon mode not supported on this platform",
-        ))
     }
 }
 

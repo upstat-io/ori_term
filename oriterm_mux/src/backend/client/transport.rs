@@ -1,18 +1,19 @@
 //! IPC transport layer: connection, reader thread, RPC roundtrip.
 //!
-//! [`ClientTransport`] manages the Unix socket connection to the mux daemon.
-//! A background reader thread owns the socket and multiplexes outbound
+//! [`ClientTransport`] manages the IPC connection to the mux daemon.
+//! A background reader thread owns the stream and multiplexes outbound
 //! requests with inbound responses and push notifications.
 
 use std::collections::HashMap;
 use std::io;
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+use oriterm_ipc::ClientStream;
 
 use crate::id::ClientId;
 use crate::mux_event::MuxNotification;
@@ -44,7 +45,7 @@ struct SendRequest {
 
 /// IPC transport to the mux daemon.
 ///
-/// Manages a background reader thread that owns the socket. The main thread
+/// Manages a background reader thread that owns the stream. The main thread
 /// sends requests via an mpsc channel and blocks on per-request oneshot
 /// replies. Push notifications are buffered in a separate channel.
 pub(super) struct ClientTransport {
@@ -70,7 +71,7 @@ impl ClientTransport {
     /// `wakeup` is called when push notifications arrive, so the event loop
     /// can wake and process them.
     pub(super) fn connect(path: &Path, wakeup: Arc<dyn Fn() + Send + Sync>) -> io::Result<Self> {
-        let mut stream = UnixStream::connect(path)?;
+        let mut stream = ClientStream::connect(path)?;
 
         // Send Hello handshake.
         let pid = std::process::id();
@@ -238,15 +239,15 @@ impl Drop for ClientTransport {
 
 /// Background reader thread event loop.
 ///
-/// Owns the socket. Drains outbound requests from the send channel, writes
-/// them to the socket, reads responses and notifications, and dispatches
-/// them to the correct reply channel or notification channel.
+/// Owns the IPC stream. Drains outbound requests from the send channel,
+/// writes them to the stream, reads responses and notifications, and
+/// dispatches them to the correct reply channel or notification channel.
 #[allow(
     clippy::needless_pass_by_value,
     reason = "ownership required — values are moved into the spawned thread"
 )]
 fn reader_loop(
-    mut stream: UnixStream,
+    mut stream: ClientStream,
     send_rx: mpsc::Receiver<SendRequest>,
     notif_tx: mpsc::Sender<MuxNotification>,
     wakeup: Arc<dyn Fn() + Send + Sync>,

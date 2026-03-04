@@ -295,7 +295,6 @@ impl App {
 
         // Spawn a new oriterm process to render the new window.
         // It connects to the same daemon socket and claims the window ID.
-        #[cfg(unix)]
         {
             let exe = match std::env::current_exe() {
                 Ok(p) => p,

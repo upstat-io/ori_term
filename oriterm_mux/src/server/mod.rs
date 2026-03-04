@@ -28,7 +28,7 @@ use crate::id::ClientId;
 use crate::pane::Pane;
 use crate::{DecodedFrame, IdAllocator, InProcessMux, MuxNotification, MuxPdu, PaneId, WindowId};
 
-use self::frame_io::{ReadStatus, send_frame};
+use self::frame_io::ReadStatus;
 use self::notify::TargetClients;
 
 pub use connection::ClientConnection;
@@ -231,12 +231,28 @@ impl MuxServer {
         Ok(())
     }
 
-    /// Handle a readable event from a connected client.
+    /// Handle a readable/writable event from a connected client.
     fn handle_client_event(&mut self, token: Token) {
         let Some(&client_id) = self.token_to_client.get(&token) else {
-            log::warn!("readable event for unknown token {}", token.0);
+            log::warn!("event for unknown token {}", token.0);
             return;
         };
+
+        // Flush any pending writes first (writable event or combined event).
+        {
+            let Some(conn) = self.connections.get_mut(&client_id) else {
+                return;
+            };
+            if conn.has_pending_writes() {
+                log::trace!("{client_id}: flushing pending writes");
+                if let Err(e) = conn.flush_writes() {
+                    log::warn!("flush error for client {client_id}: {e}");
+                    self.disconnect_client(client_id);
+                    return;
+                }
+                self.update_write_interest(client_id);
+            }
+        }
 
         // Read available bytes from the stream into the frame reader.
         let read_status = {
@@ -247,10 +263,14 @@ impl MuxServer {
             match conn.stream_mut().read(&mut tmp) {
                 Ok(0) => ReadStatus::Closed,
                 Ok(n) => {
+                    log::trace!("{client_id}: read {n} bytes");
                     conn.frame_reader_mut().extend(&tmp[..n]);
                     ReadStatus::GotData
                 }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => ReadStatus::WouldBlock,
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    log::trace!("{client_id}: read WouldBlock");
+                    ReadStatus::WouldBlock
+                }
                 Err(e) => {
                     log::warn!("read error from client {client_id}: {e}");
                     self.disconnect_client(client_id);
@@ -290,7 +310,8 @@ impl MuxServer {
                         message: format!("decode error: {e}"),
                     };
                     if let Some(conn) = self.connections.get_mut(&client_id) {
-                        let _ = send_frame(conn.stream_mut(), 0, &err_pdu);
+                        let _ = conn.queue_frame(0, &err_pdu);
+                        self.update_write_interest(client_id);
                     }
                     if is_fatal_decode_error(&e) {
                         self.disconnect_client(client_id);
@@ -303,6 +324,11 @@ impl MuxServer {
 
     /// Handle a single successfully decoded frame from a client.
     fn handle_decoded_frame(&mut self, client_id: ClientId, decoded: DecodedFrame) {
+        log::trace!(
+            "{client_id}: dispatch seq={} pdu={:?}",
+            decoded.seq,
+            decoded.pdu
+        );
         let seq = decoded.seq;
         let is_sub_change = matches!(
             &decoded.pdu,
@@ -349,11 +375,12 @@ impl MuxServer {
             let Some(conn) = self.connections.get_mut(&client_id) else {
                 return;
             };
-            if let Err(e) = send_frame(conn.stream_mut(), seq, &resp_pdu) {
+            if let Err(e) = conn.queue_frame(seq, &resp_pdu) {
                 log::warn!("write error to client {client_id}: {e}");
                 self.disconnect_client(client_id);
                 return;
             }
+            self.update_write_interest(client_id);
             if is_shutdown {
                 log::info!("shutdown flag set via IPC");
                 self.shutdown.store(true, Ordering::Release);
@@ -380,7 +407,7 @@ impl MuxServer {
                     self.scratch_clients.extend_from_slice(subs);
                     for &cid in &self.scratch_clients {
                         if let Some(conn) = self.connections.get_mut(&cid) {
-                            if let Err(e) = send_frame(conn.stream_mut(), 0, &pdu) {
+                            if let Err(e) = conn.queue_frame(0, &pdu) {
                                 log::warn!("notification write error to {cid}: {e}");
                             }
                         }
@@ -389,7 +416,7 @@ impl MuxServer {
                 TargetClients::WindowClient(window_id) => {
                     if let Some(&cid) = self.window_to_client.get(&window_id) {
                         if let Some(conn) = self.connections.get_mut(&cid) {
-                            if let Err(e) = send_frame(conn.stream_mut(), 0, &pdu) {
+                            if let Err(e) = conn.queue_frame(0, &pdu) {
                                 log::warn!("notification write error to {cid}: {e}");
                             }
                         }
@@ -397,9 +424,45 @@ impl MuxServer {
                 }
             }
         }
+
+        // Update write interests for any connections with pending data.
+        // Collect IDs first to avoid borrow conflict with `update_write_interest`.
+        let pending: Vec<_> = self
+            .connections
+            .values()
+            .filter(|c| c.has_pending_writes())
+            .map(ClientConnection::id)
+            .collect();
+        for cid in pending {
+            self.update_write_interest(cid);
+        }
+    }
+
+    /// Add or remove `WRITABLE` interest based on pending write buffer.
+    ///
+    /// Called after `queue_frame` or `flush_writes` to ensure the event loop
+    /// delivers writable events only when needed.
+    fn update_write_interest(&mut self, client_id: ClientId) {
+        let Some(conn) = self.connections.get_mut(&client_id) else {
+            return;
+        };
+        let interest = if conn.has_pending_writes() {
+            Interest::READABLE | Interest::WRITABLE
+        } else {
+            Interest::READABLE
+        };
+        let token = conn.token();
+        let _ = self
+            .poll
+            .registry()
+            .reregister(conn.stream_mut(), token, interest);
     }
 
     /// Disconnect a client, cleaning up all associated state.
+    ///
+    /// Closes any window the client owned (the GUI process is gone, so the
+    /// window's panes are orphaned). This allows `should_exit()` to fire
+    /// when the last client disconnects.
     fn disconnect_client(&mut self, client_id: ClientId) {
         let Some(mut conn) = self.connections.remove(&client_id) else {
             return;
@@ -411,9 +474,24 @@ impl MuxServer {
         // Remove token mapping.
         self.token_to_client.remove(&conn.token());
 
-        // Remove window→client mapping.
+        // Close the window this client owned (GUI is gone → panes are orphaned).
         if let Some(wid) = conn.window_id() {
             self.window_to_client.remove(&wid);
+            let closed_panes = self.mux.close_window(wid);
+            for &pid in &closed_panes {
+                self.panes.remove(&pid);
+                self.subscriptions.remove(&pid);
+                // Remove from all other clients' subscription sets.
+                for other_conn in self.connections.values_mut() {
+                    other_conn.unsubscribe(pid);
+                }
+            }
+            if !closed_panes.is_empty() {
+                log::info!(
+                    "closed {wid} owned by {client_id}, {} panes removed",
+                    closed_panes.len()
+                );
+            }
         }
 
         // Clean up subscription state.

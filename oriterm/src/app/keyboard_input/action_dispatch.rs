@@ -85,9 +85,11 @@ impl App {
                 true
             }
             Action::SendText(text) => {
-                if let Some(pane) = self.active_pane() {
-                    pane.scroll_to_bottom();
-                    pane.write_input(text.as_bytes());
+                if let Some(pane_id) = self.active_pane_id() {
+                    if let Some(pane) = self.active_pane() {
+                        pane.scroll_to_bottom();
+                    }
+                    self.write_pane_input(pane_id, text.as_bytes());
                     self.cursor_blink.reset();
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {

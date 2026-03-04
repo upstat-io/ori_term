@@ -3,7 +3,7 @@ use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::time::Duration;
 
-use super::{probe_daemon, validate_pid_file, wait_for_socket};
+use super::{validate_pid_file, wait_for_socket};
 
 /// `probe_daemon` returns true when a listener is bound to the socket.
 #[test]
@@ -12,7 +12,7 @@ fn probe_daemon_success() {
     let sock = dir.path().join("test.sock");
 
     let _listener = UnixListener::bind(&sock).unwrap();
-    assert!(probe_daemon(&sock));
+    assert!(oriterm_ipc::probe_daemon(&sock));
 }
 
 /// `probe_daemon` returns false when no listener exists.
@@ -20,7 +20,7 @@ fn probe_daemon_success() {
 fn probe_daemon_no_server() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("test.sock");
-    assert!(!probe_daemon(&sock));
+    assert!(!oriterm_ipc::probe_daemon(&sock));
 }
 
 /// `validate_pid_file` returns true for the current process.
@@ -113,7 +113,7 @@ fn probe_daemon_stale_socket_file() {
 
     // Create a regular file — not a real socket.
     std::fs::File::create(&sock).unwrap();
-    assert!(!probe_daemon(&sock));
+    assert!(!oriterm_ipc::probe_daemon(&sock));
 }
 
 /// `validate_pid_file` returns false for non-numeric content.
@@ -142,7 +142,7 @@ fn ensure_daemon_with_existing_daemon() {
     let _listener = UnixListener::bind(&sock).unwrap();
 
     // Simulate what ensure_daemon does: probe first.
-    assert!(probe_daemon(&sock));
+    assert!(oriterm_ipc::probe_daemon(&sock));
     // If probe succeeds, ensure_daemon returns immediately — verified.
 
     assert!(Path::new(sock.as_path()).exists());
@@ -165,11 +165,14 @@ fn multiple_sockets_dead_pruning() {
     std::fs::File::create(&stale_sock).unwrap();
 
     // Live socket is reachable.
-    assert!(probe_daemon(&live_sock), "live socket should be reachable");
+    assert!(
+        oriterm_ipc::probe_daemon(&live_sock),
+        "live socket should be reachable"
+    );
 
     // Stale file is not reachable.
     assert!(
-        !probe_daemon(&stale_sock),
+        !oriterm_ipc::probe_daemon(&stale_sock),
         "stale socket file should not be reachable"
     );
 

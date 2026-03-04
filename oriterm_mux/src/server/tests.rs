@@ -1,5 +1,6 @@
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
+
+use oriterm_ipc::ClientStream;
 
 use crate::{MuxPdu, ProtocolCodec};
 
@@ -8,14 +9,36 @@ use super::frame_io::FrameReader;
 use super::ipc::IpcListener;
 use super::pid_file::{PidFile, read_pid};
 
+/// Atomic counter for unique named pipe names (Windows).
+#[cfg(windows)]
+static TEST_PIPE_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Generate a platform-appropriate IPC test address.
+///
+/// Unix: returns a path inside the given `dir` (Unix domain socket).
+/// Windows: returns a unique named pipe path (`\\.\pipe\...`).
+fn test_sock_path(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    #[cfg(unix)]
+    {
+        dir.join(format!("{name}.sock"))
+    }
+    #[cfg(windows)]
+    {
+        let _ = dir;
+        let n = TEST_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let pid = std::process::id();
+        std::path::PathBuf::from(format!(r"\\.\pipe\oriterm-test-{pid}-{n}-{name}"))
+    }
+}
+
 /// Helper: create a server, connect a client, and accept it.
-fn server_with_client() -> (tempfile::TempDir, MuxServer, UnixStream) {
+fn server_with_client() -> (tempfile::TempDir, MuxServer, ClientStream) {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("test.sock");
+    let sock_path = test_sock_path(dir.path(), "test");
     let pid_path = dir.path().join("test.pid");
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
 
-    let client = UnixStream::connect(&sock_path).unwrap();
+    let client = ClientStream::connect(&sock_path).unwrap();
 
     let mut events = mio::Events::with_capacity(16);
     server
@@ -28,12 +51,12 @@ fn server_with_client() -> (tempfile::TempDir, MuxServer, UnixStream) {
 }
 
 /// Helper: send a PDU to a stream and flush.
-fn send_pdu(stream: &mut UnixStream, seq: u32, pdu: &MuxPdu) {
+fn send_pdu(stream: &mut ClientStream, seq: u32, pdu: &MuxPdu) {
     ProtocolCodec::encode_frame(stream, seq, pdu).unwrap();
 }
 
 /// Helper: read a response PDU from a stream.
-fn recv_pdu(stream: &mut UnixStream) -> (u32, MuxPdu) {
+fn recv_pdu(stream: &mut ClientStream) -> (u32, MuxPdu) {
     let frame = ProtocolCodec::new().decode_frame(stream).unwrap();
     (frame.seq, frame.pdu)
 }
@@ -98,18 +121,31 @@ fn pid_file_creates_parent_directory() {
 #[test]
 fn ipc_listener_bind_and_accept() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("test.sock");
+    let sock_path = test_sock_path(dir.path(), "bind");
 
-    let listener = IpcListener::bind_at(&sock_path).unwrap();
+    let mut listener = IpcListener::bind_at(&sock_path).unwrap();
+    #[cfg(unix)]
     assert!(sock_path.exists(), "socket file should exist after bind");
 
-    // Connect a client using std UnixStream.
-    let _client = UnixStream::connect(&sock_path).unwrap();
+    // Register with mio so Windows named pipe can accept.
+    let mut poll = mio::Poll::new().unwrap();
+    poll.registry()
+        .register(&mut listener, mio::Token(0), mio::Interest::READABLE)
+        .unwrap();
+
+    // Connect a client.
+    let _client = ClientStream::connect(&sock_path).unwrap();
+
+    // Poll to let accept complete (needed for IOCP on Windows).
+    let mut events = mio::Events::with_capacity(4);
+    poll.poll(&mut events, Some(std::time::Duration::from_millis(100)))
+        .unwrap();
 
     // Accept on the server side.
     let _stream = listener.accept().unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn ipc_listener_removes_stale_socket() {
     let dir = tempfile::tempdir().unwrap();
@@ -124,6 +160,7 @@ fn ipc_listener_removes_stale_socket() {
     assert!(sock_path.exists());
 }
 
+#[cfg(unix)]
 #[test]
 fn ipc_listener_cleans_up_on_drop() {
     let dir = tempfile::tempdir().unwrap();
@@ -140,8 +177,14 @@ fn ipc_listener_cleans_up_on_drop() {
 #[test]
 fn ipc_listener_accept_would_block() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("noblock.sock");
-    let listener = IpcListener::bind_at(&sock_path).unwrap();
+    let sock_path = test_sock_path(dir.path(), "noblock");
+    let mut listener = IpcListener::bind_at(&sock_path).unwrap();
+
+    // Register with mio so the accept state machine works on Windows.
+    let poll = mio::Poll::new().unwrap();
+    poll.registry()
+        .register(&mut listener, mio::Token(0), mio::Interest::READABLE)
+        .unwrap();
 
     // No client connected — accept should return WouldBlock.
     let result = listener.accept();
@@ -154,10 +197,11 @@ fn ipc_listener_accept_would_block() {
 #[test]
 fn server_creates_pid_file_and_socket() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("server.sock");
+    let sock_path = test_sock_path(dir.path(), "server");
     let pid_path = dir.path().join("server.pid");
 
     let server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
+    #[cfg(unix)]
     assert!(sock_path.exists(), "socket should exist after server init");
     assert!(pid_path.exists(), "PID file should exist after server init");
     assert_eq!(server.client_count(), 0);
@@ -169,14 +213,14 @@ fn server_creates_pid_file_and_socket() {
 #[test]
 fn server_accepts_client_connection() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("accept.sock");
+    let sock_path = test_sock_path(dir.path(), "accept");
     let pid_path = dir.path().join("accept.pid");
 
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
     assert_eq!(server.client_count(), 0);
 
     // Connect a client.
-    let _client = UnixStream::connect(&sock_path).unwrap();
+    let _client = ClientStream::connect(&sock_path).unwrap();
 
     // Run one poll cycle to accept the connection.
     let mut events = mio::Events::with_capacity(16);
@@ -192,15 +236,17 @@ fn server_accepts_client_connection() {
 #[test]
 fn server_cleans_up_on_drop() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("cleanup.sock");
+    let sock_path = test_sock_path(dir.path(), "cleanup");
     let pid_path = dir.path().join("cleanup.pid");
 
     {
         let _server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
+        #[cfg(unix)]
         assert!(sock_path.exists());
         assert!(pid_path.exists());
     }
-    // Dropped — both should be cleaned up.
+    // Dropped — PID file should be cleaned up.
+    #[cfg(unix)]
     assert!(!sock_path.exists(), "socket should be removed on drop");
     assert!(!pid_path.exists(), "PID file should be removed on drop");
 }
@@ -208,7 +254,7 @@ fn server_cleans_up_on_drop() {
 #[test]
 fn server_shutdown_flag_stops_event_loop() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("shutdown.sock");
+    let sock_path = test_sock_path(dir.path(), "shutdown");
     let pid_path = dir.path().join("shutdown.pid");
 
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
@@ -223,15 +269,15 @@ fn server_shutdown_flag_stops_event_loop() {
 #[test]
 fn server_multiple_clients() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("multi.sock");
+    let sock_path = test_sock_path(dir.path(), "multi");
     let pid_path = dir.path().join("multi.pid");
 
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
 
     // Connect three clients.
-    let _c1 = UnixStream::connect(&sock_path).unwrap();
-    let _c2 = UnixStream::connect(&sock_path).unwrap();
-    let _c3 = UnixStream::connect(&sock_path).unwrap();
+    let _c1 = ClientStream::connect(&sock_path).unwrap();
+    let _c2 = ClientStream::connect(&sock_path).unwrap();
+    let _c3 = ClientStream::connect(&sock_path).unwrap();
 
     // Run one poll cycle.
     let mut events = mio::Events::with_capacity(16);
@@ -353,7 +399,6 @@ fn frame_reader_eof_handling() {
 #[test]
 fn hello_handshake_roundtrip() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Client sends Hello.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 42 });
@@ -389,7 +434,6 @@ fn hello_handshake_roundtrip() {
 #[test]
 fn create_window_roundtrip() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -415,7 +459,6 @@ fn create_window_roundtrip() {
 #[test]
 fn claim_window_sets_connection_window_id() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -445,7 +488,6 @@ fn claim_window_sets_connection_window_id() {
 #[test]
 fn list_windows_empty_then_one() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -500,7 +542,6 @@ fn disconnect_removes_client() {
 #[test]
 fn input_is_fire_and_forget() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -530,7 +571,6 @@ fn input_is_fire_and_forget() {
 #[test]
 fn unexpected_pdu_returns_error() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Send a response PDU (which is invalid from a client).
     send_pdu(&mut client, 1, &MuxPdu::TabClosed);
@@ -580,7 +620,6 @@ fn poll_and_dispatch(server: &mut MuxServer) {
 #[test]
 fn duplicate_hello_returns_second_ack() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // First Hello.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 42 });
@@ -614,7 +653,6 @@ fn duplicate_hello_returns_second_ack() {
 #[test]
 fn list_tabs_nonexistent_window_returns_empty() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -649,7 +687,6 @@ fn list_tabs_nonexistent_window_returns_empty() {
 #[test]
 fn unsubscribe_without_subscribe_succeeds() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -737,7 +774,7 @@ fn frame_reader_recovers_after_payload_too_large() {
 #[test]
 fn server_does_not_exit_during_grace_period() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("grace.sock");
+    let sock_path = test_sock_path(dir.path(), "grace");
     let pid_path = dir.path().join("grace.pid");
 
     let server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
@@ -753,7 +790,7 @@ fn server_does_not_exit_during_grace_period() {
 #[test]
 fn server_does_not_exit_before_first_client() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("noclient.sock");
+    let sock_path = test_sock_path(dir.path(), "noclient");
     let pid_path = dir.path().join("noclient.pid");
 
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
@@ -771,13 +808,13 @@ fn server_does_not_exit_before_first_client() {
 #[test]
 fn server_exits_after_client_disconnects_and_no_windows() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("exit.sock");
+    let sock_path = test_sock_path(dir.path(), "exit");
     let pid_path = dir.path().join("exit.pid");
 
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
 
     // Connect a client.
-    let client = UnixStream::connect(&sock_path).unwrap();
+    let client = ClientStream::connect(&sock_path).unwrap();
     let mut events = mio::Events::with_capacity(16);
     server
         .poll
@@ -807,11 +844,9 @@ fn server_exits_after_client_disconnects_and_no_windows() {
 /// inject a test tab into the server's mux. Returns the window ID and tab ID.
 fn setup_client_with_tab(
     server: &mut MuxServer,
-    client: &mut UnixStream,
+    client: &mut ClientStream,
     seq_start: u32,
 ) -> (crate::WindowId, crate::TabId) {
-    client.set_nonblocking(false).unwrap();
-
     // Handshake.
     send_pdu(client, seq_start, &MuxPdu::Hello { pid: 1 });
     poll_and_dispatch(server);
@@ -885,7 +920,6 @@ fn move_tab_between_windows_roundtrip() {
 #[test]
 fn move_nonexistent_tab_returns_error() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -954,8 +988,8 @@ fn move_tab_to_nonexistent_window_returns_error() {
 // -- Multi-client interaction (task 4) --
 
 /// Helper: connect a second client to the server.
-fn connect_second_client(server: &mut MuxServer, sock_path: &std::path::Path) -> UnixStream {
-    let client2 = UnixStream::connect(sock_path).unwrap();
+fn connect_second_client(server: &mut MuxServer, sock_path: &std::path::Path) -> ClientStream {
+    let client2 = ClientStream::connect(sock_path).unwrap();
 
     let mut events = mio::Events::with_capacity(16);
     server
@@ -972,12 +1006,12 @@ fn connect_second_client(server: &mut MuxServer, sock_path: &std::path::Path) ->
 #[test]
 fn multi_client_tab_move_notification() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("multi.sock");
-    let pid_path = dir.path().join("multi.pid");
+    let sock_path = test_sock_path(dir.path(), "tabmove");
+    let pid_path = dir.path().join("tabmove.pid");
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
 
     // Connect client 1.
-    let mut c1 = UnixStream::connect(&sock_path).unwrap();
+    let mut c1 = ClientStream::connect(&sock_path).unwrap();
     let mut events = mio::Events::with_capacity(16);
     server
         .poll
@@ -989,7 +1023,7 @@ fn multi_client_tab_move_notification() {
 
     // Connect client 2.
     let mut c2 = connect_second_client(&mut server, &sock_path);
-    c2.set_nonblocking(false).unwrap();
+    // ClientStream is always blocking.
 
     // Client 2 handshake.
     send_pdu(&mut c2, 1, &MuxPdu::Hello { pid: 2 });
@@ -1065,16 +1099,12 @@ fn disconnect_after_claim_cleans_up() {
 
     assert_eq!(server.client_count(), 0);
 
-    // The window itself still exists in the mux (it's not removed on
-    // client disconnect — the daemon keeps session state).
-    assert!(server.mux.session().get_window(w1).is_some());
-
-    // No connection should still claim w1.
-    let still_claimed = server
-        .connections
-        .values()
-        .any(|c| c.window_id() == Some(w1));
-    assert!(!still_claimed);
+    // The window is closed when the owning client disconnects
+    // (GUI is gone → panes are orphaned).
+    assert!(
+        server.mux.session().get_window(w1).is_none(),
+        "window should be closed after owning client disconnects"
+    );
 }
 
 // -- remove_client_subscriptions integration (task 8) --
@@ -1083,7 +1113,6 @@ fn disconnect_after_claim_cleans_up() {
 #[test]
 fn disconnect_cleans_up_subscriptions() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -1187,7 +1216,6 @@ fn parse_theme_garbage_defaults_to_dark() {
 #[test]
 fn ping_returns_ping_ack() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake first.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 99 });
@@ -1208,17 +1236,17 @@ fn ping_returns_ping_ack() {
 /// Client disconnects while server has a notification queued.
 ///
 /// Server should handle the broken pipe gracefully — no panic, client
-/// is cleaned up on the next poll cycle.
+/// is cleaned up on the next poll cycle, including the window it owned.
 #[test]
-fn notification_write_to_disconnected_client_no_panic() {
+fn disconnect_closes_owned_window_and_server_continues() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("brokenpipe.sock");
+    let sock_path = test_sock_path(dir.path(), "brokenpipe");
     let pid_path = dir.path().join("brokenpipe.pid");
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
 
     // Connect two clients.
-    let mut c1 = UnixStream::connect(&sock_path).unwrap();
-    let mut c2 = UnixStream::connect(&sock_path).unwrap();
+    let mut c1 = ClientStream::connect(&sock_path).unwrap();
+    let mut c2 = ClientStream::connect(&sock_path).unwrap();
     let mut events = mio::Events::with_capacity(16);
     server
         .poll
@@ -1228,7 +1256,6 @@ fn notification_write_to_disconnected_client_no_panic() {
     assert_eq!(server.client_count(), 2);
 
     // Client 1: handshake + create window + claim window.
-    c1.set_nonblocking(false).unwrap();
     send_pdu(&mut c1, 1, &MuxPdu::Hello { pid: 1 });
     poll_and_dispatch(&mut server);
     let _ = recv_pdu(&mut c1);
@@ -1245,7 +1272,6 @@ fn notification_write_to_disconnected_client_no_panic() {
     let _ = recv_pdu(&mut c1);
 
     // Client 2: handshake + create window + claim window.
-    c2.set_nonblocking(false).unwrap();
     send_pdu(&mut c2, 1, &MuxPdu::Hello { pid: 2 });
     poll_and_dispatch(&mut server);
     let _ = recv_pdu(&mut c2);
@@ -1261,38 +1287,33 @@ fn notification_write_to_disconnected_client_no_panic() {
     poll_and_dispatch(&mut server);
     let _ = recv_pdu(&mut c2);
 
+    assert_eq!(server.mux().session().window_count(), 2);
+
     // Drop client 2 (simulating disconnect).
     drop(c2);
-
-    // Client 1 moves a tab to w2, which should trigger a notification
-    // to w2's owner (client 2, now disconnected).
-    let tid = crate::TabId::from_raw(w1.raw() * 10);
-    let pid = crate::PaneId::from_raw(w1.raw() * 100);
-    server.mux.inject_test_tab(w1, tid, pid);
-
-    send_pdu(
-        &mut c1,
-        4,
-        &MuxPdu::MoveTabToWindow {
-            tab_id: tid,
-            target_window_id: w2,
-        },
-    );
-
-    // Server should handle this without panic — broken pipe on
-    // notification write to c2 should be logged, not fatal.
     poll_and_dispatch(&mut server);
 
-    let (seq, resp) = recv_pdu(&mut c1);
-    assert_eq!(seq, 4);
-    assert_eq!(resp, MuxPdu::TabMovedAck);
+    // Client 2's window should be closed.
+    assert_eq!(server.client_count(), 1);
+    assert!(
+        server.mux().session().get_window(w2).is_none(),
+        "w2 should be closed after owning client disconnects"
+    );
+    // Client 1's window should still exist.
+    assert!(server.mux().session().get_window(w1).is_some());
+    assert_eq!(server.mux().session().window_count(), 1);
 
     // Server is still alive and functional.
-    send_pdu(&mut c1, 5, &MuxPdu::ListWindows);
+    send_pdu(&mut c1, 4, &MuxPdu::ListWindows);
     poll_and_dispatch(&mut server);
     let (seq, resp) = recv_pdu(&mut c1);
-    assert_eq!(seq, 5);
-    assert!(matches!(resp, MuxPdu::WindowList { .. }));
+    assert_eq!(seq, 4);
+    match resp {
+        MuxPdu::WindowList { windows } => {
+            assert_eq!(windows.len(), 1, "only w1 should remain");
+        }
+        other => panic!("expected WindowList, got {other:?}"),
+    }
 }
 
 // -- Integrated multi-command pipeline --
@@ -1302,7 +1323,6 @@ fn notification_write_to_disconnected_client_no_panic() {
 #[test]
 fn multi_command_pipeline_final_state() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -1420,7 +1440,6 @@ fn multi_command_pipeline_final_state() {
 #[test]
 fn resize_fire_and_forget_no_response() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -1454,7 +1473,6 @@ fn resize_fire_and_forget_no_response() {
 #[test]
 fn close_window_removes_all_tabs_and_pane_entries() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -1518,13 +1536,13 @@ fn close_window_removes_all_tabs_and_pane_entries() {
 #[test]
 fn concurrent_clients_no_cross_contamination() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("concurrent.sock");
+    let sock_path = test_sock_path(dir.path(), "concurrent");
     let pid_path = dir.path().join("concurrent.pid");
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
 
     // Connect two clients.
-    let mut c1 = UnixStream::connect(&sock_path).unwrap();
-    let mut c2 = UnixStream::connect(&sock_path).unwrap();
+    let mut c1 = ClientStream::connect(&sock_path).unwrap();
+    let mut c2 = ClientStream::connect(&sock_path).unwrap();
     let mut events = mio::Events::with_capacity(16);
     server
         .poll
@@ -1533,8 +1551,8 @@ fn concurrent_clients_no_cross_contamination() {
     server.accept_connections().unwrap();
     assert_eq!(server.client_count(), 2);
 
-    c1.set_nonblocking(false).unwrap();
-    c2.set_nonblocking(false).unwrap();
+    // ClientStream is always blocking.
+    // ClientStream is always blocking.
 
     // Both handshake.
     send_pdu(&mut c1, 1, &MuxPdu::Hello { pid: 1 });
@@ -1601,7 +1619,6 @@ fn concurrent_clients_no_cross_contamination() {
 #[test]
 fn response_pdu_before_hello_returns_error() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Skip Hello — send CreateWindow directly.
     send_pdu(&mut client, 1, &MuxPdu::CreateWindow);
@@ -1625,7 +1642,6 @@ fn response_pdu_before_hello_returns_error() {
 #[test]
 fn notification_pdu_from_client_returns_error() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -1654,7 +1670,6 @@ fn notification_pdu_from_client_returns_error() {
 #[test]
 fn shutdown_via_ipc_sets_flag() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -1693,12 +1708,11 @@ fn shutdown_via_ipc_sets_flag() {
 #[test]
 fn shutdown_pdu_causes_run_to_exit() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("shutdown_run.sock");
+    let sock_path = test_sock_path(dir.path(), "shutdown_run");
     let pid_path = dir.path().join("shutdown_run.pid");
     let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
 
-    let mut client = UnixStream::connect(&sock_path).unwrap();
-    client.set_nonblocking(false).unwrap();
+    let mut client = ClientStream::connect(&sock_path).unwrap();
 
     let mut events = mio::Events::with_capacity(16);
     server
@@ -1737,7 +1751,6 @@ fn shutdown_pdu_causes_run_to_exit() {
 #[test]
 fn shutdown_without_hello_sets_flag() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // No Hello — send Shutdown directly.
     send_pdu(&mut client, 1, &MuxPdu::Shutdown);
@@ -1759,7 +1772,6 @@ fn shutdown_without_hello_sets_flag() {
 #[test]
 fn double_shutdown_is_idempotent() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -1792,7 +1804,6 @@ fn double_shutdown_is_idempotent() {
 #[test]
 fn shutdown_with_active_subscriptions() {
     let (_dir, mut server, mut client) = server_with_client();
-    client.set_nonblocking(false).unwrap();
 
     // Handshake.
     send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
@@ -1840,7 +1851,7 @@ fn shutdown_with_active_subscriptions() {
 #[test]
 fn server_init_unwritable_pid_path_returns_error() {
     let dir = tempfile::tempdir().unwrap();
-    let sock_path = dir.path().join("ok.sock");
+    let sock_path = test_sock_path(dir.path(), "ok");
     // /dev/null/nested is not a valid directory on any Unix.
     let bad_pid = std::path::PathBuf::from("/dev/null/nested/test.pid");
     let result = MuxServer::with_paths(&sock_path, &bad_pid);

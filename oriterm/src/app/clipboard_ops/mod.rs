@@ -128,12 +128,10 @@ impl App {
         };
 
         // Bracketed paste = application handles newlines safely (Ghostty pattern).
-        let bracketed = self.active_pane().is_some_and(|pane| {
-            pane.terminal()
-                .lock()
-                .mode()
-                .contains(TermMode::BRACKETED_PASTE)
-        });
+        let bracketed = self
+            .active_pane_id()
+            .and_then(|id| self.pane_mode(id))
+            .is_some_and(|m| m.contains(TermMode::BRACKETED_PASTE));
 
         if needs_warning && !bracketed {
             log::debug!(
@@ -160,7 +158,7 @@ impl App {
     /// Paste dropped file paths into the active terminal.
     ///
     /// Paths with spaces are auto-quoted. Multiple paths are space-separated.
-    pub(super) fn paste_dropped_files(&self, paths: &[PathBuf]) {
+    pub(super) fn paste_dropped_files(&mut self, paths: &[PathBuf]) {
         if paths.is_empty() {
             return;
         }
@@ -178,16 +176,14 @@ impl App {
     ///
     /// Reads the terminal mode to determine bracketed paste, applies the
     /// full paste processing pipeline, and writes the result to the PTY.
-    fn write_paste_to_pty(&self, text: &str) {
-        let Some(pane) = self.active_pane() else {
+    fn write_paste_to_pty(&mut self, text: &str) {
+        let Some(pane_id) = self.active_pane_id() else {
             return;
         };
 
-        let bracketed = pane
-            .terminal()
-            .lock()
-            .mode()
-            .contains(TermMode::BRACKETED_PASTE);
+        let bracketed = self
+            .pane_mode(pane_id)
+            .is_some_and(|m| m.contains(TermMode::BRACKETED_PASTE));
         let filter = self.config.behavior.filter_on_paste;
 
         let bytes = paste::prepare_paste(text, bracketed, filter);
@@ -195,8 +191,10 @@ impl App {
             return;
         }
 
-        pane.scroll_to_bottom();
-        pane.write_input(&bytes);
+        if let Some(pane) = self.active_pane() {
+            pane.scroll_to_bottom();
+        }
+        self.write_pane_input(pane_id, &bytes);
         log::debug!(
             "pasted {} bytes to PTY (bracketed={})",
             bytes.len(),

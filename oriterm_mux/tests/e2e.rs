@@ -270,7 +270,7 @@ fn multiple_clients_independent_windows() {
 
 /// 44.3: Window process crash → daemon keeps sessions → new client reconnects.
 #[test]
-fn client_crash_daemon_keeps_sessions() {
+fn client_crash_cleans_up_owned_window() {
     let daemon = TestDaemon::start();
 
     // Client creates window and tab, sends some output.
@@ -280,8 +280,8 @@ fn client_crash_daemon_keeps_sessions() {
         client.claim_window(win).expect("claim");
 
         thread::sleep(Duration::from_millis(500));
-        client.send_input(pane, b"echo SURVIVED_CRASH\n");
-        wait_for_text_in_snapshot(&mut client, pane, "SURVIVED_CRASH", Duration::from_secs(5));
+        client.send_input(pane, b"echo BEFORE_CRASH\n");
+        wait_for_text_in_snapshot(&mut client, pane, "BEFORE_CRASH", Duration::from_secs(5));
 
         // Client drops here — simulates a crash.
         pane
@@ -290,17 +290,14 @@ fn client_crash_daemon_keeps_sessions() {
     // Brief pause for daemon to notice disconnection.
     thread::sleep(Duration::from_millis(200));
 
-    // New client connects and should see the pane still alive.
+    // New client connects — the crashed client's window should be gone.
     let mut client2 = daemon.connect_client();
 
-    // The pane should still exist — fetch a snapshot directly.
-    let snap = client2
-        .refresh_pane_snapshot(pane_id)
-        .expect("pane should still exist after client crash");
-
+    // The pane should no longer exist (window was closed on disconnect).
+    let snap = client2.refresh_pane_snapshot(pane_id);
     assert!(
-        snapshot_contains(snap, "SURVIVED_CRASH"),
-        "output from before the crash should still be in the snapshot"
+        snap.is_none(),
+        "pane should be cleaned up after owning client disconnects"
     );
 }
 

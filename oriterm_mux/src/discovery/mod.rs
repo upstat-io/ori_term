@@ -6,7 +6,6 @@
 //! returns the socket path for [`MuxClient::connect`].
 
 use std::io;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -19,13 +18,6 @@ const MAX_WAIT: Duration = Duration::from_millis(2550);
 /// Initial backoff interval for socket polling.
 const INITIAL_BACKOFF: Duration = Duration::from_millis(10);
 
-/// Try connecting to the daemon socket.
-///
-/// Returns `true` if the daemon is reachable at `path`.
-pub fn probe_daemon(path: &Path) -> bool {
-    UnixStream::connect(path).is_ok()
-}
-
 /// Check whether the PID file points to a live process.
 ///
 /// Returns `true` if the PID file exists and the process is still running.
@@ -36,13 +28,7 @@ pub fn validate_pid_file(pid_path: &Path, sock_path: &Path) -> bool {
         Err(_) => return false,
     };
 
-    // `kill(pid, 0)` checks process existence without sending a signal.
-    #[allow(
-        unsafe_code,
-        reason = "kill(2) with signal 0 is the POSIX existence check"
-    )]
-    let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
-    if alive {
+    if oriterm_ipc::validate_pid(pid) {
         return true;
     }
 
@@ -64,7 +50,7 @@ fn start_daemon() -> io::Result<()> {
             "cannot determine executable directory",
         )
     })?;
-    let daemon_bin = dir.join("oriterm-mux");
+    let daemon_bin = dir.join(oriterm_ipc::daemon_binary_name());
 
     if !daemon_bin.exists() {
         return Err(io::Error::new(
@@ -75,12 +61,21 @@ fn start_daemon() -> io::Result<()> {
 
     log::info!("starting daemon: {}", daemon_bin.display());
 
-    Command::new(&daemon_bin)
-        .arg("--daemon")
+    let mut cmd = Command::new(&daemon_bin);
+    cmd.arg("--daemon")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
+        .stderr(std::process::Stdio::null());
+
+    // On Windows, detach the child process so it survives the parent.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NEW_PROCESS_GROUP (0x200) | DETACHED_PROCESS (0x8)
+        cmd.creation_flags(0x200 | 0x8);
+    }
+
+    cmd.spawn()
         .map_err(|e| io::Error::new(e.kind(), format!("failed to spawn daemon: {e}")))?;
 
     Ok(())
@@ -95,7 +90,9 @@ fn wait_for_socket(sock_path: &Path, max_wait: Duration) -> io::Result<()> {
     let mut backoff = INITIAL_BACKOFF;
 
     loop {
-        if sock_path.exists() && probe_daemon(sock_path) {
+        // `probe_daemon` (try-connect) is the correct readiness check on
+        // both platforms. Named pipe paths don't respond to `Path::exists()`.
+        if oriterm_ipc::probe_daemon(sock_path) {
             return Ok(());
         }
 
@@ -124,7 +121,7 @@ pub fn ensure_daemon() -> io::Result<PathBuf> {
     validate_pid_file(&pid, &sock);
 
     // Already running?
-    if probe_daemon(&sock) {
+    if oriterm_ipc::probe_daemon(&sock) {
         log::info!("daemon already running at {}", sock.display());
         return Ok(sock);
     }
