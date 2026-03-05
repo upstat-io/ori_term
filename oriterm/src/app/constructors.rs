@@ -46,7 +46,7 @@ impl App {
         });
 
         let mux: Option<Box<dyn MuxBackend>> =
-            match oriterm_mux::MuxClient::connect(socket_path, mux_wakeup.clone()) {
+            match oriterm_mux::MuxClient::connect(socket_path, mux_wakeup) {
                 Ok(client) => {
                     log::info!("daemon mode: connected to {}", socket_path.display());
                     Some(Box::new(client))
@@ -122,7 +122,7 @@ impl App {
         let mux_wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = proxy_for_mux.send_event(TermEvent::MuxWakeup);
         });
-        let mux = oriterm_mux::EmbeddedMux::new(mux_wakeup.clone());
+        let mux = oriterm_mux::EmbeddedMux::new(mux_wakeup);
         Self {
             gpu: None,
             pipelines: None,

@@ -251,7 +251,7 @@ impl App {
     }
 }
 
-// ── Font config helpers ──
+// Font config helpers
 
 /// Apply all font configuration settings to a collection after creation.
 ///
@@ -354,7 +354,7 @@ pub(crate) fn resolve_subpixel_mode(config: &FontConfig, scale_factor: f64) -> S
     }
 }
 
-// ── Color config helpers ──
+// Color config helpers
 
 /// Apply color overrides from [`ColorConfig`](crate::config::ColorConfig) to a palette.
 ///

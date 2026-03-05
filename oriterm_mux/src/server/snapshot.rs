@@ -227,97 +227,14 @@ fn fill_snapshot_metadata(
 
 /// Shared snapshot logic — converts terminal state to wire format.
 ///
-/// Uses [`Term::renderable_content()`] to produce pre-resolved colors.
-/// The wire cells carry resolved RGB — clients never need to reference the
-/// palette for per-cell fg/bg.
+/// Delegates to [`build_snapshot_inner_into`] with freshly allocated buffers.
+/// Callers that need allocation reuse should call `build_snapshot_inner_into`
+/// directly (via [`SnapshotCache`]).
 fn build_snapshot_inner(term: &Term<MuxEventProxy>, pane: &Pane) -> PaneSnapshot {
-    // renderable_content() resolves all per-cell colors (bold-as-bright,
-    // dim, inverse) and computes cursor visibility.
-    let content = term.renderable_content();
-    let grid = term.grid();
-    let lines = grid.lines();
-    let cols = grid.cols();
-
-    // Convert flat cell vec to wire rows.
-    let offset = content.display_offset;
-    let mut cells = Vec::with_capacity(lines);
-    let mut row_buf = Vec::with_capacity(cols);
-    for cell in &content.cells {
-        let hyperlink_uri = if cell.has_hyperlink {
-            hyperlink_uri_at(grid, cell.line, cell.column, offset)
-        } else {
-            None
-        };
-        row_buf.push(renderable_to_wire(cell, hyperlink_uri));
-        if row_buf.len() == cols {
-            cells.push(std::mem::replace(&mut row_buf, Vec::with_capacity(cols)));
-        }
-    }
-    // Flush any partial last row.
-    if !row_buf.is_empty() {
-        cells.push(row_buf);
-    }
-
-    // Cursor (visibility already resolved by renderable_content).
-    let wire_cursor = WireCursor {
-        col: u16::try_from(content.cursor.column.0).unwrap_or(u16::MAX),
-        row: u16::try_from(content.cursor.line).unwrap_or(u16::MAX),
-        shape: cursor_shape_to_wire(content.cursor.shape),
-        visible: content.cursor.visible,
-    };
-
-    // Palette: extract 270 RGB triplets (needed for FramePalette semantic
-    // colors: background, foreground, cursor color, selection overrides).
-    let palette = term.palette();
-    let palette_rgb: Vec<[u8; 3]> = (0..270)
-        .map(|i| {
-            let rgb = palette.color(i);
-            [rgb.r, rgb.g, rgb.b]
-        })
-        .collect();
-
-    // Search state.
-    let (search_active, search_query, search_matches, search_focused, search_total_matches) =
-        if let Some(search) = pane.search() {
-            let matches: Vec<WireSearchMatch> = search
-                .matches()
-                .iter()
-                .map(|m| WireSearchMatch {
-                    start_row: m.start_row.0,
-                    start_col: u16::try_from(m.start_col).unwrap_or(u16::MAX),
-                    end_row: m.end_row.0,
-                    end_col: u16::try_from(m.end_col).unwrap_or(u16::MAX),
-                })
-                .collect();
-            let total = matches.len() as u32;
-            let focused = if matches.is_empty() {
-                None
-            } else {
-                Some(search.focused_index() as u32)
-            };
-            (true, search.query().to_string(), matches, focused, total)
-        } else {
-            (false, String::new(), Vec::new(), None, 0)
-        };
-
-    PaneSnapshot {
-        cells,
-        cursor: wire_cursor,
-        palette: palette_rgb,
-        title: pane.effective_title().to_string(),
-        icon_name: pane.icon_name().map(str::to_owned),
-        cwd: pane.cwd().map(str::to_owned),
-        modes: content.mode.bits(),
-        scrollback_len: u32::try_from(grid.scrollback().len()).unwrap_or(u32::MAX),
-        display_offset: u32::try_from(content.display_offset).unwrap_or(u32::MAX),
-        stable_row_base: content.stable_row_base,
-        cols: cols as u16,
-        search_active,
-        search_query,
-        search_matches,
-        search_focused,
-        search_total_matches,
-    }
+    let mut out = PaneSnapshot::default();
+    let mut render_buf = RenderableContent::default();
+    build_snapshot_inner_into(term, pane, &mut out, &mut render_buf);
+    out
 }
 
 /// Convert a pre-resolved [`RenderableCell`] to a [`WireCell`].

@@ -253,12 +253,7 @@ impl App {
         self.windows.remove(&wid);
 
         // Update focus if the closed window was focused.
-        if self.focused_window_id == Some(wid) {
-            self.focused_window_id = self.windows.keys().next().copied();
-            self.active_window = self
-                .focused_window_id
-                .and_then(|id| self.windows.get(&id).map(|ctx| ctx.window.mux_window_id()));
-        }
+        self.transfer_focus_from(wid);
 
         log::info!(
             "mux window closed: {wid:?}, {} remaining",

@@ -8,7 +8,7 @@ use oriterm_core::{
 };
 
 use super::super::redraw::preedit::overlay_preedit_cells;
-use super::{ImeEffect, ImeState};
+use super::ime::{ImeEffect, ImeState};
 
 const FG: Rgb = Rgb {
     r: 211,

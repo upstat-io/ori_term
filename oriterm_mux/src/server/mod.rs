@@ -297,27 +297,46 @@ impl MuxServer {
         }
 
         // Post-pass: Clean up per-pane state for closed panes.
-        for notif in &self.notification_buf {
-            if let MuxNotification::PaneClosed(pane_id) = notif {
-                self.snapshot_cache.remove(*pane_id);
-                self.last_snapshot_push.remove(pane_id);
-                self.pending_push.remove(pane_id);
-                self.subscriptions.remove(pane_id);
-                for conn in self.connections.values_mut() {
-                    conn.unsubscribe(*pane_id);
-                }
-            }
+        // Collect IDs first to avoid borrowing `self` immutably (notification_buf)
+        // and mutably (cleanup_pane_state) at the same time.
+        let closed: Vec<PaneId> = self
+            .notification_buf
+            .iter()
+            .filter_map(|n| match n {
+                MuxNotification::PaneClosed(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        for pane_id in closed {
+            self.cleanup_pane_state(pane_id);
         }
 
         // Phase 3: Update write interests for connections with pending data.
-        let pending: Vec<_> = self
-            .connections
-            .values()
-            .filter(|c| c.has_pending_writes())
-            .map(ClientConnection::id)
-            .collect();
-        for cid in pending {
-            self.update_write_interest(cid);
+        // Reuse scratch_clients (free after phases 1-2) to avoid per-cycle allocation.
+        self.scratch_clients.clear();
+        self.scratch_clients.extend(
+            self.connections
+                .values()
+                .filter(|c| c.has_pending_writes())
+                .map(ClientConnection::id),
+        );
+        for i in 0..self.scratch_clients.len() {
+            self.update_write_interest(self.scratch_clients[i]);
+        }
+    }
+
+    /// Remove all per-pane tracking state for a closed pane.
+    ///
+    /// Clears snapshot cache, push timestamps, pending pushes, subscription
+    /// entries, and per-connection subscription sets. Centralizes cleanup
+    /// that previously lived in three separate locations.
+    pub(super) fn cleanup_pane_state(&mut self, pane_id: PaneId) {
+        self.snapshot_cache.remove(pane_id);
+        self.last_snapshot_push.remove(&pane_id);
+        self.pending_push.remove(&pane_id);
+        self.subscriptions.remove(&pane_id);
+        for conn in self.connections.values_mut() {
+            conn.unsubscribe(pane_id);
         }
     }
 

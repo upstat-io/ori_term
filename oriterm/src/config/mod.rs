@@ -5,6 +5,8 @@
 
 mod behavior;
 mod bell;
+mod color_config;
+mod font_config;
 mod io;
 pub(crate) mod monitor;
 mod paste_warning;
@@ -16,7 +18,16 @@ pub(crate) use io::WindowState;
 #[allow(unused_imports, reason = "used in state persistence (Section 15)")]
 pub(crate) use io::state_path;
 
-use std::collections::HashMap;
+pub use color_config::{ColorConfig, ThemeOverride};
+pub use font_config::FontConfig;
+
+#[allow(unused_imports, reason = "used in color config application")]
+pub use color_config::AlphaBlending;
+#[allow(
+    unused_imports,
+    reason = "used in font discovery and codepoint mapping"
+)]
+pub use font_config::{CodepointMapConfig, FallbackFontConfig};
 
 use oriterm_core::Rgb;
 use serde::{Deserialize, Serialize};
@@ -48,132 +59,6 @@ pub struct Config {
     pub pane: PaneConfig,
     #[serde(default)]
     pub keybind: Vec<KeybindConfig>,
-}
-
-/// Per-fallback font configuration.
-///
-/// Allows overriding OpenType features and size for individual fallback fonts.
-/// Users specify these via `[[font.fallback]]` TOML array-of-tables.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FallbackFontConfig {
-    /// Font family name (resolved via platform font discovery) or absolute path.
-    pub family: String,
-    /// Override OpenType features for this fallback (uses primary features if `None`).
-    #[serde(default)]
-    pub features: Option<Vec<String>>,
-    /// Point size adjustment relative to primary font (e.g. `-1.0` for smaller).
-    #[serde(default)]
-    pub size_offset: Option<f32>,
-}
-
-/// Codepoint-to-font mapping entry.
-///
-/// Forces a Unicode range to render with a specific font, overriding the
-/// normal fallback chain. Common use: Nerd Font symbols, CJK to a specific
-/// variant, or emoji to a dedicated color font.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CodepointMapConfig {
-    /// Hex range: `"E000-F8FF"` for a range, or `"E0B0"` for a single codepoint.
-    pub range: String,
-    /// Font family name to use for this codepoint range.
-    pub family: String,
-}
-
-/// Font configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FontConfig {
-    /// Font size in points.
-    pub size: f32,
-    /// Primary font family name.
-    pub family: Option<String>,
-    /// CSS-style font weight (100-900). Default: 400 (Regular).
-    ///
-    /// Bold is derived as `min(900, weight + 300)`, matching CSS "bolder".
-    pub weight: u16,
-    /// CSS-style font weight for tab bar text (100-900).
-    /// When `None`, defaults to 600 (`SemiBold`).
-    pub tab_bar_font_weight: Option<u16>,
-    /// Font family for tab bar text. When `None`, uses `family`.
-    pub tab_bar_font_family: Option<String>,
-    /// OpenType features to enable/disable during text shaping.
-    ///
-    /// Each string is a 4-character feature tag, optionally prefixed with `-`
-    /// to disable. Defaults to `["calt", "liga"]`.
-    pub features: Vec<String>,
-    /// User-configured fallback fonts with per-font feature and size overrides.
-    #[serde(default)]
-    pub fallback: Vec<FallbackFontConfig>,
-    /// Hinting mode override: `"full"` or `"none"`.
-    ///
-    /// When `None` (default), auto-detected from display scale factor:
-    /// non-HiDPI → Full, `HiDPI` (2x+) → None.
-    #[serde(default)]
-    pub hinting: Option<String>,
-    /// Subpixel rendering mode override: `"rgb"`, `"bgr"`, or `"none"`.
-    ///
-    /// When `None` (default), auto-detected from display scale factor:
-    /// non-HiDPI → RGB, `HiDPI` (2x+) → None.
-    #[serde(default)]
-    pub subpixel_mode: Option<String>,
-    /// Subpixel glyph positioning. Default: `true`.
-    ///
-    /// When `false`, snaps all glyph positions to integer pixel boundaries.
-    /// When `true`, uses fractional offsets for UI text and combining marks.
-    #[serde(default = "default_true")]
-    pub subpixel_positioning: bool,
-    /// Variable font axis overrides.
-    ///
-    /// Keys are 4-character axis tags (e.g. `"wght"`, `"wdth"`), values are
-    /// axis positions. Values are clamped to the font's axis min/max range.
-    #[serde(default)]
-    pub variations: HashMap<String, f32>,
-    /// Codepoint-to-font mappings for overriding the fallback chain.
-    #[serde(default)]
-    pub codepoint_map: Vec<CodepointMapConfig>,
-}
-
-impl Default for FontConfig {
-    fn default() -> Self {
-        Self {
-            size: 11.0,
-            family: None,
-            weight: 400,
-            tab_bar_font_weight: None,
-            tab_bar_font_family: None,
-            features: vec!["calt".into(), "liga".into()],
-            fallback: Vec::new(),
-            hinting: None,
-            subpixel_mode: None,
-            subpixel_positioning: true,
-            variations: HashMap::new(),
-            codepoint_map: Vec::new(),
-        }
-    }
-}
-
-/// Serde default for `true` booleans.
-fn default_true() -> bool {
-    true
-}
-
-impl FontConfig {
-    /// Returns `weight` clamped to the CSS font-weight range [100, 900].
-    pub fn effective_weight(&self) -> u16 {
-        self.weight.clamp(100, 900)
-    }
-
-    /// Returns the bold weight derived from the user weight: `min(900, weight + 300)`.
-    #[allow(dead_code, reason = "used in config hot reload (Section 13.4)")]
-    pub fn effective_bold_weight(&self) -> u16 {
-        (self.effective_weight() + 300).min(900)
-    }
-
-    /// Returns `tab_bar_font_weight` clamped to [100, 900], defaulting to 600 (`SemiBold`).
-    #[allow(dead_code, reason = "used in config hot reload (Section 13.4)")]
-    pub fn effective_tab_bar_weight(&self) -> u16 {
-        self.tab_bar_font_weight.unwrap_or(600).clamp(100, 900)
-    }
 }
 
 /// Cursor style for config deserialization.
@@ -225,105 +110,6 @@ impl Default for TerminalConfig {
             cursor_style: CursorStyle::default(),
             cursor_blink: true,
             cursor_blink_interval_ms: 530,
-        }
-    }
-}
-
-/// Alpha blending mode for text rendering.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AlphaBlending {
-    /// Standard sRGB surface format blending.
-    Linear,
-    /// Ghostty-style luminance-based alpha correction for even text weight.
-    #[default]
-    LinearCorrected,
-}
-
-/// Theme override for dark/light mode.
-///
-/// When set to `Auto` (or omitted), the system theme is detected at startup.
-/// `Dark` and `Light` force the corresponding palette regardless of system
-/// preference.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ThemeOverride {
-    /// Use the system's dark/light mode preference.
-    #[default]
-    Auto,
-    /// Force dark mode (dark background, light text).
-    Dark,
-    /// Force light mode (light background, dark text).
-    Light,
-}
-
-/// Color scheme and palette configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ColorConfig {
-    /// Color scheme name (default: "Catppuccin Mocha").
-    pub scheme: String,
-    /// Dark/light mode override (default: auto-detect from system).
-    pub theme: ThemeOverride,
-    /// Minimum WCAG 2.0 contrast ratio (1.0 = off, range 1.0-21.0).
-    pub minimum_contrast: f32,
-    /// Alpha blending mode for text rendering.
-    pub alpha_blending: AlphaBlending,
-    /// Override foreground color "#RRGGBB".
-    pub foreground: Option<String>,
-    /// Override background color "#RRGGBB".
-    pub background: Option<String>,
-    /// Override cursor color "#RRGGBB".
-    pub cursor: Option<String>,
-    /// Override selection foreground color "#RRGGBB".
-    pub selection_foreground: Option<String>,
-    /// Override selection background color "#RRGGBB".
-    pub selection_background: Option<String>,
-    /// Override ANSI colors 0-7 by index. Keys "0"-"7", values "#RRGGBB".
-    #[serde(default)]
-    pub ansi: HashMap<String, String>,
-    /// Override bright ANSI colors 8-15 by index (0-7 maps to colors 8-15).
-    #[serde(default)]
-    pub bright: HashMap<String, String>,
-}
-
-impl Default for ColorConfig {
-    fn default() -> Self {
-        Self {
-            scheme: "Catppuccin Mocha".to_owned(),
-            theme: ThemeOverride::default(),
-            minimum_contrast: 1.0,
-            alpha_blending: AlphaBlending::default(),
-            foreground: None,
-            background: None,
-            cursor: None,
-            selection_foreground: None,
-            selection_background: None,
-            ansi: HashMap::new(),
-            bright: HashMap::new(),
-        }
-    }
-}
-
-impl ColorConfig {
-    /// Returns `minimum_contrast` clamped to [1.0, 21.0], defaulting to 1.0 for NaN.
-    #[allow(dead_code, reason = "used in color config application")]
-    pub fn effective_minimum_contrast(&self) -> f32 {
-        clamp_or_default(self.minimum_contrast, 1.0, 21.0, 1.0)
-    }
-
-    /// Resolve the effective theme given the config override.
-    ///
-    /// `Dark` / `Light` ignore system detection entirely; `Auto` delegates to
-    /// the provided `system_theme` callback.
-    pub fn resolve_theme(
-        &self,
-        detect_system: impl FnOnce() -> oriterm_core::Theme,
-    ) -> oriterm_core::Theme {
-        match self.theme {
-            ThemeOverride::Dark => oriterm_core::Theme::Dark,
-            ThemeOverride::Light => oriterm_core::Theme::Light,
-            ThemeOverride::Auto => detect_system(),
         }
     }
 }

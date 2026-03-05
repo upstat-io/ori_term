@@ -4,9 +4,11 @@
 //! Each operation reads mux state, calls the appropriate mux method,
 //! then triggers layout recomputation and resize propagation.
 
-use oriterm_mux::layout::{Rect, SplitDirection};
+mod helpers;
+
+use oriterm_mux::layout::SplitDirection;
 use oriterm_mux::nav::Direction;
-use oriterm_mux::{PaneId, SpawnConfig, TabId};
+use oriterm_mux::{PaneId, SpawnConfig};
 
 use super::App;
 use crate::keybindings::Action;
@@ -419,102 +421,6 @@ impl App {
         if is_floating {
             let Some(mux) = &mut self.mux else { return };
             mux.raise_floating_pane(tab_id, pane_id);
-        }
-    }
-
-    // -- Private helpers --
-
-    /// Resolve `(tab_id, active_pane_id)` for the current active tab.
-    pub(super) fn active_pane_context(&self) -> Option<(TabId, PaneId)> {
-        let mux = self.mux.as_ref()?;
-        let win_id = self.active_window?;
-        let tab_id = mux.active_tab_id(win_id)?;
-        let tab = mux.session().get_tab(tab_id)?;
-        Some((tab_id, tab.active_pane()))
-    }
-
-    /// Estimate rows/cols for a new pane after splitting.
-    ///
-    /// Uses half the source pane's dimensions in the split direction.
-    /// The actual size is refined when layout computes the real rects.
-    fn estimate_split_size(&self, source: PaneId, direction: SplitDirection) -> (u16, u16) {
-        let Some(snapshot) = self.mux.as_ref().and_then(|m| m.pane_snapshot(source)) else {
-            return (24, 80);
-        };
-        let rows = snapshot.cells.len() as u16;
-        let cols = snapshot.cols;
-
-        match direction {
-            SplitDirection::Horizontal => (rows / 2, cols),
-            SplitDirection::Vertical => (rows, cols / 2),
-        }
-    }
-
-    /// Compute pane layouts for the current tab (flat list for navigation).
-    fn current_pane_layouts(&self) -> Option<Vec<oriterm_mux::layout::PaneLayout>> {
-        self.compute_pane_layouts().map(|(layouts, _)| layouts)
-    }
-
-    /// Collect all live pane IDs for a given tab.
-    fn live_pane_ids(&self, tab_id: TabId) -> std::collections::HashSet<PaneId> {
-        let Some(mux) = self.mux.as_ref() else {
-            return std::collections::HashSet::new();
-        };
-        let Some(tab) = mux.session().get_tab(tab_id) else {
-            return std::collections::HashSet::new();
-        };
-        tab.all_panes().into_iter().collect()
-    }
-
-    /// Clear zoom on the active tab if currently zoomed.
-    ///
-    /// Returns `true` if zoom was actually cleared. Uses `unzoom_silent`
-    /// so callers that will emit their own `TabLayoutChanged` (split,
-    /// resize, equalize) avoid a duplicate notification. Callers that
-    /// don't mutate layout (focus, cycle) must handle the layout change
-    /// themselves when this returns `true`.
-    fn unzoom_if_needed(&mut self) -> bool {
-        let Some((tab_id, _)) = self.active_pane_context() else {
-            return false;
-        };
-        let Some(mux) = &mut self.mux else {
-            return false;
-        };
-        let Some(tab) = mux.session().get_tab(tab_id) else {
-            return false;
-        };
-        let was_zoomed = tab.zoomed_pane().is_some();
-        if was_zoomed {
-            mux.unzoom_silent(tab_id);
-            if let Some(ctx) = self.focused_ctx_mut() {
-                ctx.cached_dividers = None;
-            }
-            self.sync_tab_bar_from_mux();
-        }
-        was_zoomed
-    }
-
-    /// Get the available grid area as a mux layout `Rect`.
-    pub(super) fn grid_available_rect(&self) -> Option<Rect> {
-        let bounds = self.focused_ctx()?.terminal_grid.bounds()?;
-        Some(Rect {
-            x: bounds.x(),
-            y: bounds.y(),
-            width: bounds.width(),
-            height: bounds.height(),
-        })
-    }
-
-    /// Set the focused pane in the mux and mark dirty.
-    fn set_focused_pane(&mut self, pane_id: PaneId) {
-        let Some((tab_id, _)) = self.active_pane_context() else {
-            return;
-        };
-        let Some(mux) = &mut self.mux else { return };
-        mux.set_active_pane(tab_id, pane_id);
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.pane_cache.invalidate_all();
-            ctx.dirty = true;
         }
     }
 }

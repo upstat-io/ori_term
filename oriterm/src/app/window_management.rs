@@ -288,12 +288,7 @@ impl App {
         self.windows.remove(&winit_id);
 
         // If the closed window was focused, focus the next available window.
-        if self.focused_window_id == Some(winit_id) {
-            self.focused_window_id = self.windows.keys().next().copied();
-            self.active_window = self
-                .focused_window_id
-                .and_then(|id| self.windows.get(&id).map(|ctx| ctx.window.mux_window_id()));
-        }
+        self.transfer_focus_from(winit_id);
 
         log::info!(
             "window closed: {winit_id:?}, {} remaining",
@@ -341,12 +336,7 @@ impl App {
         // Remove the OS window.
         self.windows.remove(&winit_id);
 
-        if self.focused_window_id == Some(winit_id) {
-            self.focused_window_id = self.windows.keys().next().copied();
-            self.active_window = self
-                .focused_window_id
-                .and_then(|id| self.windows.get(&id).map(|ctx| ctx.window.mux_window_id()));
-        }
+        self.transfer_focus_from(winit_id);
 
         log::info!(
             "empty window closed: {winit_id:?} (mux {mux_window_id:?}), {} remaining",
@@ -373,12 +363,7 @@ impl App {
         self.windows.remove(&winit_id);
 
         // If the removed window was focused, pick another.
-        if self.focused_window_id == Some(winit_id) {
-            self.focused_window_id = self.windows.keys().next().copied();
-            self.active_window = self
-                .focused_window_id
-                .and_then(|id| self.windows.get(&id).map(|ctx| ctx.window.mux_window_id()));
-        }
+        self.transfer_focus_from(winit_id);
 
         log::info!(
             "empty window removed: {winit_id:?}, {} remaining",

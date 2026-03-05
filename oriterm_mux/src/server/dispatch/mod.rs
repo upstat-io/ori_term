@@ -4,43 +4,30 @@
 //! [`InProcessMux`] methods, returning response PDUs.
 
 mod helpers;
+mod types;
 
-pub(crate) use helpers::parse_theme;
-pub use helpers::remove_client_subscriptions;
+pub(in crate::server) use helpers::parse_theme;
+pub(in crate::server) use helpers::remove_client_subscriptions;
+pub(super) use types::{DispatchContext, DispatchResult};
 
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use oriterm_core::selection::{extract_html_with_text, extract_text};
 use oriterm_core::{CursorShape, Rgb};
 
+use crate::MuxPdu;
 use crate::domain::SpawnConfig;
-use crate::pane::Pane;
-use crate::{InProcessMux, MuxPdu, PaneId};
 
 use super::connection::ClientConnection;
-use super::snapshot::{self, SnapshotCache};
+use super::snapshot;
 
 use self::helpers::drop_pane_background;
 
-/// Shared context for request dispatch.
+/// Dispatch a client request PDU to the mux, returning a [`DispatchResult`].
 ///
-/// Groups the server-owned state that `dispatch_request` needs. Avoids
-/// threading 6+ scratch buffers as individual parameters.
-pub(super) struct DispatchContext<'a> {
-    pub mux: &'a mut InProcessMux,
-    pub panes: &'a mut HashMap<PaneId, Pane>,
-    pub wakeup: &'a Arc<dyn Fn() + Send + Sync>,
-    pub closed_panes: &'a mut Vec<PaneId>,
-    pub snapshot_cache: &'a mut SnapshotCache,
-    pub immediate_push: &'a mut Vec<PaneId>,
-}
-
-/// Dispatch a client request PDU to the mux, returning an optional response.
-///
-/// Returns `None` for fire-and-forget messages (Input, Resize) and for
-/// unexpected PDU variants (responses/notifications sent by a client).
+/// The result contains the response PDU and side-effect flags that the
+/// caller uses for subscription sync, pending-push cleanup, and
+/// window-to-client index updates.
 #[allow(
     clippy::too_many_lines,
     reason = "exhaustive match dispatch — splitting would scatter the routing table"
@@ -49,8 +36,23 @@ pub fn dispatch_request(
     ctx: &mut DispatchContext<'_>,
     conn: &mut ClientConnection,
     pdu: MuxPdu,
-) -> Option<MuxPdu> {
-    match pdu {
+) -> DispatchResult {
+    // Extract side-effect signals before consuming the PDU in the match.
+    let sub_changed = matches!(&pdu, MuxPdu::Subscribe { .. } | MuxPdu::Unsubscribe { .. });
+    let unsub_pane = match &pdu {
+        MuxPdu::Unsubscribe { pane_id } => Some(*pane_id),
+        _ => None,
+    };
+    let claim_wid = match &pdu {
+        MuxPdu::ClaimWindow { window_id } => Some(*window_id),
+        _ => None,
+    };
+    let close_wid = match &pdu {
+        MuxPdu::CloseWindow { window_id } => Some(*window_id),
+        _ => None,
+    };
+
+    let response = match pdu {
         MuxPdu::Hello { pid } => {
             log::info!("client {} handshake (pid={pid})", conn.id());
             Some(MuxPdu::HelloAck {
@@ -475,5 +477,13 @@ pub fn dispatch_request(
                 message: "unexpected PDU type from client".to_string(),
             })
         }
+    };
+
+    DispatchResult {
+        sub_changed,
+        unsubscribed_pane: unsub_pane,
+        claimed_window: claim_wid.filter(|_| matches!(&response, Some(MuxPdu::WindowClaimed))),
+        closed_window: close_wid.filter(|_| matches!(&response, Some(MuxPdu::WindowClosed { .. }))),
+        response,
     }
 }

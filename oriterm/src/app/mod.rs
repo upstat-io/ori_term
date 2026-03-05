@@ -356,7 +356,7 @@ impl App {
         if self.mark_cursors.contains_key(&pane_id) {
             return;
         }
-        let mux = self.mux.as_mut().expect("mux");
+        let Some(mux) = self.mux.as_mut() else { return };
         mux.scroll_to_bottom(pane_id);
         if mux.is_pane_snapshot_dirty(pane_id) || mux.pane_snapshot(pane_id).is_none() {
             mux.refresh_pane_snapshot(pane_id);
@@ -382,6 +382,18 @@ impl App {
     fn write_pane_input(&mut self, pane_id: PaneId, data: &[u8]) {
         if let Some(mux) = self.mux.as_mut() {
             mux.send_input(pane_id, data);
+        }
+    }
+
+    /// If `winit_id` was the focused window, transfer focus to the next available.
+    ///
+    /// Updates both `focused_window_id` (winit) and `active_window` (mux).
+    fn transfer_focus_from(&mut self, winit_id: WindowId) {
+        if self.focused_window_id == Some(winit_id) {
+            self.focused_window_id = self.windows.keys().next().copied();
+            self.active_window = self
+                .focused_window_id
+                .and_then(|id| self.windows.get(&id).map(|ctx| ctx.window.mux_window_id()));
         }
     }
 

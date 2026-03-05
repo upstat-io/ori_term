@@ -22,7 +22,7 @@ pub(in crate::server) fn drop_pane_background(pane: Option<Pane>) {
 /// Parse a wire theme string into a [`Theme`].
 ///
 /// `None` or unrecognized strings default to [`Theme::Dark`].
-pub(crate) fn parse_theme(s: Option<&str>) -> Theme {
+pub(in crate::server) fn parse_theme(s: Option<&str>) -> Theme {
     match s {
         Some("light") => Theme::Light,
         _ => Theme::Dark,
@@ -31,7 +31,7 @@ pub(crate) fn parse_theme(s: Option<&str>) -> Theme {
 
 /// Remove all pane subscriptions from the global subscriptions map for a
 /// disconnecting client.
-pub fn remove_client_subscriptions(
+pub(in crate::server) fn remove_client_subscriptions(
     subscriptions: &mut HashMap<PaneId, Vec<ClientId>>,
     client_id: ClientId,
     subscribed_panes: &std::collections::HashSet<PaneId>,

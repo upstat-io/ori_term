@@ -58,10 +58,6 @@ pub(super) fn winit_mods_to_ui(state: ModifiersState) -> oriterm_ui::input::Modi
 }
 
 impl App {
-    /// Send a focus-in or focus-out escape sequence to the active pane.
-    ///
-    /// Only sends when the terminal has `FOCUS_IN_OUT` mode enabled (mode 1004).
-    /// Focus-in: `CSI I` (`\x1b[I`), focus-out: `CSI O` (`\x1b[O`).
     /// Pump mux events and render all dirty windows during a Win32 modal loop.
     ///
     /// During modal move/resize, `about_to_wait` never fires. A `SetTimer`

@@ -145,22 +145,6 @@ impl MuxServer {
             decoded.pdu
         );
         let seq = decoded.seq;
-        let is_sub_change = matches!(
-            &decoded.pdu,
-            MuxPdu::Subscribe { .. } | MuxPdu::Unsubscribe { .. }
-        );
-        let unsub_pane = match &decoded.pdu {
-            MuxPdu::Unsubscribe { pane_id } => Some(*pane_id),
-            _ => None,
-        };
-        let claimed_wid = match &decoded.pdu {
-            MuxPdu::ClaimWindow { window_id } => Some(*window_id),
-            _ => None,
-        };
-        let closed_wid = match &decoded.pdu {
-            MuxPdu::CloseWindow { window_id } => Some(*window_id),
-            _ => None,
-        };
         self.scratch_panes.clear();
         self.scratch_immediate_push.clear();
         let Some(conn) = self.connections.get_mut(&client_id) else {
@@ -174,7 +158,7 @@ impl MuxServer {
             snapshot_cache: &mut self.snapshot_cache,
             immediate_push: &mut self.scratch_immediate_push,
         };
-        let response = dispatch::dispatch_request(&mut ctx, conn, decoded.pdu);
+        let result = dispatch::dispatch_request(&mut ctx, conn, decoded.pdu);
 
         // Purge stale subscriptions for closed panes.
         if !self.scratch_panes.is_empty() {
@@ -182,7 +166,7 @@ impl MuxServer {
         }
 
         // Sync subscription tracking (only on subscription changes).
-        if is_sub_change {
+        if result.sub_changed {
             self.sync_subscriptions(client_id);
         }
 
@@ -204,7 +188,7 @@ impl MuxServer {
         }
 
         // Prune pending_push on Unsubscribe.
-        if let Some(unsub_pid) = unsub_pane {
+        if let Some(unsub_pid) = result.unsubscribed_pane {
             if let Some(deferred) = self.pending_push.get_mut(&unsub_pid) {
                 deferred.remove(&client_id);
                 if deferred.is_empty() {
@@ -214,23 +198,19 @@ impl MuxServer {
         }
 
         // Update window→client reverse index on ClaimWindow.
-        if let Some(wid) = claimed_wid {
-            if matches!(&response, Some(MuxPdu::WindowClaimed)) {
-                self.window_to_client.insert(wid, client_id);
-            }
+        if let Some(wid) = result.claimed_window {
+            self.window_to_client.insert(wid, client_id);
         }
 
         // Update window→client reverse index on CloseWindow.
-        if let Some(wid) = closed_wid {
-            if matches!(&response, Some(MuxPdu::WindowClosed { .. })) {
-                self.window_to_client.remove(&wid);
-                if let Some(c) = self.connections.get_mut(&client_id) {
-                    c.remove_window_id(wid);
-                }
+        if let Some(wid) = result.closed_window {
+            self.window_to_client.remove(&wid);
+            if let Some(c) = self.connections.get_mut(&client_id) {
+                c.remove_window_id(wid);
             }
         }
 
-        if let Some(resp_pdu) = response {
+        if let Some(resp_pdu) = result.response {
             let is_shutdown = matches!(resp_pdu, MuxPdu::ShutdownAck);
             let Some(conn) = self.connections.get_mut(&client_id) else {
                 return;
@@ -306,13 +286,7 @@ impl MuxServer {
                 if let Some(p) = pane {
                     std::thread::spawn(move || drop(p));
                 }
-                self.snapshot_cache.remove(pid);
-                self.last_snapshot_push.remove(&pid);
-                self.pending_push.remove(&pid);
-                self.subscriptions.remove(&pid);
-                for other_conn in self.connections.values_mut() {
-                    other_conn.unsubscribe(pid);
-                }
+                self.cleanup_pane_state(pid);
             }
             if !closed_panes.is_empty() {
                 log::info!(
@@ -370,16 +344,11 @@ impl MuxServer {
     /// removes them from the global subscription map and all connections'
     /// subscribed-pane sets, then clears `scratch_panes`.
     fn purge_closed_pane_subscriptions(&mut self) {
-        for &pane_id in &self.scratch_panes {
-            self.subscriptions.remove(&pane_id);
-            self.snapshot_cache.remove(pane_id);
-            self.last_snapshot_push.remove(&pane_id);
-            self.pending_push.remove(&pane_id);
-        }
-        for conn in self.connections.values_mut() {
-            for &pane_id in &self.scratch_panes {
-                conn.unsubscribe(pane_id);
-            }
+        // Copy IDs out of scratch_panes so cleanup_pane_state can borrow self.
+        let count = self.scratch_panes.len();
+        for i in 0..count {
+            let pane_id = self.scratch_panes[i];
+            self.cleanup_pane_state(pane_id);
         }
         self.scratch_panes.clear();
     }
