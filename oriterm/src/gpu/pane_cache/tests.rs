@@ -342,3 +342,29 @@ fn invalidate_single_pane_triggers_reprepare() {
     });
     assert!(!called2, "non-invalidated pane should use cache");
 }
+
+// retain_only
+
+#[test]
+fn retain_only_removes_stale_entries() {
+    let mut cache = PaneRenderCache::new();
+    let id1 = PaneId::from_raw(1);
+    let id2 = PaneId::from_raw(2);
+    let id3 = PaneId::from_raw(3);
+    let layout1 = make_layout(id1, 0.0, 0.0, 320.0, 240.0);
+    let layout2 = make_layout(id2, 320.0, 0.0, 320.0, 240.0);
+    let layout3 = make_layout(id3, 0.0, 240.0, 640.0, 240.0);
+
+    // Seed all three.
+    cache.get_or_prepare(id1, &layout1, true, |f| push_marker(f, 1.0));
+    cache.get_or_prepare(id2, &layout2, true, |f| push_marker(f, 2.0));
+    cache.get_or_prepare(id3, &layout3, true, |f| push_marker(f, 3.0));
+
+    // Only pane 1 and 3 are still alive.
+    let active: std::collections::HashSet<PaneId> = [id1, id3].into_iter().collect();
+    cache.retain_only(&active);
+
+    assert!(cache.get_cached(id1).is_some(), "active pane 1 preserved");
+    assert!(cache.get_cached(id2).is_none(), "stale pane 2 removed");
+    assert!(cache.get_cached(id3).is_some(), "active pane 3 preserved");
+}

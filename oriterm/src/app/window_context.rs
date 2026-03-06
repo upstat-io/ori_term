@@ -33,50 +33,50 @@ use crate::window::TermWindow;
 /// these in a `HashMap<WindowId, WindowContext>` keyed by winit window ID.
 pub(crate) struct WindowContext {
     // Core window handle.
-    pub window: TermWindow,
+    pub(super) window: TermWindow,
 
     // Per-window GPU renderer (owns fonts, atlases, shaping, instance buffers).
-    pub renderer: Option<WindowRenderer>,
+    pub(super) renderer: Option<WindowRenderer>,
 
     // Widget layer.
-    pub chrome: WindowChromeWidget,
-    pub tab_bar: TabBarWidget,
-    pub terminal_grid: TerminalGridWidget,
+    pub(super) chrome: WindowChromeWidget,
+    pub(super) tab_bar: TabBarWidget,
+    pub(super) terminal_grid: TerminalGridWidget,
 
     // Render caches.
-    pub pane_cache: PaneRenderCache,
-    pub frame: Option<FrameInput>,
-    pub chrome_draw_list: DrawList,
+    pub(super) pane_cache: PaneRenderCache,
+    pub(super) frame: Option<FrameInput>,
+    pub(super) chrome_draw_list: DrawList,
     /// Pane rendered in the previous single-pane frame. Used to detect
     /// tab switches / tear-off so `renderable_cache` contamination from
     /// `swap_renderable_content` is flushed with a forced refresh.
-    pub last_rendered_pane: Option<PaneId>,
+    pub(super) last_rendered_pane: Option<PaneId>,
 
     // Layout caches.
-    pub cached_dividers: Option<Vec<DividerLayout>>,
+    pub(super) cached_dividers: Option<Vec<DividerLayout>>,
 
     // Compositor state.
-    pub layer_tree: LayerTree,
-    pub layer_animator: LayerAnimator,
-    pub tab_slide: TabSlideState,
+    pub(super) layer_tree: LayerTree,
+    pub(super) layer_animator: LayerAnimator,
+    pub(super) tab_slide: TabSlideState,
 
     // Interaction state.
-    pub hovering_divider: Option<DividerLayout>,
-    pub divider_drag: Option<DividerDragState>,
-    pub floating_drag: Option<FloatingDragState>,
-    pub tab_drag: Option<TabDragState>,
-    pub overlays: OverlayManager,
-    pub context_menu: Option<ContextMenuState>,
-    pub hovered_url: Option<DetectedUrl>,
-    pub url_cache: UrlDetectCache,
-    pub pending_paste: Option<String>,
-    pub last_drag_area_press: Option<Instant>,
+    pub(super) hovering_divider: Option<DividerLayout>,
+    pub(super) divider_drag: Option<DividerDragState>,
+    pub(super) floating_drag: Option<FloatingDragState>,
+    pub(super) tab_drag: Option<TabDragState>,
+    pub(super) overlays: OverlayManager,
+    pub(super) context_menu: Option<ContextMenuState>,
+    pub(super) hovered_url: Option<DetectedUrl>,
+    pub(super) url_cache: UrlDetectCache,
+    pub(super) pending_paste: Option<String>,
+    pub(super) last_drag_area_press: Option<Instant>,
 
     // Reusable buffers.
-    pub search_bar_buf: String,
+    pub(super) search_bar_buf: String,
 
     // Redraw coalescing.
-    pub dirty: bool,
+    pub(super) dirty: bool,
 }
 
 impl WindowContext {

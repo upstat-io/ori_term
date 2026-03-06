@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::in_process::InProcessMux;
 use crate::pane::Pane;
-use crate::{InProcessMux, MuxPdu, PaneId};
+use crate::{MuxPdu, PaneId};
 
 use super::super::snapshot::SnapshotCache;
 

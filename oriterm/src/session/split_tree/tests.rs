@@ -7,7 +7,7 @@ fn p(n: u64) -> PaneId {
     PaneId::from_raw(n)
 }
 
-// ── Single pane ───────────────────────────────────────────────────
+// Single pane
 
 #[test]
 fn single_pane_count() {
@@ -46,7 +46,7 @@ fn single_pane_no_sibling() {
     assert_eq!(tree.sibling(p(1)), None);
 }
 
-// ── Split at leaf ─────────────────────────────────────────────────
+// Split at leaf
 
 #[test]
 fn split_at_leaf_produces_split_node() {
@@ -90,7 +90,7 @@ fn split_at_nonexistent_pane_returns_unchanged() {
     assert_eq!(result, tree);
 }
 
-// ── Nested splits ─────────────────────────────────────────────────
+// Nested splits
 
 #[test]
 fn nested_split_three_panes() {
@@ -115,7 +115,7 @@ fn nested_split_four_panes_grid() {
     assert_eq!(tree.panes(), vec![p(1), p(3), p(2), p(4)]);
 }
 
-// ── Remove ────────────────────────────────────────────────────────
+// Remove
 
 #[test]
 fn remove_last_pane_returns_none() {
@@ -158,7 +158,7 @@ fn remove_nonexistent_pane_returns_unchanged() {
     assert_eq!(after, tree);
 }
 
-// ── Equalize ──────────────────────────────────────────────────────
+// Equalize
 
 #[test]
 fn equalize_sets_all_ratios_to_half() {
@@ -186,7 +186,7 @@ fn equalize_single_pane_is_noop() {
     assert_eq!(equalized, tree);
 }
 
-// ── Ratio clamping ────────────────────────────────────────────────
+// Ratio clamping
 
 #[test]
 fn ratio_clamped_below_minimum() {
@@ -231,7 +231,7 @@ fn set_ratio_clamps() {
     }
 }
 
-// ── Swap ──────────────────────────────────────────────────────────
+// Swap
 
 #[test]
 fn swap_exchanges_two_panes() {
@@ -270,7 +270,7 @@ fn swap_nonexistent_pane_returns_unchanged() {
     assert_eq!(swapped, tree);
 }
 
-// ── Depth-first order ─────────────────────────────────────────────
+// Depth-first order
 
 #[test]
 fn panes_returns_depth_first_first_child_first() {
@@ -282,7 +282,7 @@ fn panes_returns_depth_first_first_child_first() {
     assert_eq!(tree.panes(), vec![p(1), p(2), p(3)]);
 }
 
-// ── Structural sharing ───────────────────────────────────────────
+// Structural sharing
 
 #[test]
 fn split_at_shares_unchanged_subtrees() {
@@ -307,7 +307,7 @@ fn split_at_shares_unchanged_subtrees() {
     assert!(Arc::ptr_eq(&first_arc, &first_arc2));
 }
 
-// ── Sibling ───────────────────────────────────────────────────────
+// Sibling
 
 #[test]
 fn sibling_of_leaf_in_split() {
@@ -334,7 +334,7 @@ fn sibling_of_nonexistent_pane() {
     assert_eq!(tree.sibling(p(99)), None);
 }
 
-// ── set_ratio ─────────────────────────────────────────────────────
+// set_ratio
 
 #[test]
 fn set_ratio_updates_matching_direction() {
@@ -363,7 +363,7 @@ fn set_ratio_ignores_wrong_direction() {
     );
 }
 
-// ── SplitDirection Display ────────────────────────────────────────
+// SplitDirection Display
 
 #[test]
 fn split_direction_display() {
@@ -371,7 +371,7 @@ fn split_direction_display() {
     assert_eq!(format!("{}", SplitDirection::Vertical), "Vertical");
 }
 
-// ── Deep nesting (5+ levels) ─────────────────────────────────────
+// Deep nesting (5+ levels)
 
 /// Build a 6-level deep chain by repeatedly splitting the second child.
 fn deep_chain() -> SplitTree {
@@ -435,7 +435,7 @@ fn deep_tree_equalize() {
     }
 }
 
-// ── Duplicate pane IDs ───────────────────────────────────────────
+// Duplicate pane IDs
 
 #[test]
 fn split_at_with_same_pane_id_creates_two_identical_leaves() {
@@ -462,7 +462,7 @@ fn split_at_with_existing_pane_id_from_another_leaf() {
     assert_eq!(panes, vec![p(1), p(2), p(1)]);
 }
 
-// ── set_divider_ratio ─────────────────────────────────────────────
+// set_divider_ratio
 
 #[test]
 fn set_divider_ratio_simple_split() {
@@ -544,7 +544,7 @@ fn set_divider_ratio_on_leaf() {
     assert_eq!(updated, tree);
 }
 
-// ── Split ratio boundary values ────────────────────────────────────
+// Split ratio boundary values
 
 #[test]
 fn split_at_with_ratio_zero_clamps_to_minimum() {
@@ -587,7 +587,7 @@ fn split_at_with_ratio_one_clamps_to_maximum() {
     assert_eq!(tree.pane_count(), 2);
 }
 
-// ── Exhaustive node removal fuzz ──────────────────────────────────
+// Exhaustive node removal fuzz
 
 #[test]
 fn remove_every_leaf_no_panic() {
@@ -631,7 +631,7 @@ fn remove_every_leaf_deep_chain_no_panic() {
     }
 }
 
-// ── resize_toward ──────────────────────────────────────────────────
+// resize_toward
 
 #[test]
 fn resize_toward_right_pane_in_first() {

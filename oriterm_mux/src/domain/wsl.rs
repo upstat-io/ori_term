@@ -1,7 +1,6 @@
 //! WSL domain stub — spawns shells in a WSL distro.
 //!
-//! Full implementation deferred to Section 35. Currently always returns
-//! `can_spawn() = false` and `state() = Detached`.
+//! Currently always returns `can_spawn() = false` and `state() = Detached`.
 
 use crate::DomainId;
 
@@ -11,7 +10,7 @@ use super::{Domain, DomainState};
 ///
 /// Returns `can_spawn() = false` until the full WSL integration is
 /// implemented (spawning `wsl.exe -d <distro> -- <shell>`).
-#[allow(dead_code, reason = "full WSL impl in Section 35")]
+#[allow(dead_code, reason = "used when WSL domain spawning is implemented")]
 pub struct WslDomain {
     /// Domain identity.
     id: DomainId,
@@ -19,7 +18,7 @@ pub struct WslDomain {
     distro: String,
 }
 
-#[allow(dead_code, reason = "full WSL impl in Section 35")]
+#[allow(dead_code, reason = "used when WSL domain spawning is implemented")]
 impl WslDomain {
     /// Create a new WSL domain stub for the given distro.
     pub(crate) fn new(id: DomainId, distro: String) -> Self {

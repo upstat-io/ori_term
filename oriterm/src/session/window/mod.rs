@@ -10,8 +10,7 @@ use super::id::WindowId;
 /// A GUI window: an ordered collection of tabs.
 ///
 /// Tracks which tab is active (has focus). Tab order matches the visual
-/// tab bar order. This replaces `oriterm_mux::MuxWindow` as the GUI's
-/// own session state.
+/// tab bar order.
 #[derive(Debug, Clone)]
 pub struct Window {
     /// Unique window identifier (GUI-allocated).
@@ -61,6 +60,10 @@ impl Window {
     ///
     /// Adjusts `active_tab_idx` to continue tracking the same tab when
     /// the insertion shifts it rightward.
+    #[allow(
+        dead_code,
+        reason = "used in tests; cross-compile target omits test code"
+    )]
     pub fn insert_tab_at(&mut self, index: usize, tab_id: TabId) {
         if index >= self.tabs.len() {
             self.tabs.push(tab_id);
@@ -133,6 +136,10 @@ impl Window {
     /// Preserves the active tab if it still exists in the new list,
     /// otherwise resets to index 0. Used by daemon-mode clients when
     /// another process moves a tab to or from this window.
+    #[allow(
+        dead_code,
+        reason = "used in tests; consumed when daemon-mode sync is wired"
+    )]
     pub fn replace_tabs(&mut self, tab_ids: &[TabId]) {
         let prev_active = self.active_tab();
         self.tabs.clear();

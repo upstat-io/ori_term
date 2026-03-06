@@ -3,7 +3,8 @@
 use std::io::Cursor;
 
 use super::codec::{DecodeError, DecodedFrame, ProtocolCodec};
-use super::messages::{MsgType, MuxPdu};
+use super::messages::MuxPdu;
+use super::msg_type::MsgType;
 use super::snapshot::{PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
 use crate::id::{ClientId, DomainId, PaneId};

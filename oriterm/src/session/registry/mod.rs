@@ -1,8 +1,7 @@
 //! GUI-side registry of tabs and windows.
 //!
-//! Provides O(1) lookup by `TabId` and `WindowId`, plus cross-reference
-//! queries to find which window contains a given tab. This replaces
-//! `oriterm_mux::SessionRegistry` as the GUI's own session state.
+//! Owns all windows and tabs for the GUI session, providing lookup
+//! and lifecycle management.
 
 use std::collections::HashMap;
 
@@ -103,11 +102,13 @@ impl SessionRegistry {
     }
 
     /// Number of registered windows.
+    #[allow(dead_code, reason = "used in tests; part of session registry API")]
     pub fn window_count(&self) -> usize {
         self.windows.len()
     }
 
     /// Iterate over all windows.
+    #[allow(dead_code, reason = "used in tests; part of session registry API")]
     pub fn windows(&self) -> &HashMap<WindowId, Window> {
         &self.windows
     }

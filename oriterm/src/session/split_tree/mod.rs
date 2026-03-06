@@ -64,14 +64,14 @@ pub enum SplitTree {
 }
 
 impl SplitTree {
-    // ── Constructors ──────────────────────────────────────────────
+    // Constructors
 
     /// Create a tree containing a single pane.
     pub fn leaf(pane: PaneId) -> Self {
         Self::Leaf(pane)
     }
 
-    // ── Query methods ─────────────────────────────────────────────
+    // Query methods
 
     /// Check whether this tree contains the given pane.
     pub fn contains(&self, pane: PaneId) -> bool {
@@ -105,6 +105,7 @@ impl SplitTree {
     }
 
     /// Return the maximum nesting depth. A single leaf has depth 0.
+    #[allow(dead_code, reason = "used in tests; part of split tree query API")]
     pub fn depth(&self) -> usize {
         match self {
             Self::Leaf(_) => 0,
@@ -116,6 +117,7 @@ impl SplitTree {
     ///
     /// Returns `None` if the pane is the root (not inside any split) or not
     /// found in the tree.
+    #[allow(dead_code, reason = "used in tests; part of split tree query API")]
     pub fn parent_split(&self, pane: PaneId) -> Option<(SplitDirection, f32)> {
         match self {
             Self::Leaf(_) => None,
@@ -143,6 +145,7 @@ impl SplitTree {
     ///
     /// Returns `None` if the pane is not found, is the root, or the sibling
     /// is itself a split (not a single pane).
+    #[allow(dead_code, reason = "used in tests; part of split tree query API")]
     pub fn sibling(&self, pane: PaneId) -> Option<PaneId> {
         match self {
             Self::Leaf(_) => None,

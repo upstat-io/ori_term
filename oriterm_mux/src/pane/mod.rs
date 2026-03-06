@@ -6,8 +6,8 @@
 //! `wakeup_pending`, `mode_cache`) allow the renderer and input handler to
 //! query pane state without contending on the terminal lock.
 //!
-//! `Pane` is intentionally independent of `Tab` — the mux layer owns panes
-//! directly. `Tab` will be replaced in Section 31/32.
+//! `Pane` is the atomic per-shell unit in the mux model — the mux layer
+//! owns panes directly with no higher-level grouping.
 
 mod mark_cursor;
 mod selection;

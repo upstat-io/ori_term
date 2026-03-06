@@ -28,14 +28,11 @@ pub mod server;
 pub mod shell_integration;
 
 pub use backend::{EmbeddedMux, MuxBackend, MuxClient};
-pub use domain::{Domain, DomainState, SpawnConfig};
-pub use id::{ClientId, DomainId, IdAllocator, MuxId, PaneId};
-pub use in_process::{ClosePaneResult, InProcessMux};
-pub use mux_event::{MuxEvent, MuxEventProxy, MuxNotification};
-pub use pane::{MarkCursor, Pane};
+pub use domain::SpawnConfig;
+pub use id::{ClientId, DomainId, PaneId};
+pub use mux_event::MuxNotification;
+pub use pane::MarkCursor;
 pub use protocol::{
-    DecodeError, DecodedFrame, FrameHeader, MsgType, MuxPdu, PaneSnapshot, ProtocolCodec, WireCell,
-    WireCellFlags, WireColor, WireCursor, WireCursorShape, WireRgb, WireSearchMatch, WireSelection,
+    MuxPdu, PaneSnapshot, ProtocolCodec, WireCell, WireCellFlags, WireCursor, WireCursorShape,
+    WireRgb,
 };
-pub use pty::{ExitStatus, PtyConfig, PtyControl, PtyHandle, spawn_pty};
-pub use registry::{PaneEntry, PaneRegistry};

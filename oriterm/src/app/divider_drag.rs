@@ -20,7 +20,7 @@ use super::App;
 const HIT_ZONE_HALF_PAD: f32 = 1.5;
 
 /// Active divider drag state.
-pub(crate) struct DividerDragState {
+pub(super) struct DividerDragState {
     /// The divider being dragged.
     pub pane_before: PaneId,
     pub pane_after: PaneId,

@@ -6,8 +6,9 @@
 
 use std::io::{self, Write};
 
+use crate::MuxPdu;
+use crate::protocol::{DecodeError, DecodedFrame, FrameHeader, MsgType};
 use crate::protocol::{HEADER_LEN, MAX_PAYLOAD};
-use crate::{DecodeError, DecodedFrame, FrameHeader, MsgType, MuxPdu};
 
 /// Result of a single `read_from` call.
 #[derive(Debug, PartialEq, Eq)]

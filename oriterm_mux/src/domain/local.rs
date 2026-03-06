@@ -64,8 +64,7 @@ impl LocalDomain {
     /// the `MuxEventProxy` event listener. Returns a fully assembled `Pane`.
     #[allow(
         clippy::too_many_arguments,
-        reason = "all six parameters are required to assemble a Pane; \
-                  grouped into a struct when Section 31 wires this into App"
+        reason = "all six parameters are required to assemble a Pane"
     )]
     pub fn spawn_pane(
         &self,

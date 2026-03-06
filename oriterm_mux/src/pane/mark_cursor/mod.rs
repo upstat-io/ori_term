@@ -1,10 +1,8 @@
 //! Mark cursor — keyboard-driven cursor for mark mode selection.
 //!
-//! Lives in `pane` because mark mode is per-pane state. Re-exported from
-//! `tab` for backward compatibility during the mux transition.
-//!
-//! The mark cursor uses [`StableRowIndex`] for its row coordinate so it
-//! survives scrollback eviction between key presses. Column is zero-based.
+//! Lives in `pane` because mark mode is per-pane state. The mark cursor
+//! uses [`StableRowIndex`] for its row coordinate so it survives scrollback
+//! eviction between key presses. Column is zero-based.
 
 use oriterm_core::grid::StableRowIndex;
 

@@ -102,6 +102,10 @@ impl FloatingLayer {
     /// Find the topmost floating pane at the given point.
     ///
     /// Checks in reverse z-order (highest first) so the front-most pane wins.
+    #[allow(
+        dead_code,
+        reason = "used in tests; consumed when floating pane click dispatch is wired"
+    )]
     pub fn hit_test(&self, x: f32, y: f32) -> Option<PaneId> {
         self.panes
             .iter()
@@ -134,6 +138,10 @@ impl FloatingLayer {
 
     /// Move a floating pane to a new position. Returns a new layer.
     #[must_use]
+    #[allow(
+        dead_code,
+        reason = "used in tests; immutable variant of move_pane_mut"
+    )]
     pub fn move_pane(&self, pane_id: PaneId, x: f32, y: f32) -> Self {
         let panes = self
             .panes
@@ -154,6 +162,10 @@ impl FloatingLayer {
 
     /// Resize a floating pane. Returns a new layer.
     #[must_use]
+    #[allow(
+        dead_code,
+        reason = "used in tests; immutable variant of resize_pane_mut"
+    )]
     pub fn resize_pane(&self, pane_id: PaneId, width: f32, height: f32) -> Self {
         let panes = self
             .panes
@@ -237,6 +249,10 @@ impl FloatingLayer {
     /// The target pane gets z-order 0 and all other panes are shifted up by
     /// 1 to maintain unique ordering.
     #[must_use]
+    #[allow(
+        dead_code,
+        reason = "used in tests; consumed when floating z-order UI is wired"
+    )]
     pub fn lower(&self, pane_id: PaneId) -> Self {
         let panes = self
             .panes

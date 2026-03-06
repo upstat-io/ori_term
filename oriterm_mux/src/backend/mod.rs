@@ -4,7 +4,7 @@
 //! multiplexer state. Two implementations exist:
 //!
 //! - [`EmbeddedMux`] — in-process mux for single-process mode. Wraps
-//!   [`InProcessMux`](crate::InProcessMux) and owns `Pane` structs directly.
+//!   [`InProcessMux`](crate::in_process::InProcessMux) and owns `Pane` structs directly.
 //! - [`MuxClient`] — IPC client for daemon mode. Sends requests to a
 //!   [`MuxServer`](crate::server::MuxServer) over a Unix socket / named pipe.
 

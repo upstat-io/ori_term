@@ -85,7 +85,11 @@ pub fn compute_all(
 ///
 /// Returns a flat list of `PaneLayout` records — tiled panes first (from the
 /// split tree), then floating panes overlaid on top.
-pub fn compute_layout(
+#[allow(
+    dead_code,
+    reason = "used in tests; consumed when layout refresh is wired to App"
+)]
+pub(crate) fn compute_layout(
     tree: &SplitTree,
     floating: &FloatingLayer,
     focused: PaneId,
@@ -97,7 +101,11 @@ pub fn compute_layout(
 /// Compute divider layouts from a split tree.
 ///
 /// Returns one `DividerLayout` per internal `Split` node.
-pub fn compute_dividers(tree: &SplitTree, desc: &LayoutDescriptor) -> Vec<DividerLayout> {
+#[allow(
+    dead_code,
+    reason = "used in tests; consumed when divider rendering is wired to App"
+)]
+pub(crate) fn compute_dividers(tree: &SplitTree, desc: &LayoutDescriptor) -> Vec<DividerLayout> {
     let mut out = TreeOutput {
         panes: Vec::new(),
         dividers: Vec::new(),

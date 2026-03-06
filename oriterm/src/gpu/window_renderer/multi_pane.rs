@@ -7,18 +7,16 @@
 
 use oriterm_core::Rgb;
 
-use super::super::frame_input::FrameInput;
-use super::super::instance_writer::ScreenRect;
-use super::super::prepare;
-use super::super::prepared_frame::PreparedFrame;
-use super::super::state::GpuState;
-use super::{CombinedAtlasLookup, WindowRenderer};
-use crate::gpu::frame_input::ViewportSize;
+use crate::gpu::builtin_glyphs;
+use crate::gpu::frame_input::{FrameInput, ViewportSize};
+use crate::gpu::instance_writer::ScreenRect;
+use crate::gpu::prepare;
+use crate::gpu::prepared_frame::PreparedFrame;
+use crate::gpu::state::GpuState;
 use crate::session::{DividerLayout, Rect};
 
-use helpers::{ensure_glyphs_cached, grid_raster_keys, shape_frame};
-
-use super::helpers;
+use super::helpers::{ensure_glyphs_cached, grid_raster_keys, shape_frame};
+use super::{CombinedAtlasLookup, WindowRenderer};
 
 impl WindowRenderer {
     /// Begin a multi-pane frame: reset atlases, clear instance buffers, set viewport.
@@ -26,7 +24,7 @@ impl WindowRenderer {
     /// Call once before [`prepare_pane_into`] calls. Sets the viewport and clear
     /// color for the entire window, then clears all instance buffers so pane
     /// instances can accumulate cleanly.
-    pub fn begin_multi_pane_frame(
+    pub(crate) fn begin_multi_pane_frame(
         &mut self,
         viewport: ViewportSize,
         background: Rgb,
@@ -51,7 +49,7 @@ impl WindowRenderer {
         clippy::too_many_arguments,
         reason = "pane prepare: input, GPU state, origin offset, cursor flag, target frame"
     )]
-    pub fn prepare_pane_into(
+    pub(crate) fn prepare_pane_into(
         &mut self,
         input: &FrameInput,
         gpu: &GpuState,
@@ -77,7 +75,7 @@ impl WindowRenderer {
         );
 
         // Phase B2: Built-in geometric glyphs + decoration patterns.
-        super::super::builtin_glyphs::ensure_builtins_cached(
+        builtin_glyphs::ensure_builtins_cached(
             input,
             self.shaping.frame.size_q6(),
             &mut self.atlas,
@@ -105,7 +103,7 @@ impl WindowRenderer {
     ///
     /// Dividers are solid-color rectangles between split panes. Drawn into
     /// the background layer so they appear behind glyphs and cursors.
-    pub fn append_dividers(&mut self, dividers: &[DividerLayout], color: Rgb) {
+    pub(crate) fn append_dividers(&mut self, dividers: &[DividerLayout], color: Rgb) {
         for div in dividers {
             self.prepared.backgrounds.push_rect(
                 ScreenRect {
@@ -125,7 +123,7 @@ impl WindowRenderer {
     /// The shadow is a semi-transparent rectangle offset 2px down-right,
     /// drawn into the backgrounds layer. The border is a 1px accent-colored
     /// frame drawn into the UI rects layer with slight corner radius.
-    pub fn append_floating_decoration(&mut self, rect: &Rect, accent: Rgb) {
+    pub(crate) fn append_floating_decoration(&mut self, rect: &Rect, accent: Rgb) {
         let shadow_offset = 2.0_f32;
         let shadow_expand = 4.0_f32;
 
@@ -166,7 +164,7 @@ impl WindowRenderer {
     ///
     /// Draws four thin rectangles (top, bottom, left, right) into the cursor
     /// layer so the border renders on top of cell backgrounds and glyphs.
-    pub fn append_focus_border(&mut self, rect: &Rect, color: Rgb) {
+    pub(crate) fn append_focus_border(&mut self, rect: &Rect, color: Rgb) {
         let border = 2.0_f32;
         let bx = rect.x;
         let by = rect.y;

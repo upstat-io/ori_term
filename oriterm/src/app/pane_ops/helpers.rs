@@ -4,11 +4,62 @@
 
 use oriterm_mux::PaneId;
 
-use crate::session::{Rect, SplitDirection};
-
-use crate::session::TabId;
+use crate::session::{Rect, SessionRegistry, SplitDirection, TabId, WindowId};
 
 use super::super::App;
+
+/// Result of removing a pane from the session model.
+pub(in crate::app) struct PaneRemovalResult {
+    /// Window that became empty after the pane was removed, if any.
+    pub empty_window: Option<WindowId>,
+}
+
+/// Remove a pane from the session model (tree/floating, tab, window).
+///
+/// Handles the full chain: remove from tree or floating layer, reassign
+/// active pane, remove empty tabs, and detect empty windows. Returns
+/// which window (if any) is now empty so the caller can close it.
+pub(in crate::app) fn remove_pane_from_session(
+    session: &mut SessionRegistry,
+    pane_id: PaneId,
+) -> PaneRemovalResult {
+    let Some(tab_id) = session.tab_for_pane(pane_id) else {
+        return PaneRemovalResult { empty_window: None };
+    };
+
+    let tab_empty = if let Some(tab) = session.get_tab_mut(tab_id) {
+        if tab.is_floating(pane_id) {
+            let new_layer = tab.floating().remove(pane_id);
+            tab.set_floating(new_layer);
+        } else if let Some(new_tree) = tab.tree().remove(pane_id) {
+            tab.replace_layout(new_tree);
+        } else {
+            // Pane is the sole tree leaf — no removal needed.
+        }
+        if tab.active_pane() == pane_id {
+            tab.set_active_pane(tab.tree().first_pane());
+        }
+        tab.all_panes().is_empty()
+    } else {
+        false
+    };
+
+    let mut empty_window = None;
+    if tab_empty {
+        let win_id = session.window_for_tab(tab_id);
+        session.remove_tab(tab_id);
+        if let Some(wid) = win_id {
+            if let Some(win) = session.get_window_mut(wid) {
+                win.remove_tab(tab_id);
+            }
+            if session.get_window(wid).is_some_and(|w| w.tabs().is_empty()) {
+                empty_window = Some(wid);
+            }
+        }
+    }
+
+    PaneRemovalResult { empty_window }
+}
 
 impl App {
     /// Resolve `(tab_id, active_pane_id)` for the current active tab.

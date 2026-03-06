@@ -15,11 +15,12 @@ use std::sync::mpsc;
 
 use oriterm_core::Theme;
 
+use crate::DomainId;
 use crate::domain::{Domain, LocalDomain, SpawnConfig};
+use crate::id::{IdAllocator, PaneId};
 use crate::mux_event::{MuxEvent, MuxNotification};
 use crate::pane::Pane;
 use crate::registry::{PaneEntry, PaneRegistry};
-use crate::{DomainId, IdAllocator, PaneId};
 
 /// Result of closing a single pane.
 #[derive(Debug, PartialEq, Eq)]

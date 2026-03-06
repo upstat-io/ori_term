@@ -18,8 +18,7 @@ const MAX_UNDO_ENTRIES: usize = 32;
 /// A GUI tab: a layout container for panes.
 ///
 /// Owns the split tree, floating layer, active pane tracking, zoom state,
-/// and undo/redo for layout mutations. This replaces `oriterm_mux::MuxTab`
-/// as the GUI's own session state.
+/// and undo/redo for layout mutations.
 #[derive(Debug, Clone)]
 pub struct Tab {
     /// Unique tab identifier (GUI-allocated).

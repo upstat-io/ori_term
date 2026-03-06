@@ -5,7 +5,8 @@ use std::sync::atomic::Ordering;
 
 use oriterm_ipc::ClientStream;
 
-use crate::{FrameHeader, MuxPdu, ProtocolCodec};
+use crate::MuxPdu;
+use crate::protocol::{FrameHeader, ProtocolCodec};
 
 use super::MuxServer;
 use super::frame_io::FrameReader;
@@ -619,7 +620,7 @@ fn frame_reader_byte_by_byte() {
 #[test]
 fn frame_reader_recovers_after_payload_too_large() {
     use crate::protocol::MAX_PAYLOAD;
-    use crate::{FrameHeader, MsgType};
+    use crate::protocol::{FrameHeader, MsgType};
 
     let mut reader = FrameReader::new();
 
@@ -1123,7 +1124,10 @@ fn frame_reader_forward_compat_skips_unknown_and_stays_aligned() {
 
     // First decode: UnknownMsgType.
     let err = reader.try_decode().unwrap().unwrap_err();
-    assert!(matches!(err, crate::DecodeError::UnknownMsgType(0xFFFF)));
+    assert!(matches!(
+        err,
+        crate::protocol::DecodeError::UnknownMsgType(0xFFFF)
+    ));
 
     // Second decode: valid Ping (stream aligned).
     let frame = reader.try_decode().unwrap().unwrap();
@@ -1156,5 +1160,8 @@ fn frame_reader_forward_compat_waits_for_full_unknown_frame() {
     // Feed remaining 10 bytes.
     reader.extend(&[0u8; 10]);
     let err = reader.try_decode().unwrap().unwrap_err();
-    assert!(matches!(err, crate::DecodeError::UnknownMsgType(0xFFFF)));
+    assert!(matches!(
+        err,
+        crate::protocol::DecodeError::UnknownMsgType(0xFFFF)
+    ));
 }

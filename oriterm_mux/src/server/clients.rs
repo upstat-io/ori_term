@@ -8,8 +8,9 @@ use std::time::Instant;
 
 use mio::{Interest, Token};
 
+use crate::MuxPdu;
 use crate::id::ClientId;
-use crate::{DecodedFrame, MuxPdu};
+use crate::protocol::DecodedFrame;
 
 use super::connection::ClientConnection;
 use super::frame_io::ReadStatus;
@@ -116,7 +117,7 @@ impl MuxServer {
             match decode_result {
                 Ok(decoded) => self.handle_decoded_frame(client_id, decoded),
                 Err(e) => {
-                    if matches!(e, crate::DecodeError::UnknownMsgType(_)) {
+                    if matches!(e, crate::protocol::DecodeError::UnknownMsgType(_)) {
                         log::debug!("unknown msg_type from client {client_id}, skipping");
                     } else {
                         log::warn!("decode error from client {client_id}: {e}");
@@ -330,6 +331,6 @@ impl MuxServer {
 }
 
 /// Whether a decode error should cause the client to be disconnected.
-fn is_fatal_decode_error(err: &crate::DecodeError) -> bool {
-    matches!(err, crate::DecodeError::PayloadTooLarge(_))
+fn is_fatal_decode_error(err: &crate::protocol::DecodeError) -> bool {
+    matches!(err, crate::protocol::DecodeError::PayloadTooLarge(_))
 }

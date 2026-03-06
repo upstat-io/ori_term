@@ -26,9 +26,10 @@ use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Token, Waker};
 
-use crate::id::ClientId;
+use crate::id::{ClientId, IdAllocator, PaneId};
+use crate::in_process::InProcessMux;
+use crate::mux_event::MuxNotification;
 use crate::pane::Pane;
-use crate::{IdAllocator, InProcessMux, MuxNotification, PaneId};
 
 use self::notify::TargetClients;
 use self::snapshot::SnapshotCache;
@@ -53,7 +54,7 @@ const CLIENT_BASE: usize = 2;
 /// pushes notifications to subscribed clients.
 pub struct MuxServer {
     // Core state.
-    /// In-process multiplexer owning all panes, tabs, windows.
+    /// In-process multiplexer owning all panes.
     mux: InProcessMux,
     /// Platform-specific IPC listener.
     listener: IpcListener,

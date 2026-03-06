@@ -83,32 +83,6 @@ impl Pane {
 
     // -- Command zone selection --
 
-    /// Select command output for the prompt nearest to the viewport center.
-    ///
-    /// Returns `true` if a selection was created.
-    pub fn select_command_output(&mut self) -> bool {
-        let sel = self.build_zone_selection(Term::command_output_range);
-        if let Some(s) = sel {
-            self.selection = Some(s);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Select command input for the prompt nearest to the viewport center.
-    ///
-    /// Returns `true` if a selection was created.
-    pub fn select_command_input(&mut self) -> bool {
-        let sel = self.build_zone_selection(Term::command_input_range);
-        if let Some(s) = sel {
-            self.selection = Some(s);
-            true
-        } else {
-            false
-        }
-    }
-
     /// Build a selection for the nearest command output zone (non-mutating).
     ///
     /// Returns the selection without storing it on the pane. Used by

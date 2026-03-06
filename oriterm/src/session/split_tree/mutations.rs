@@ -115,6 +115,10 @@ impl SplitTree {
     /// Returns `self` unchanged if the pane is not found or no matching
     /// split exists.
     #[must_use]
+    #[allow(
+        dead_code,
+        reason = "used in tests; consumed when divider drag applies ratios"
+    )]
     pub fn set_ratio(&self, pane: PaneId, direction: SplitDirection, new_ratio: f32) -> Self {
         let new_ratio = clamp_ratio(new_ratio);
         match self {
@@ -225,6 +229,10 @@ impl SplitTree {
     ///
     /// Returns `self` unchanged if no qualifying split exists.
     #[must_use]
+    #[allow(
+        dead_code,
+        reason = "used in tests; consumed when keyboard pane resizing is wired"
+    )]
     pub fn resize_toward(
         &self,
         pane: PaneId,
@@ -273,6 +281,10 @@ impl SplitTree {
     ///
     /// Returns `self` unchanged if either pane is not found.
     #[must_use]
+    #[allow(
+        dead_code,
+        reason = "used in tests; consumed when pane swap keybinding is wired"
+    )]
     pub fn swap(&self, a: PaneId, b: PaneId) -> Self {
         if !self.contains(a) || !self.contains(b) || a == b {
             return self.clone();
@@ -280,7 +292,7 @@ impl SplitTree {
         self.swap_inner(a, b)
     }
 
-    // ── Private helpers ───────────────────────────────────────────
+    // Private helpers
 
     /// Returns `(new_tree, changed)` where `changed` is true when a deeper
     /// split was adjusted.
@@ -360,6 +372,7 @@ impl SplitTree {
         }
     }
 
+    #[allow(dead_code, reason = "called by swap()")]
     fn swap_inner(&self, a: PaneId, b: PaneId) -> Self {
         match self {
             Self::Leaf(id) if *id == a => Self::Leaf(b),

@@ -4,9 +4,10 @@
 //! Layout mutations (zoom, split tree, floating layer) are applied
 //! to the local session. Only pane spawn/close/resize go through mux.
 
-mod helpers;
+mod floating;
+pub(super) mod helpers;
 
-use oriterm_mux::{PaneId, SpawnConfig};
+use oriterm_mux::SpawnConfig;
 
 use crate::session::SplitDirection;
 use crate::session::nav::Direction;
@@ -177,52 +178,17 @@ impl App {
             self.exit_app();
         }
 
-        let Some((tab_id, _)) = self.active_pane_context() else {
-            return;
-        };
-
         // Close the pane via mux (unregisters, emits PaneClosed for cleanup).
         if let Some(mux) = &mut self.mux {
             mux.close_pane(pane_id);
         }
         log::info!("close pane {pane_id:?}");
 
-        // Update local session: remove pane from tree/floating.
-        let tab_empty = if let Some(tab) = self.session.get_tab_mut(tab_id) {
-            if tab.is_floating(pane_id) {
-                let new_layer = tab.floating().remove(pane_id);
-                tab.set_floating(new_layer);
-            } else if let Some(new_tree) = tab.tree().remove(pane_id) {
-                tab.replace_layout(new_tree);
-            } else {
-                // Pane not found in tree or floating — already removed.
-            }
-            // Reassign active pane if the closed pane was active.
-            if tab.active_pane() == pane_id {
-                tab.set_active_pane(tab.tree().first_pane());
-            }
-            tab.all_panes().is_empty()
-        } else {
-            false
-        };
-
-        if tab_empty {
-            // Tab has no panes left — remove it.
-            let win_id = self.session.window_for_tab(tab_id);
-            self.session.remove_tab(tab_id);
-            if let Some(wid) = win_id {
-                if let Some(win) = self.session.get_window_mut(wid) {
-                    win.remove_tab(tab_id);
-                }
-                let window_empty = self
-                    .session
-                    .get_window(wid)
-                    .is_some_and(|w| w.tabs().is_empty());
-                if window_empty {
-                    self.close_empty_session_window(wid);
-                    return;
-                }
-            }
+        // Update local session.
+        let result = helpers::remove_pane_from_session(&mut self.session, pane_id);
+        if let Some(wid) = result.empty_window {
+            self.close_empty_session_window(wid);
+            return;
         }
 
         self.sync_tab_bar_from_mux();
@@ -349,152 +315,6 @@ impl App {
         }
     }
 
-    /// Toggle floating pane: focus topmost if any exist, else spawn a new one.
-    pub(super) fn toggle_floating_pane(&mut self) {
-        self.unzoom_if_needed();
-        let Some((tab_id, active)) = self.active_pane_context() else {
-            return;
-        };
-
-        // Read local session to decide focus target.
-        let focus_target = {
-            let Some(tab) = self.session.get_tab(tab_id) else {
-                return;
-            };
-            if tab.floating().is_empty() {
-                None
-            } else if tab.is_floating(active) {
-                // Active is floating — focus first tiled pane.
-                Some(tab.tree().first_pane())
-            } else {
-                // Active is tiled — focus topmost floating pane.
-                tab.floating().panes().last().map(|fp| fp.pane_id)
-            }
-        };
-
-        if let Some(target) = focus_target {
-            self.set_focused_pane(target);
-            return;
-        }
-
-        // No floating panes — spawn a new one.
-        let Some(available) = self.grid_available_rect() else {
-            return;
-        };
-
-        let theme = self
-            .config
-            .colors
-            .resolve_theme(crate::platform::theme::system_theme);
-
-        let config = SpawnConfig {
-            cols: 80,
-            rows: 24,
-            scrollback: self.config.terminal.scrollback,
-            shell_integration: self.config.behavior.shell_integration,
-            ..SpawnConfig::default()
-        };
-
-        let palette =
-            crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
-
-        let Some(mux) = &mut self.mux else { return };
-        let new_pane_id = match mux.spawn_pane(&config, theme) {
-            Ok(pid) => {
-                mux.set_pane_theme(pid, theme, palette);
-                log::info!("spawn floating pane: {pid:?}");
-                pid
-            }
-            Err(e) => {
-                log::error!("spawn floating pane failed: {e}");
-                return;
-            }
-        };
-
-        // Local floating pane add.
-        if let Some(tab) = self.session.get_tab_mut(tab_id) {
-            let next_z = tab
-                .floating()
-                .panes()
-                .iter()
-                .map(|p| p.z_order)
-                .max()
-                .unwrap_or(0)
-                + 1;
-            let fp = crate::session::FloatingPane::centered(new_pane_id, &available, next_z);
-            let new_layer = tab.floating().add(fp);
-            tab.set_floating(new_layer);
-            tab.set_active_pane(new_pane_id);
-        }
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.pane_cache.invalidate_all();
-            ctx.dirty = true;
-        }
-    }
-
-    /// Toggle the focused pane between floating and tiled.
-    pub(super) fn toggle_float_tile(&mut self) {
-        self.unzoom_if_needed();
-        let Some((tab_id, pane_id)) = self.active_pane_context() else {
-            return;
-        };
-
-        let is_floating = {
-            let Some(tab) = self.session.get_tab(tab_id) else {
-                return;
-            };
-            tab.is_floating(pane_id)
-        };
-
-        if is_floating {
-            let Some(tab) = self.session.get_tab_mut(tab_id) else {
-                return;
-            };
-            if !tab.floating().contains(pane_id) {
-                return;
-            }
-            let new_layer = tab.floating().remove(pane_id);
-            tab.set_floating(new_layer);
-            let anchor = tab.tree().first_pane();
-            let new_tree = tab
-                .tree()
-                .split_at(anchor, SplitDirection::Vertical, pane_id, 0.5);
-            tab.set_tree(new_tree);
-            tab.set_active_pane(pane_id);
-        } else {
-            let Some(avail) = self.grid_available_rect() else {
-                return;
-            };
-            let Some(tab) = self.session.get_tab_mut(tab_id) else {
-                return;
-            };
-            if !tab.tree().contains(pane_id) {
-                return;
-            }
-            let Some(new_tree) = tab.tree().remove(pane_id) else {
-                return;
-            };
-            tab.set_tree(new_tree);
-            let next_z = tab
-                .floating()
-                .panes()
-                .iter()
-                .map(|p| p.z_order)
-                .max()
-                .unwrap_or(0)
-                + 1;
-            let fp = crate::session::FloatingPane::centered(pane_id, &avail, next_z);
-            let new_layer = tab.floating().add(fp);
-            tab.set_floating(new_layer);
-            tab.set_active_pane(pane_id);
-        }
-
-        if let Some(ctx) = self.focused_ctx_mut() {
-            ctx.pane_cache.invalidate_all();
-            ctx.dirty = true;
-        }
-    }
-
     /// Undo the last split tree mutation.
     pub(super) fn undo_split(&mut self) {
         let Some((tab_id, _)) = self.active_pane_context() else {
@@ -527,19 +347,6 @@ impl App {
             if let Some(ctx) = self.focused_ctx_mut() {
                 ctx.pane_cache.invalidate_all();
                 ctx.dirty = true;
-            }
-        }
-    }
-
-    /// Raise a floating pane when it receives focus via click.
-    pub(super) fn raise_if_floating(&mut self, pane_id: PaneId) {
-        let Some((tab_id, _)) = self.active_pane_context() else {
-            return;
-        };
-        if let Some(tab) = self.session.get_tab_mut(tab_id) {
-            if tab.is_floating(pane_id) {
-                let new_layer = tab.floating().raise(pane_id);
-                tab.set_floating(new_layer);
             }
         }
     }

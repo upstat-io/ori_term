@@ -199,43 +199,11 @@ impl App {
             ctx.dirty = true;
         }
 
-        // Remove pane from local session (tab tree/floating).
-        let tab_id = self.session.tab_for_pane(id);
-        let Some(tab_id) = tab_id else { return };
-
-        let tab_empty = if let Some(tab) = self.session.get_tab_mut(tab_id) {
-            if tab.is_floating(id) {
-                let new_layer = tab.floating().remove(id);
-                tab.set_floating(new_layer);
-            } else if let Some(new_tree) = tab.tree().remove(id) {
-                tab.replace_layout(new_tree);
-            } else {
-                // Pane already removed from tree/floating.
-            }
-            if tab.active_pane() == id {
-                tab.set_active_pane(tab.tree().first_pane());
-            }
-            tab.all_panes().is_empty()
-        } else {
-            false
-        };
-
-        if tab_empty {
-            let win_id = self.session.window_for_tab(tab_id);
-            self.session.remove_tab(tab_id);
-            if let Some(wid) = win_id {
-                if let Some(win) = self.session.get_window_mut(wid) {
-                    win.remove_tab(tab_id);
-                }
-                let window_empty = self
-                    .session
-                    .get_window(wid)
-                    .is_some_and(|w| w.tabs().is_empty());
-                if window_empty {
-                    self.close_empty_session_window(wid);
-                    return;
-                }
-            }
+        // Remove pane from local session (tree/floating/tab/window).
+        let result = crate::app::pane_ops::helpers::remove_pane_from_session(&mut self.session, id);
+        if let Some(wid) = result.empty_window {
+            self.close_empty_session_window(wid);
+            return;
         }
 
         self.sync_tab_bar_from_mux();

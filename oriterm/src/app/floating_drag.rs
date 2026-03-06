@@ -27,7 +27,7 @@ const MIN_SIZE_PX: f32 = 100.0;
 
 /// Which edge or corner of a floating pane is being resized.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ResizeEdge {
+pub(super) enum ResizeEdge {
     Top,
     Bottom,
     Left,
@@ -40,7 +40,7 @@ pub(crate) enum ResizeEdge {
 
 /// Active floating pane drag or resize state.
 #[derive(Debug)]
-pub(crate) enum FloatingDragState {
+pub(super) enum FloatingDragState {
     /// Dragging by the title bar to move the pane.
     Moving {
         pane_id: PaneId,

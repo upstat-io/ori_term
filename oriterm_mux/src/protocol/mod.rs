@@ -20,10 +20,12 @@
 
 mod codec;
 pub(crate) mod messages;
+pub(crate) mod msg_type;
 mod snapshot;
 
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};
-pub use messages::{MsgType, MuxPdu};
+pub use messages::MuxPdu;
+pub use msg_type::MsgType;
 pub use snapshot::{
     PaneSnapshot, WireCell, WireCellFlags, WireColor, WireCursor, WireCursorShape, WireRgb,
     WireSearchMatch, WireSelection,

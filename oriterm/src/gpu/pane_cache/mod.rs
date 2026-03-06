@@ -68,12 +68,12 @@ impl PaneRenderCache {
                 &occ.into_mut().prepared
             }
             std::collections::hash_map::Entry::Vacant(vac) => {
-                let viewport = super::frame_input::ViewportSize::new(
-                    layout.pixel_rect.width as u32,
-                    layout.pixel_rect.height as u32,
+                // Placeholder viewport/color — prepare_fn fills the actual content.
+                let mut prepared = PreparedFrame::new(
+                    super::frame_input::ViewportSize::new(0, 0),
+                    oriterm_core::Rgb { r: 0, g: 0, b: 0 },
+                    1.0,
                 );
-                let bg = oriterm_core::Rgb { r: 0, g: 0, b: 0 };
-                let mut prepared = PreparedFrame::new(viewport, bg, 1.0);
                 prepare_fn(&mut prepared);
                 let cached = vac.insert(CachedPaneFrame {
                     prepared,
@@ -111,6 +111,15 @@ impl PaneRenderCache {
     /// Remove a closed pane's cached frame, freeing memory.
     pub(crate) fn remove(&mut self, pane_id: PaneId) {
         self.entries.remove(&pane_id);
+    }
+
+    /// Remove entries for panes not in the active set.
+    ///
+    /// Belt-and-suspenders cleanup: ensures stale entries don't accumulate
+    /// if an individual `remove()` call is missed during pane close.
+    #[allow(dead_code, reason = "batch prune API — call site wired when needed")]
+    pub(crate) fn retain_only(&mut self, active: &std::collections::HashSet<PaneId>) {
+        self.entries.retain(|id, _| active.contains(id));
     }
 
     /// Invalidate all cached panes (e.g. atlas rebuild, font change).

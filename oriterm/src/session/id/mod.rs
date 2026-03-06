@@ -17,9 +17,8 @@ pub struct TabId(u64);
 
 /// GUI-local window identifier.
 ///
-/// Distinct from both `winit::window::WindowId` (platform window) and
-/// `oriterm_mux::WindowId` (mux-level, being removed). The GUI maintains
-/// a mapping between this logical ID and the platform window.
+/// Distinct from `winit::window::WindowId` (platform window). The GUI
+/// maintains a mapping between this logical ID and the platform window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct WindowId(u64);
 
@@ -36,11 +35,12 @@ impl fmt::Display for WindowId {
 }
 
 /// Sealed trait for GUI session ID newtypes, enabling type-safe allocation.
-pub trait SessionId: sealed::Sealed + Copy {
+pub(crate) trait SessionId: sealed::Sealed + Copy {
     /// Construct this ID type from a raw counter value.
     fn from_raw(raw: u64) -> Self;
 
     /// Return the underlying raw value.
+    #[allow(dead_code, reason = "used in tests; part of the SessionId contract")]
     fn raw(self) -> u64;
 }
 
@@ -75,11 +75,13 @@ impl TabId {
     ///
     /// Prefer `IdAllocator::<TabId>::alloc()` for runtime allocation. This
     /// constructor is for deserialization and test setup.
+    #[allow(dead_code, reason = "used in tests and deserialization")]
     pub fn from_raw(raw: u64) -> Self {
         Self(raw)
     }
 
     /// Return the underlying raw value.
+    #[allow(dead_code, reason = "used in tests and serialization")]
     pub fn raw(self) -> u64 {
         self.0
     }
@@ -105,7 +107,7 @@ impl WindowId {
 /// Each ID domain (tabs, windows) gets its own allocator parameterized by
 /// the ID type. IDs start at 1; 0 is reserved as "no ID" sentinel.
 #[derive(Debug)]
-pub struct IdAllocator<T: SessionId> {
+pub(crate) struct IdAllocator<T: SessionId> {
     counter: u64,
     _phantom: PhantomData<T>,
 }

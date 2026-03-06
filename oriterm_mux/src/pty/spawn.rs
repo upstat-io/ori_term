@@ -145,7 +145,10 @@ impl PtyHandle {
     /// Resize the PTY to new dimensions.
     ///
     /// Returns an error if the control handle has been taken.
-    #[allow(dead_code, reason = "used for direct resize before Tab takes control")]
+    #[allow(
+        dead_code,
+        reason = "used for direct resize before control handle is taken"
+    )]
     pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
         let ctl = self
             .control
@@ -155,7 +158,7 @@ impl PtyHandle {
     }
 
     /// Get the child process ID, if available.
-    #[allow(dead_code, reason = "exposed via Tab in Section 5 window lifecycle")]
+    #[allow(dead_code, reason = "used when pane reports process info to the UI")]
     pub fn process_id(&self) -> Option<u32> {
         self.child.process_id()
     }
@@ -174,7 +177,7 @@ impl PtyHandle {
     ///
     /// Returns `Ok(Some(status))` if the child has exited, `Ok(None)` if
     /// still running, or `Err` on failure.
-    #[allow(dead_code, reason = "used when Tab reports child exit to UI")]
+    #[allow(dead_code, reason = "used when pane reports child exit to UI")]
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
         self.child.try_wait().map(|opt| opt.map(ExitStatus::from))
     }

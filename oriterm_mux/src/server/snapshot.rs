@@ -14,9 +14,8 @@ use oriterm_core::{Column, CursorShape, Grid, RenderableCell, RenderableContent,
 
 use crate::mux_event::MuxEventProxy;
 use crate::pane::Pane;
-use crate::{
-    PaneId, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb, WireSearchMatch,
-};
+use crate::protocol::WireSearchMatch;
+use crate::{PaneId, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 
 /// Cached snapshots with reusable allocation buffers.
 ///
