@@ -7,11 +7,10 @@
 use std::collections::{HashSet, VecDeque};
 
 use oriterm_mux::PaneId;
-// Temporary: layout types imported from mux until section 04 relocates them.
-use oriterm_mux::layout::floating::FloatingLayer;
-use oriterm_mux::layout::split_tree::SplitTree;
 
+use super::floating::FloatingLayer;
 use super::id::TabId;
+use super::split_tree::SplitTree;
 
 /// Maximum number of undo entries in the split tree history.
 const MAX_UNDO_ENTRIES: usize = 32;

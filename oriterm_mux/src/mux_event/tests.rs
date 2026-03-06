@@ -317,36 +317,16 @@ fn mux_event_debug_all_variants() {
 fn mux_notification_debug_all_variants() {
     use super::MuxNotification;
 
-    use crate::{TabId, WindowId};
-
     let pid = PaneId::from_raw(1);
-    let tid = TabId::from_raw(2);
-    let wid = WindowId::from_raw(3);
 
     let cases: Vec<(MuxNotification, &str)> = vec![
         (
             MuxNotification::PaneTitleChanged(pid),
             "PaneTitleChanged(Pane(1))",
         ),
-        (MuxNotification::PaneDirty(pid), "PaneDirty(Pane(1))"),
+        (MuxNotification::PaneOutput(pid), "PaneOutput(Pane(1))"),
         (MuxNotification::PaneClosed(pid), "PaneClosed(Pane(1))"),
-        (
-            MuxNotification::TabLayoutChanged(tid),
-            "TabLayoutChanged(Tab(2))",
-        ),
-        (
-            MuxNotification::FloatingPaneChanged(tid),
-            "FloatingPaneChanged(Tab(2))",
-        ),
-        (
-            MuxNotification::WindowTabsChanged(wid),
-            "WindowTabsChanged(Window(3))",
-        ),
-        (
-            MuxNotification::WindowClosed(wid),
-            "WindowClosed(Window(3))",
-        ),
-        (MuxNotification::Alert(pid), "Alert(Pane(1))"),
+        (MuxNotification::PaneBell(pid), "PaneBell(Pane(1))"),
         (
             MuxNotification::CommandComplete {
                 pane_id: pid,
@@ -354,7 +334,6 @@ fn mux_notification_debug_all_variants() {
             },
             "CommandComplete(Pane(1), 30s)",
         ),
-        (MuxNotification::LastWindowClosed, "LastWindowClosed"),
     ];
 
     for (notif, expected) in &cases {

@@ -1,19 +1,16 @@
 //! Protocol data unit definitions.
 //!
-//! [`MuxPdu`] is the unified enum covering all messages: requests from window
-//! to daemon, responses from daemon to window, and push notifications from
-//! daemon to window. Each variant maps to a [`MsgType`] ID.
+//! [`MuxPdu`] is the unified enum covering all messages: requests from client
+//! to daemon, responses from daemon to client, and push notifications from
+//! daemon to client. Each variant maps to a [`MsgType`] ID.
 
 use serde::{Deserialize, Serialize};
 
 use oriterm_core::Theme;
 
-use crate::id::{ClientId, DomainId, PaneId, TabId, WindowId};
-use crate::layout::SplitDirection;
-use crate::layout::floating::FloatingLayer;
-use crate::layout::split_tree::SplitTree;
+use crate::id::{ClientId, DomainId, PaneId};
 
-use super::snapshot::{MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireSelection};
+use super::snapshot::{PaneSnapshot, WireSelection};
 
 /// Client supports receiving `NotifyPaneSnapshot` pushed snapshots.
 pub const CAP_SNAPSHOT_PUSH: u32 = 1;
@@ -24,25 +21,14 @@ pub const CAP_SNAPSHOT_PUSH: u32 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum MsgType {
-    // Requests (window → daemon).
+    // Requests (client → daemon).
     Hello = 0x0101,
-    CreateWindow = 0x0102,
-    CreateTab = 0x0103,
-    CloseTab = 0x0104,
     ClosePane = 0x0105,
     Input = 0x0106,
     Resize = 0x0107,
-    MoveTabToWindow = 0x0108,
     Subscribe = 0x0109,
     Unsubscribe = 0x010A,
-    ListWindows = 0x010B,
-    ListTabs = 0x010C,
     GetPaneSnapshot = 0x010D,
-    SplitPane = 0x010E,
-    CycleTab = 0x010F,
-    SetActiveTab = 0x0110,
-    CloseWindow = 0x0111,
-    ClaimWindow = 0x0112,
     Ping = 0x0113,
     Shutdown = 0x0114,
     ScrollDisplay = 0x0115,
@@ -59,41 +45,30 @@ pub enum MsgType {
     ExtractText = 0x0120,
     ExtractHtml = 0x0121,
     SetCapabilities = 0x0122,
-    SpawnFloatingPane = 0x0123,
+    SpawnPane = 0x0124,
+    ListPanes = 0x0125,
 
-    // Responses (daemon → window).
+    // Responses (daemon → client).
     HelloAck = 0x0201,
-    WindowCreated = 0x0202,
-    TabCreated = 0x0203,
-    TabClosed = 0x0204,
     PaneClosedAck = 0x0205,
-    TabMovedAck = 0x0206,
     Subscribed = 0x0207,
     Unsubscribed = 0x0208,
-    WindowList = 0x0209,
-    TabList = 0x020A,
     PaneSnapshotResp = 0x020B,
-    PaneSplit = 0x020C,
-    ActiveTabChanged = 0x020D,
-    WindowClosed = 0x020E,
-    WindowClaimed = 0x020F,
     PingAck = 0x0210,
     ShutdownAck = 0x0211,
     ScrollToPromptAck = 0x0212,
     ExtractTextResp = 0x0213,
     ExtractHtmlResp = 0x0214,
-    FloatingPaneSpawned = 0x0215,
+    SpawnPaneResponse = 0x0216,
+    ListPanesResponse = 0x0217,
     Error = 0x02FF,
 
-    // Push notifications (daemon → window).
+    // Push notifications (daemon → client).
     NotifyPaneOutput = 0x0301,
     NotifyPaneExited = 0x0302,
     NotifyPaneTitleChanged = 0x0303,
     NotifyPaneBell = 0x0304,
-    NotifyWindowTabsChanged = 0x0305,
-    NotifyTabMoved = 0x0306,
     NotifyPaneSnapshot = 0x0307,
-    NotifyTabLayoutChanged = 0x0308,
 }
 
 impl MsgType {
@@ -101,23 +76,12 @@ impl MsgType {
     pub fn from_u16(v: u16) -> Option<Self> {
         match v {
             0x0101 => Some(Self::Hello),
-            0x0102 => Some(Self::CreateWindow),
-            0x0103 => Some(Self::CreateTab),
-            0x0104 => Some(Self::CloseTab),
             0x0105 => Some(Self::ClosePane),
             0x0106 => Some(Self::Input),
             0x0107 => Some(Self::Resize),
-            0x0108 => Some(Self::MoveTabToWindow),
             0x0109 => Some(Self::Subscribe),
             0x010A => Some(Self::Unsubscribe),
-            0x010B => Some(Self::ListWindows),
-            0x010C => Some(Self::ListTabs),
             0x010D => Some(Self::GetPaneSnapshot),
-            0x010E => Some(Self::SplitPane),
-            0x010F => Some(Self::CycleTab),
-            0x0110 => Some(Self::SetActiveTab),
-            0x0111 => Some(Self::CloseWindow),
-            0x0112 => Some(Self::ClaimWindow),
             0x0113 => Some(Self::Ping),
             0x0114 => Some(Self::Shutdown),
             0x0115 => Some(Self::ScrollDisplay),
@@ -134,37 +98,26 @@ impl MsgType {
             0x0120 => Some(Self::ExtractText),
             0x0121 => Some(Self::ExtractHtml),
             0x0122 => Some(Self::SetCapabilities),
-            0x0123 => Some(Self::SpawnFloatingPane),
+            0x0124 => Some(Self::SpawnPane),
+            0x0125 => Some(Self::ListPanes),
             0x0201 => Some(Self::HelloAck),
-            0x0202 => Some(Self::WindowCreated),
-            0x0203 => Some(Self::TabCreated),
-            0x0204 => Some(Self::TabClosed),
             0x0205 => Some(Self::PaneClosedAck),
-            0x0206 => Some(Self::TabMovedAck),
             0x0207 => Some(Self::Subscribed),
             0x0208 => Some(Self::Unsubscribed),
-            0x0209 => Some(Self::WindowList),
-            0x020A => Some(Self::TabList),
             0x020B => Some(Self::PaneSnapshotResp),
-            0x020C => Some(Self::PaneSplit),
-            0x020D => Some(Self::ActiveTabChanged),
-            0x020E => Some(Self::WindowClosed),
-            0x020F => Some(Self::WindowClaimed),
             0x0210 => Some(Self::PingAck),
             0x0211 => Some(Self::ShutdownAck),
             0x0212 => Some(Self::ScrollToPromptAck),
             0x0213 => Some(Self::ExtractTextResp),
             0x0214 => Some(Self::ExtractHtmlResp),
-            0x0215 => Some(Self::FloatingPaneSpawned),
+            0x0216 => Some(Self::SpawnPaneResponse),
+            0x0217 => Some(Self::ListPanesResponse),
             0x02FF => Some(Self::Error),
             0x0301 => Some(Self::NotifyPaneOutput),
             0x0302 => Some(Self::NotifyPaneExited),
             0x0303 => Some(Self::NotifyPaneTitleChanged),
             0x0304 => Some(Self::NotifyPaneBell),
-            0x0305 => Some(Self::NotifyWindowTabsChanged),
-            0x0306 => Some(Self::NotifyTabMoved),
             0x0307 => Some(Self::NotifyPaneSnapshot),
-            0x0308 => Some(Self::NotifyTabLayoutChanged),
             _ => None,
         }
     }
@@ -175,37 +128,16 @@ impl MsgType {
 /// Each variant carries its own data. The bincode encoding includes the
 /// enum discriminant, so the `msg_type` in the frame header is redundant
 /// for deserialization but useful for pre-routing and debugging.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MuxPdu {
-    // -- Requests (window → daemon) --
+    // -- Requests (client → daemon) --
     /// Client handshake. Sent immediately after connecting.
     Hello {
-        /// OS process ID of the connecting window.
+        /// OS process ID of the connecting client.
         pid: u32,
     },
 
-    /// Create a new mux window (no tabs yet).
-    CreateWindow,
-
-    /// Spawn a new tab (with a single pane) in a window.
-    CreateTab {
-        /// Target window.
-        window_id: WindowId,
-        /// Shell program override (uses default shell if `None`).
-        shell: Option<String>,
-        /// Working directory override (uses current dir if `None`).
-        cwd: Option<String>,
-        /// Color theme: `"dark"`, `"light"`, or `None` for server default.
-        theme: Option<String>,
-    },
-
-    /// Close a tab and all its panes.
-    CloseTab {
-        /// Tab to close.
-        tab_id: TabId,
-    },
-
-    /// Close a single pane (may close the tab if it was the last pane).
+    /// Close a single pane.
     ClosePane {
         /// Pane to close.
         pane_id: PaneId,
@@ -229,14 +161,6 @@ pub enum MuxPdu {
         rows: u16,
     },
 
-    /// Move a tab to a different window.
-    MoveTabToWindow {
-        /// Tab to move.
-        tab_id: TabId,
-        /// Destination window.
-        target_window_id: WindowId,
-    },
-
     /// Subscribe to a pane's output. Returns current snapshot.
     Subscribe {
         /// Pane to subscribe to.
@@ -249,66 +173,10 @@ pub enum MuxPdu {
         pane_id: PaneId,
     },
 
-    /// List all mux windows.
-    ListWindows,
-
-    /// List tabs in a window.
-    ListTabs {
-        /// Target window.
-        window_id: WindowId,
-    },
-
     /// Get a full snapshot of a pane's state.
     GetPaneSnapshot {
         /// Target pane.
         pane_id: PaneId,
-    },
-
-    /// Split an existing pane, creating a new one adjacent to it.
-    SplitPane {
-        /// Tab containing the pane.
-        tab_id: TabId,
-        /// Pane to split.
-        pane_id: PaneId,
-        /// Split direction.
-        direction: SplitDirection,
-        /// Shell program override.
-        shell: Option<String>,
-        /// Working directory override.
-        cwd: Option<String>,
-        /// Color theme: `"dark"`, `"light"`, or `None` for server default.
-        theme: Option<String>,
-    },
-
-    /// Cycle the active tab in a window.
-    CycleTab {
-        /// Target window.
-        window_id: WindowId,
-        /// Cycle direction: positive = forward, negative = backward.
-        delta: i32,
-    },
-
-    /// Set a specific tab as active in a window.
-    SetActiveTab {
-        /// Target window.
-        window_id: WindowId,
-        /// Tab to activate.
-        tab_id: TabId,
-    },
-
-    /// Close a window and all its tabs/panes.
-    CloseWindow {
-        /// Window to close.
-        window_id: WindowId,
-    },
-
-    /// Tell the daemon which mux window this client renders.
-    ///
-    /// Sent after window ID is resolved (init or `create_window`). Enables
-    /// the daemon to route `WindowTabsChanged` notifications to this client.
-    ClaimWindow {
-        /// Window this client is rendering.
-        window_id: WindowId,
     },
 
     /// Liveness check. The daemon replies with [`PingAck`](Self::PingAck).
@@ -334,9 +202,6 @@ pub enum MuxPdu {
     },
 
     /// Scroll to the nearest prompt in the given direction.
-    ///
-    /// Returns [`ScrollToPromptAck`](Self::ScrollToPromptAck) with whether
-    /// a prompt was found and scrolled to.
     ScrollToPrompt {
         /// Target pane.
         pane_id: PaneId,
@@ -423,51 +288,34 @@ pub enum MuxPdu {
         font_size_x100: u16,
     },
 
-    /// Spawn a floating pane in a tab.
-    SpawnFloatingPane {
-        /// Tab to spawn the floating pane in.
-        tab_id: TabId,
-        /// Shell program override.
-        shell: Option<String>,
-        /// Working directory override.
-        cwd: Option<String>,
-        /// Color theme.
-        theme: Option<String>,
-        /// Available area for centering the floating pane.
-        available: crate::layout::Rect,
+    /// Client advertises protocol capabilities. Fire-and-forget.
+    SetCapabilities {
+        /// Bitmask of capability flags (e.g. [`CAP_SNAPSHOT_PUSH`]).
+        flags: u32,
     },
 
-    // -- Responses (daemon → window) --
+    /// Spawn a new pane (shell process).
+    SpawnPane {
+        /// Shell program override (uses default shell if `None`).
+        shell: Option<String>,
+        /// Working directory override (uses current dir if `None`).
+        cwd: Option<String>,
+        /// Color theme: `"dark"`, `"light"`, or `None` for server default.
+        theme: Option<String>,
+    },
+
+    /// List all live pane IDs.
+    ListPanes,
+
+    // -- Responses (daemon → client) --
     /// Handshake acknowledgment.
     HelloAck {
         /// Assigned client ID for this connection.
         client_id: ClientId,
     },
 
-    /// New window created.
-    WindowCreated {
-        /// Assigned window ID.
-        window_id: WindowId,
-    },
-
-    /// New tab created with its initial pane.
-    TabCreated {
-        /// Assigned tab ID.
-        tab_id: TabId,
-        /// ID of the initial pane in the tab.
-        pane_id: PaneId,
-        /// Domain that owns the pane.
-        domain_id: DomainId,
-    },
-
-    /// Tab closed successfully.
-    TabClosed,
-
     /// Pane closed successfully.
     PaneClosedAck,
-
-    /// Tab moved successfully.
-    TabMovedAck,
 
     /// Subscription established with current pane state.
     Subscribed {
@@ -478,46 +326,11 @@ pub enum MuxPdu {
     /// Unsubscription confirmed.
     Unsubscribed,
 
-    /// List of all mux windows.
-    WindowList {
-        /// Window summaries.
-        windows: Vec<MuxWindowInfo>,
-    },
-
-    /// List of tabs in a window.
-    TabList {
-        /// Tab summaries.
-        tabs: Vec<MuxTabInfo>,
-    },
-
     /// Full pane state snapshot.
     PaneSnapshotResp {
         /// Pane state.
         snapshot: PaneSnapshot,
     },
-
-    /// New pane created via split.
-    PaneSplit {
-        /// ID of the newly created pane.
-        new_pane_id: PaneId,
-        /// Domain that owns the pane.
-        domain_id: DomainId,
-    },
-
-    /// Active tab changed in a window.
-    ActiveTabChanged {
-        /// Now-active tab.
-        tab_id: TabId,
-    },
-
-    /// Window closed with all its panes.
-    WindowClosed {
-        /// IDs of panes that were removed.
-        pane_ids: Vec<PaneId>,
-    },
-
-    /// Window claim acknowledged.
-    WindowClaimed,
 
     /// Reply to a [`Ping`](Self::Ping) request.
     PingAck,
@@ -545,12 +358,18 @@ pub enum MuxPdu {
         text: String,
     },
 
-    /// New floating pane spawned.
-    FloatingPaneSpawned {
-        /// ID of the newly created floating pane.
-        new_pane_id: PaneId,
+    /// Response to [`SpawnPane`](Self::SpawnPane).
+    SpawnPaneResponse {
+        /// ID of the newly created pane.
+        pane_id: PaneId,
         /// Domain that owns the pane.
         domain_id: DomainId,
+    },
+
+    /// Response to [`ListPanes`](Self::ListPanes).
+    ListPanesResponse {
+        /// IDs of all live panes.
+        pane_ids: Vec<PaneId>,
     },
 
     /// Error response for a failed request.
@@ -559,7 +378,7 @@ pub enum MuxPdu {
         message: String,
     },
 
-    // -- Push notifications (daemon → window) --
+    // -- Push notifications (daemon → client) --
     /// Pane has new output — the client should re-fetch the snapshot.
     NotifyPaneOutput {
         /// Pane with new output.
@@ -586,30 +405,6 @@ pub enum MuxPdu {
         pane_id: PaneId,
     },
 
-    /// Window's tab list changed (tab added, removed, or reordered).
-    NotifyWindowTabsChanged {
-        /// Affected window.
-        window_id: WindowId,
-    },
-
-    /// A tab migrated between windows.
-    NotifyTabMoved {
-        /// The migrated tab.
-        tab_id: TabId,
-        /// Window the tab left.
-        from_window: WindowId,
-        /// Window the tab arrived in.
-        to_window: WindowId,
-    },
-
-    /// Client advertises protocol capabilities. Fire-and-forget.
-    ///
-    /// Sent after `HelloAck`. Server records flags on the connection.
-    SetCapabilities {
-        /// Bitmask of capability flags (e.g. [`CAP_SNAPSHOT_PUSH`]).
-        flags: u32,
-    },
-
     /// Server-pushed pane snapshot (proactive, throttled to ~60fps).
     ///
     /// Only sent to clients that advertised [`CAP_SNAPSHOT_PUSH`].
@@ -619,23 +414,6 @@ pub enum MuxPdu {
         /// Full pane state snapshot.
         snapshot: PaneSnapshot,
     },
-    /// Server-pushed tab layout update (split tree + floating + zoom state).
-    ///
-    /// Sent when the tab's split tree or floating layer changes on the server
-    /// (split, close pane, zoom, floating pane add/remove). The client updates
-    /// its local session and subscribes/unsubscribes panes as needed.
-    NotifyTabLayoutChanged {
-        /// Tab whose layout changed.
-        tab_id: TabId,
-        /// Current split tree.
-        tree: SplitTree,
-        /// Current floating layer.
-        floating: FloatingLayer,
-        /// Currently focused pane.
-        active_pane: PaneId,
-        /// Zoomed pane, if any.
-        zoomed_pane: Option<PaneId>,
-    },
     // Wire-compat: append-only — new variants must go at the end.
 }
 
@@ -644,23 +422,12 @@ impl MuxPdu {
     pub fn msg_type(&self) -> MsgType {
         match self {
             Self::Hello { .. } => MsgType::Hello,
-            Self::CreateWindow => MsgType::CreateWindow,
-            Self::CreateTab { .. } => MsgType::CreateTab,
-            Self::CloseTab { .. } => MsgType::CloseTab,
             Self::ClosePane { .. } => MsgType::ClosePane,
             Self::Input { .. } => MsgType::Input,
             Self::Resize { .. } => MsgType::Resize,
-            Self::MoveTabToWindow { .. } => MsgType::MoveTabToWindow,
             Self::Subscribe { .. } => MsgType::Subscribe,
             Self::Unsubscribe { .. } => MsgType::Unsubscribe,
-            Self::ListWindows => MsgType::ListWindows,
-            Self::ListTabs { .. } => MsgType::ListTabs,
             Self::GetPaneSnapshot { .. } => MsgType::GetPaneSnapshot,
-            Self::SplitPane { .. } => MsgType::SplitPane,
-            Self::CycleTab { .. } => MsgType::CycleTab,
-            Self::SetActiveTab { .. } => MsgType::SetActiveTab,
-            Self::CloseWindow { .. } => MsgType::CloseWindow,
-            Self::ClaimWindow { .. } => MsgType::ClaimWindow,
             Self::Ping => MsgType::Ping,
             Self::Shutdown => MsgType::Shutdown,
             Self::ScrollDisplay { .. } => MsgType::ScrollDisplay,
@@ -676,38 +443,27 @@ impl MuxPdu {
             Self::SearchPrevMatch { .. } => MsgType::SearchPrevMatch,
             Self::ExtractText { .. } => MsgType::ExtractText,
             Self::ExtractHtml { .. } => MsgType::ExtractHtml,
-            Self::SpawnFloatingPane { .. } => MsgType::SpawnFloatingPane,
+            Self::SetCapabilities { .. } => MsgType::SetCapabilities,
+            Self::SpawnPane { .. } => MsgType::SpawnPane,
+            Self::ListPanes => MsgType::ListPanes,
             Self::HelloAck { .. } => MsgType::HelloAck,
-            Self::WindowCreated { .. } => MsgType::WindowCreated,
-            Self::TabCreated { .. } => MsgType::TabCreated,
-            Self::TabClosed => MsgType::TabClosed,
             Self::PaneClosedAck => MsgType::PaneClosedAck,
-            Self::TabMovedAck => MsgType::TabMovedAck,
             Self::Subscribed { .. } => MsgType::Subscribed,
             Self::Unsubscribed => MsgType::Unsubscribed,
-            Self::WindowList { .. } => MsgType::WindowList,
-            Self::TabList { .. } => MsgType::TabList,
             Self::PaneSnapshotResp { .. } => MsgType::PaneSnapshotResp,
-            Self::PaneSplit { .. } => MsgType::PaneSplit,
-            Self::ActiveTabChanged { .. } => MsgType::ActiveTabChanged,
-            Self::WindowClosed { .. } => MsgType::WindowClosed,
-            Self::WindowClaimed => MsgType::WindowClaimed,
             Self::PingAck => MsgType::PingAck,
             Self::ShutdownAck => MsgType::ShutdownAck,
             Self::ScrollToPromptAck { .. } => MsgType::ScrollToPromptAck,
             Self::ExtractTextResp { .. } => MsgType::ExtractTextResp,
             Self::ExtractHtmlResp { .. } => MsgType::ExtractHtmlResp,
-            Self::FloatingPaneSpawned { .. } => MsgType::FloatingPaneSpawned,
+            Self::SpawnPaneResponse { .. } => MsgType::SpawnPaneResponse,
+            Self::ListPanesResponse { .. } => MsgType::ListPanesResponse,
             Self::Error { .. } => MsgType::Error,
             Self::NotifyPaneOutput { .. } => MsgType::NotifyPaneOutput,
             Self::NotifyPaneExited { .. } => MsgType::NotifyPaneExited,
             Self::NotifyPaneTitleChanged { .. } => MsgType::NotifyPaneTitleChanged,
             Self::NotifyPaneBell { .. } => MsgType::NotifyPaneBell,
-            Self::NotifyWindowTabsChanged { .. } => MsgType::NotifyWindowTabsChanged,
-            Self::NotifyTabMoved { .. } => MsgType::NotifyTabMoved,
-            Self::SetCapabilities { .. } => MsgType::SetCapabilities,
             Self::NotifyPaneSnapshot { .. } => MsgType::NotifyPaneSnapshot,
-            Self::NotifyTabLayoutChanged { .. } => MsgType::NotifyTabLayoutChanged,
         }
     }
 
@@ -739,10 +495,7 @@ impl MuxPdu {
                 | Self::NotifyPaneExited { .. }
                 | Self::NotifyPaneTitleChanged { .. }
                 | Self::NotifyPaneBell { .. }
-                | Self::NotifyWindowTabsChanged { .. }
-                | Self::NotifyTabMoved { .. }
                 | Self::NotifyPaneSnapshot { .. }
-                | Self::NotifyTabLayoutChanged { .. }
         )
     }
 }

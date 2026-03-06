@@ -7,7 +7,8 @@
 use std::time::Instant;
 
 use oriterm_mux::id::PaneId;
-use oriterm_mux::layout::DividerLayout;
+
+use crate::session::DividerLayout;
 
 use oriterm_ui::compositor::layer_animator::LayerAnimator;
 use oriterm_ui::compositor::layer_tree::LayerTree;

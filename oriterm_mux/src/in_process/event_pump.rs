@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::domain::Domain;
-use crate::{DomainId, MuxWindow, PaneId, SessionRegistry, TabId, WindowId};
+use crate::{DomainId, PaneId};
 
 use super::InProcessMux;
 use crate::mux_event::{MuxEvent, MuxNotification};
@@ -27,7 +27,7 @@ impl InProcessMux {
                     if let Some(pane) = panes.get(&id) {
                         pane.clear_wakeup();
                     }
-                    self.notifications.push(MuxNotification::PaneDirty(id));
+                    self.notifications.push(MuxNotification::PaneOutput(id));
                 }
                 MuxEvent::PaneExited { pane_id, .. } => {
                     self.close_pane(pane_id);
@@ -50,7 +50,6 @@ impl InProcessMux {
                     if let Some(pane) = panes.get_mut(&pane_id) {
                         pane.set_cwd(cwd);
                     }
-                    // CWD affects effective_title() — refresh tab bar.
                     self.notifications
                         .push(MuxNotification::PaneTitleChanged(pane_id));
                 }
@@ -62,7 +61,7 @@ impl InProcessMux {
                         .push(MuxNotification::CommandComplete { pane_id, duration });
                 }
                 MuxEvent::PaneBell(id) => {
-                    self.notifications.push(MuxNotification::Alert(id));
+                    self.notifications.push(MuxNotification::PaneBell(id));
                 }
                 MuxEvent::PtyWrite { pane_id, data } => {
                     if let Some(pane) = panes.get(&pane_id) {
@@ -112,182 +111,17 @@ impl InProcessMux {
 
     // -- Accessors --
 
-    /// Active tab ID for a given window.
-    pub fn active_tab_id(&self, window_id: WindowId) -> Option<TabId> {
-        self.session.get_window(window_id)?.active_tab()
-    }
-
-    /// Change the focused pane within a tab.
-    ///
-    /// Returns `true` if the active pane was changed, `false` if the tab
-    /// was not found.
-    pub fn set_active_pane(&mut self, tab_id: TabId, pane_id: PaneId) -> bool {
-        if let Some(tab) = self.session.get_tab_mut(tab_id) {
-            tab.set_active_pane(pane_id);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Immutable access to the session registry.
-    pub fn session(&self) -> &SessionRegistry {
-        &self.session
-    }
-
-    // -- Tab switching and reordering --
-
-    /// Switch the active tab in a window to a specific tab ID.
-    ///
-    /// Returns `true` if the switch was performed, `false` if the window
-    /// or tab was not found.
-    pub fn switch_active_tab(&mut self, window_id: WindowId, tab_id: TabId) -> bool {
-        let Some(win) = self.session.get_window_mut(window_id) else {
-            return false;
-        };
-        let Some(idx) = win.tabs().iter().position(|&t| t == tab_id) else {
-            return false;
-        };
-        win.set_active_tab_idx(idx);
-        true
-    }
-
-    /// Cycle to the next or previous tab in a window.
-    ///
-    /// `delta` is typically +1 (next) or -1 (previous); wraps around.
-    /// Returns the newly active `TabId`, or `None` if the window was not
-    /// found or has fewer than 2 tabs.
-    pub fn cycle_active_tab(&mut self, window_id: WindowId, delta: isize) -> Option<TabId> {
-        let win = self.session.get_window_mut(window_id)?;
-        let count = win.tabs().len();
-        if count <= 1 {
-            return None;
-        }
-        let current = win.active_tab_idx();
-        let next = (current as isize + delta).rem_euclid(count as isize) as usize;
-        win.set_active_tab_idx(next);
-        win.active_tab()
-    }
-
-    /// Reorder a tab within a window.
-    ///
-    /// Returns `true` if the move was performed.
-    pub fn reorder_tab(&mut self, window_id: WindowId, from: usize, to: usize) -> bool {
-        let Some(win) = self.session.get_window_mut(window_id) else {
-            return false;
-        };
-        win.reorder_tab(from, to)
-    }
-
-    // -- Cross-window operations --
-
-    /// Move a tab from its current window to a different window.
-    ///
-    /// The tab's panes, split tree, and floating layer are preserved — only
-    /// window ownership changes. The tab becomes the active tab in the
-    /// destination window.
-    ///
-    /// If the source window becomes empty after the move, it is removed and
-    /// a `WindowClosed` (or `LastWindowClosed`) notification is emitted.
-    ///
-    /// Returns `true` if the move was performed.
-    pub fn move_tab_to_window(&mut self, tab_id: TabId, dest_window_id: WindowId) -> bool {
-        self.move_tab_impl(tab_id, dest_window_id, |dest, id| {
-            dest.add_tab(id);
-        })
-    }
-
-    /// Move a tab from its current window to a specific index in the
-    /// destination window.
-    ///
-    /// Like [`move_tab_to_window`](Self::move_tab_to_window) but inserts at
-    /// `dest_index` instead of appending. The tab becomes the active tab in
-    /// the destination window.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub fn move_tab_to_window_at(
-        &mut self,
-        tab_id: TabId,
-        dest_window_id: WindowId,
-        dest_index: usize,
-    ) -> bool {
-        self.move_tab_impl(tab_id, dest_window_id, |dest, id| {
-            dest.insert_tab_at(dest_index, id);
-        })
-    }
-
-    /// Shared implementation for cross-window tab moves.
-    ///
-    /// Validates source/dest, removes the tab from its source window, calls
-    /// `insert` to place it in the destination, activates it, and emits
-    /// notifications. Cleans up the source window if it becomes empty.
-    fn move_tab_impl(
-        &mut self,
-        tab_id: TabId,
-        dest_window_id: WindowId,
-        insert: impl FnOnce(&mut MuxWindow, TabId),
-    ) -> bool {
-        let Some(source_window_id) = self.session.window_for_tab(tab_id) else {
-            return false;
-        };
-        if source_window_id == dest_window_id {
-            return false;
-        }
-        if self.session.get_window(dest_window_id).is_none() {
-            return false;
-        }
-
-        // Remove from source window.
-        let Some(source) = self.session.get_window_mut(source_window_id) else {
-            return false;
-        };
-        source.remove_tab(tab_id);
-        let source_empty = source.tabs().is_empty();
-
-        // Insert into destination and activate.
-        let Some(dest) = self.session.get_window_mut(dest_window_id) else {
-            return false;
-        };
-        insert(dest, tab_id);
-        let active_idx = dest.tabs().iter().position(|&t| t == tab_id).unwrap_or(0);
-        dest.set_active_tab_idx(active_idx);
-
-        // Emit notifications.
-        self.notifications
-            .push(MuxNotification::WindowTabsChanged(dest_window_id));
-
-        if source_empty {
-            self.session.remove_window(source_window_id);
-            if self.session.window_count() == 0 {
-                self.notifications.push(MuxNotification::LastWindowClosed);
-            } else {
-                self.notifications
-                    .push(MuxNotification::WindowClosed(source_window_id));
-            }
-        } else {
-            self.notifications
-                .push(MuxNotification::WindowTabsChanged(source_window_id));
-        }
-
-        self.notifications
-            .push(MuxNotification::TabLayoutChanged(tab_id));
-
-        true
-    }
-
     /// Immutable access to the pane registry.
-    #[allow(dead_code, reason = "used when pane registry queries are wired to App")]
     pub fn pane_registry(&self) -> &crate::registry::PaneRegistry {
         &self.pane_registry
     }
 
     /// Clone of the event sender for spawning new panes.
-    #[allow(dead_code, reason = "used when dynamic pane spawning is wired to App")]
     pub fn event_tx(&self) -> &std::sync::mpsc::Sender<MuxEvent> {
         &self.event_tx
     }
 
     /// Default domain ID for spawning.
-    #[allow(dead_code, reason = "used when multi-domain spawning is wired to App")]
     pub fn default_domain(&self) -> DomainId {
         self.local_domain.id()
     }

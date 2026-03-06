@@ -2,7 +2,8 @@
 
 use oriterm_core::Rgb;
 use oriterm_mux::id::PaneId;
-use oriterm_mux::layout::{PaneLayout, Rect};
+
+use crate::session::{PaneLayout, Rect};
 
 use super::PaneRenderCache;
 use crate::gpu::frame_input::ViewportSize;

@@ -2,8 +2,8 @@
 //!
 //! [`MuxClient`] implements [`MuxBackend`] by sending requests to a
 //! [`MuxServer`](crate::server::MuxServer) over an IPC socket. Pane data
-//! is not available locally — `pane()`/`pane_mut()` return `None`.
-//! Rendering in daemon mode uses `PaneSnapshot` (a later step).
+//! is not available locally — rendering uses `PaneSnapshot`s fetched from
+//! the daemon.
 
 mod notification;
 mod rpc_methods;
@@ -17,7 +17,6 @@ use crate::PaneId;
 use crate::PaneSnapshot;
 use crate::mux_event::MuxNotification;
 use crate::protocol::MuxPdu;
-use crate::registry::{PaneRegistry, SessionRegistry};
 
 use self::transport::ClientTransport;
 
@@ -29,18 +28,12 @@ use self::transport::ClientTransport;
 /// from the daemon and buffers them for [`drain_notifications`].
 ///
 /// Cached [`PaneSnapshot`]s are stored locally for rendering. The dirty
-/// set tracks which panes have received `PaneDirty` notifications since
+/// set tracks which panes have received `PaneOutput` notifications since
 /// the last render. The render path checks dirty, fetches a fresh
 /// snapshot via RPC, and clears the flag.
 pub struct MuxClient {
     /// IPC transport (reader thread + socket). `None` when test-only stub.
     transport: Option<ClientTransport>,
-
-    /// Mirrored session state, synced from daemon responses/notifications.
-    local_session: SessionRegistry,
-
-    /// Mirrored pane registry, synced from daemon responses.
-    pane_registry: PaneRegistry,
 
     /// Buffered notifications from the background reader thread.
     notifications: Vec<MuxNotification>,
@@ -48,7 +41,7 @@ pub struct MuxClient {
     /// Cached pane snapshots for daemon-mode rendering.
     pane_snapshots: HashMap<PaneId, PaneSnapshot>,
 
-    /// Panes with pending content updates (from `PaneDirty` notifications).
+    /// Panes with pending content updates (from `PaneOutput` notifications).
     dirty_panes: HashSet<PaneId>,
 }
 
@@ -65,8 +58,6 @@ impl MuxClient {
         log::info!("MuxClient connected, client_id={}", transport.client_id());
         Ok(Self {
             transport: Some(transport),
-            local_session: SessionRegistry::new(),
-            pane_registry: PaneRegistry::new(),
             notifications: Vec::new(),
             pane_snapshots: HashMap::new(),
             dirty_panes: HashSet::new(),
@@ -80,8 +71,6 @@ impl MuxClient {
     pub fn new() -> Self {
         Self {
             transport: None,
-            local_session: SessionRegistry::new(),
-            pane_registry: PaneRegistry::new(),
             notifications: Vec::new(),
             pane_snapshots: HashMap::new(),
             dirty_panes: HashSet::new(),
@@ -118,24 +107,6 @@ impl MuxClient {
         }
     }
 
-    /// Unsubscribe from a pane and remove its cached snapshot.
-    pub(crate) fn unsubscribe_pane(&mut self, pane_id: PaneId) {
-        match self.rpc(MuxPdu::Unsubscribe { pane_id }) {
-            Ok(MuxPdu::Unsubscribed) => {
-                self.remove_snapshot(pane_id);
-                log::debug!("unsubscribed from pane {pane_id}");
-            }
-            Ok(other) => {
-                log::error!("unsubscribe_pane: unexpected response: {other:?}");
-            }
-            Err(e) => {
-                // Best-effort: remove snapshot locally even if RPC fails.
-                self.remove_snapshot(pane_id);
-                log::error!("unsubscribe_pane: RPC failed: {e}");
-            }
-        }
-    }
-
     /// The client ID assigned by the daemon, if connected.
     pub fn client_id(&self) -> Option<crate::id::ClientId> {
         self.transport.as_ref().map(ClientTransport::client_id)
@@ -160,63 +131,6 @@ impl MuxClient {
         self.transport
             .as_ref()
             .is_some_and(ClientTransport::is_alive)
-    }
-
-    /// Apply server-pushed layout updates for a set of tabs.
-    ///
-    /// For each `TabLayoutChanged(tab_id)` notification, takes the pushed
-    /// layout data and updates the local session. Subscribes to new panes
-    /// and unsubscribes from removed panes.
-    fn apply_layout_update(&mut self, tab_id: crate::TabId) {
-        let update = self
-            .transport
-            .as_ref()
-            .and_then(|t| t.take_pushed_layout(tab_id));
-        let Some(update) = update else {
-            return;
-        };
-
-        // Collect old pane IDs before updating.
-        let old_panes: HashSet<PaneId> = self
-            .local_session
-            .get_tab(tab_id)
-            .map(|tab| tab.all_panes().into_iter().collect())
-            .unwrap_or_default();
-
-        // Update local session with server-authoritative layout.
-        if let Some(tab) = self.local_session.get_tab_mut(tab_id) {
-            tab.replace_layout(update.tree);
-            tab.set_floating(update.floating);
-            tab.set_active_pane(update.active_pane);
-            tab.set_zoomed_pane(update.zoomed_pane);
-        }
-
-        // Collect new pane IDs after updating.
-        let new_panes: HashSet<PaneId> = self
-            .local_session
-            .get_tab(tab_id)
-            .map(|tab| tab.all_panes().into_iter().collect())
-            .unwrap_or_default();
-
-        // Subscribe to newly added panes.
-        for &pid in &new_panes {
-            if !old_panes.contains(&pid) {
-                self.pane_registry.register(crate::registry::PaneEntry {
-                    pane: pid,
-                    tab: tab_id,
-                    domain: crate::DomainId::from_raw(0),
-                });
-                self.subscribe_pane(pid);
-            }
-        }
-
-        // Unsubscribe from removed panes.
-        for &pid in &old_panes {
-            if !new_panes.contains(&pid) {
-                self.unsubscribe_pane(pid);
-                self.pane_registry.unregister(pid);
-            }
-        }
     }
 
     /// Send an RPC request to the daemon and return the response.

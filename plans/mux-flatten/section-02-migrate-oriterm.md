@@ -1,33 +1,33 @@
 ---
 section: "02"
 title: "Migrate oriterm to Own Session Types"
-status: not-started
+status: complete
 goal: "All oriterm code uses local session types instead of mux-owned tab/window/layout types"
 depends_on: ["01"]
 sections:  # Listed in execution order (02.5 before 02.2 because sync is prerequisite for queries)
   - id: "02.1"
     title: "Swap ID Types"
-    status: not-started
+    status: complete
   - id: "02.5"
     title: "Synchronize Session State from Mux Events"
-    status: not-started
+    status: complete
   - id: "02.2"
     title: "Swap Session Queries"
-    status: not-started
+    status: complete
   - id: "02.3"
     title: "Swap Notification Handling"
-    status: not-started
+    status: complete
   - id: "02.4"
     title: "Update MuxBackend Consumers"
-    status: not-started
+    status: complete
   - id: "02.6"
     title: "Completion Checklist"
-    status: not-started
+    status: complete
 ---
 
 # Section 02: Migrate oriterm to Own Session Types
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** Every import of `TabId`, `WindowId`, `MuxTab`, `MuxWindow`,
 `SessionRegistry` in `oriterm` comes from `crate::session`, not from
 `oriterm_mux`. The mux types are no longer consumed by the GUI.
@@ -38,11 +38,10 @@ own session state and only talks to the mux for pane operations.
 
 **Depends on:** Section 01 (GUI session types must exist first).
 
-**RISK: MEDIUM.** The semantic migration (02.2, 02.4, 02.5) is harder than
-the mechanical import swaps (02.1, 02.3). The GUI must maintain its own
-session state synchronized with mux pane events. **Recommended execution
-order: 02.1 -> 02.5 -> 02.2 -> 02.3 -> 02.4 -> 02.6** (establish sync
-mechanism before swapping queries and mutations).
+**RISK: MEDIUM.** The remaining semantic migration (02.2, 02.4) is harder
+than the mechanical swaps (02.3). The sync mechanism (02.5) is already
+done, so the GUI now dual-writes session state. **Execution order:
+02.1 (done) -> 02.5 (done) -> 02.2 -> 02.3 -> 02.4 -> 02.6**.
 
 ---
 
@@ -64,22 +63,21 @@ Known consumers (from audit):
 - `oriterm/src/app/tests.rs` — `TabId, WindowId, MuxTab, MuxWindow`
 - `oriterm/src/app/tab_management/tests.rs` — `TabId, WindowId, MuxWindow`
 
-- [ ] Replace all `use oriterm_mux::{TabId, WindowId}` with
+- [x] Replace all `use oriterm_mux::{TabId, WindowId}` with
       `use crate::session::{TabId, WindowId}` across oriterm
-- [ ] Remove the `as MuxWindowId` alias — it's now just `WindowId`
-      (no collision since mux no longer exports it to GUI)
-- [ ] Rename `TermWindow.mux_window_id` field and `mux_window_id()` accessor
-      to `session_window_id` / `session_window_id()` (or keep the `mux_` prefix
-      until fully migrated — renaming to bare `window_id` would collide with
-      `winit::window::WindowId` which is already in scope as `WindowId`)
-- [ ] Verify: `cargo build --target x86_64-pc-windows-gnu` succeeds
+- [x] Remove the `as MuxWindowId` alias — now `WindowId as SessionWindowId`
+      (session type, bridged to mux via `.to_mux()`)
+- [x] Rename `TermWindow.mux_window_id` field and `mux_window_id()` accessor
+      to `session_window_id` / `session_window_id()` — uses `SessionWindowId`
+      alias where `winit::window::WindowId` is also in scope
+- [x] Verify: `cargo build --target x86_64-pc-windows-gnu` succeeds
 
 ---
 
 ## 02.2 Swap Session Queries
 
-**File(s):** `oriterm/src/app/tab_management/mod.rs`,
-`oriterm/src/app/tests.rs`
+**File(s):** All `oriterm/src/app/` files that call `mux.session()` (see
+caller list below), plus GPU consumer files that import layout types
 
 The GUI currently calls `mux.session().get_window(id)` and
 `mux.session().get_tab(id)` to read `MuxWindow`/`MuxTab`, where `mux`
@@ -87,24 +85,24 @@ is obtained from the `MuxBackend` trait object. These need to read from
 the GUI's own `SessionRegistry` instead.
 
 Known callers of `mux.session()` (from audit):
-- `oriterm/src/app/mod.rs` — `active_pane_context()` helper
+- `oriterm/src/app/mod.rs` — `active_pane_context()` + `build_tab_entries()` (5 calls)
 - `oriterm/src/app/pane_ops/mod.rs` — 3 calls
 - `oriterm/src/app/pane_ops/helpers.rs` — 3 calls (`active_pane_context`)
 - `oriterm/src/app/redraw/multi_pane.rs` — window + tab lookup
-- `oriterm/src/app/tab_management/mod.rs` — `tab_count`, `window_for_tab`
+- `oriterm/src/app/tab_management/mod.rs` — `tab_count`, `window_for_tab`, get_window (8 calls)
 - `oriterm/src/app/tab_drag/mod.rs` — window tab list
-- `oriterm/src/app/tab_drag/tear_off.rs` — window tab list
 - `oriterm/src/app/floating_drag.rs` — tab lookup (3 calls)
+- `oriterm/src/app/session_sync.rs` — mux tab/window sync (4 calls)
 
-- [ ] Add `session: SessionRegistry` field to `App` struct
-- [ ] Replace all `mux.session().get_window(id)` with
+- [x] Add `session: SessionRegistry` field to `App` struct (done in 02.5)
+- [x] Replace all `mux.session().get_window(id)` with
       `self.session.get_window(id)` throughout
-- [ ] Replace all `mux.session().get_tab(id)` with
+- [x] Replace all `mux.session().get_tab(id)` with
       `self.session.get_tab(id)` throughout
-- [ ] Tab bar building reads from `self.session` instead of mux
-- [ ] `active_pane_context()` in `pane_ops/helpers.rs` resolves
+- [x] Tab bar building reads from `self.session` instead of mux
+- [x] `active_pane_context()` in `pane_ops/helpers.rs` resolves
       window -> tab -> active_pane from local session
-- [ ] Update test helpers to build local session state instead of
+- [x] Update test helpers to build local session state instead of
       injecting into mux
 - [ ] **GPU consumer files** that import layout types from `oriterm_mux`:
   - `oriterm/src/gpu/pane_cache/mod.rs` — `oriterm_mux::layout::PaneLayout`
@@ -134,20 +132,18 @@ The GUI needs to translate pane events into its own session updates.
 section 03.2. Handle these in the pre-rename form (`PaneDirty`, `Alert`)
 during implementation, then update names when section 03.2 lands.
 
-- [ ] Map `MuxNotification::PaneDirty(pid)` (renamed to `PaneOutput` in 03.2) to:
-      mark pane content changed, invalidate selection/URL cache, request redraw
-- [ ] Map `MuxNotification::PaneClosed(pid)` to: find which tab contains
+- [x] Map `MuxNotification::PaneDirty(pid)` — already correct (pane-level)
+- [x] Map `MuxNotification::PaneClosed(pid)` to: find which tab contains
       this pane (local session lookup), remove from split tree, handle
       last-pane-in-tab / last-tab-in-window / last-window cases locally
-- [ ] Map `MuxNotification::PaneTitleChanged(pid)` to: update tab bar
-- [ ] Map `MuxNotification::Alert(pid)` (renamed to `PaneBell` in 03.2) to:
-      ring bell on tab bar
-- [ ] Stop consuming: `TabLayoutChanged`, `FloatingPaneChanged`,
-      `WindowTabsChanged`, `WindowClosed`, `LastWindowClosed` — replace
-      with no-ops or remove match arms (these variants are deleted from
-      the mux in section 03.2; removing consumers here unblocks that)
-- [ ] The GUI generates its own "session changed" events internally
-      when it mutates tabs/windows
+- [x] Map `MuxNotification::PaneTitleChanged(pid)` — already correct
+- [x] Map `MuxNotification::Alert(pid)` — already correct
+- [x] Stop consuming: `TabLayoutChanged`, `FloatingPaneChanged`,
+      `WindowTabsChanged` — gated on daemon mode only (embedded mode
+      mutations are local-first). `WindowClosed` and `LastWindowClosed`
+      kept as safety nets for daemon-originated closes.
+- [x] The GUI generates its own "session changed" events internally
+      when it mutates tabs/windows (local-first in 02.4)
 
 ---
 
@@ -159,17 +155,21 @@ The `MuxBackend` trait currently has methods for tab/window operations.
 After flattening, it only has pane operations. The GUI's tab/window
 operations become local mutations.
 
-- [ ] Tab creation: `mux.create_tab(...)` becomes `mux.spawn_pane(...)` +
-      local `Tab::new()` + `self.session.add_tab()` + `window.add_tab()`
-- [ ] Tab closing: `mux.close_tab(...)` becomes local
-      `self.session.remove_tab()` + `mux.close_pane(pid)` for each pane in the tab
-- [ ] Window creation: `mux.create_window(...)` becomes local
-      `Window::new()` + `self.session.add_window()`
-- [ ] Tab moves: `mux.move_tab_to_window(...)` becomes local
-      session mutations (remove from source window, add to target window)
-- [ ] Splits: `mux.split_pane(...)` becomes `mux.spawn_pane(...)` for
-      the new pane + local split tree mutation via `tab.replace_layout()`
-- [ ] Verify: all tab/window/layout operations are local; only pane
+- [x] Tab creation: `mux.spawn_pane()` + local `Tab::new()` +
+      `session.add_tab()` + `window.add_tab()` (init, new_tab, window_management)
+- [x] Tab closing: per-pane `mux.close_pane(pid)` + local session removal
+      (close_tab, close_focused_pane, handle_pane_closed)
+- [x] Window creation: `mux.create_window()` (mux-side for pane routing) +
+      local `Window::new()` + `session.add_window()` — mux.create_window
+      stays until section 03 strips mux window concept
+- [x] Tab moves: local `win.remove_tab()` + `win.add_tab/insert_tab_at()`
+      (move_tab_to_window, tear_off, merge). Daemon-mode move_tab_to_window
+      still uses mux RPC intentionally.
+- [x] Splits: `mux.spawn_pane()` + local `tab.tree().split_at()` +
+      `tab.replace_layout()` (split_pane)
+- [x] All layout mutations local: zoom, float/tile, divider drag, floating
+      drag, resize_toward, equalize, undo/redo, reorder, cycle, switch
+- [x] Verify: all tab/window/layout operations are local; only pane
       spawn/close/resize/write go through the mux
 
 ---
@@ -185,17 +185,19 @@ returns `(TabId, PaneId)`. After flattening, the mux has no tab concept, so the 
    `self.session.get_window_mut(wid).add_tab(tab_id)`
 4. GUI's session now owns the full state
 
-- [ ] Implement the new spawn flow in `App`:
-  - `spawn_pane` on mux returns `(PaneId, Pane)` (no tab context)
-  - `App` creates a local `Tab`, inserts the pane, adds tab to window
-- [ ] Implement the new close flow:
-  - `App` removes pane from local session, calls `mux.close_pane(pane_id)`
-  - `App` checks if tab/window is now empty and handles locally
-- [ ] Implement the new split flow:
-  - `App` calls `mux.spawn_pane()` for the new pane
-  - `App` locally inserts the new pane into the tab's split tree
-- [ ] Implement ID allocation for `TabId`/`WindowId` locally in `SessionRegistry`
-  (the mux no longer allocates these)
+- [x] Implement the new spawn flow in `App`:
+  - `MuxBackend::spawn_pane()` added (standalone pane, no tab context)
+  - Dual-write: `session_add_tab` syncs local session after `mux.create_tab()`
+  - `session_add_window` (inline) syncs after `mux.create_window()`
+- [x] Implement the new close flow:
+  - `session_remove_tab` syncs local session after `mux.close_tab()`
+  - `session_remove_window` syncs after `mux.close_window()`
+- [x] Implement the new split flow:
+  - `session_sync_tab_layout` syncs local split tree after layout mutations
+  - Covers: split, zoom, float/tile toggle, undo/redo, active pane change
+- [x] Implement ID allocation for `TabId`/`WindowId` locally in `SessionRegistry`
+  - `IdAllocator<T>` implemented (monotonic, type-safe)
+  - Not yet used — IDs still from mux during transition (switched in 02.4)
 
 ---
 
@@ -203,13 +205,17 @@ returns `(TabId, PaneId)`. After flattening, the mux has no tab concept, so the 
 
 - [ ] Zero imports of `TabId`, `WindowId`, `MuxTab`, `MuxWindow`,
       `SessionRegistry` from `oriterm_mux` in `oriterm/src/`
-- [ ] `App` owns a local `SessionRegistry`
-- [ ] All session queries read from local state
-- [ ] All session mutations are local
-- [ ] Only pane operations go through `MuxBackend`
-- [ ] `./build-all.sh` passes
-- [ ] `./clippy-all.sh` passes
-- [ ] `./test-all.sh` passes
+      (remaining: bridge types in `session/id/`, daemon sync in
+      `session_sync.rs`/`mux_pump/`, notification types in `mux_pump/` —
+      these are intentional until section 03 strips mux tab/window)
+- [x] `App` owns a local `SessionRegistry`
+- [x] All session queries read from local state
+- [x] All session mutations are local (embedded mode)
+- [x] Only pane operations go through `MuxBackend` (plus daemon-mode
+      `create_window`/`move_tab_to_window` — stripped in section 03)
+- [x] `./build-all.sh` passes
+- [x] `./clippy-all.sh` passes
+- [x] `./test-all.sh` passes
 
 **Exit Criteria:** `grep -r "oriterm_mux.*TabId\|oriterm_mux.*WindowId\|oriterm_mux.*MuxTab\|oriterm_mux.*MuxWindow\|oriterm_mux.*SessionRegistry" oriterm/src/`
 returns zero results. All builds and tests green.

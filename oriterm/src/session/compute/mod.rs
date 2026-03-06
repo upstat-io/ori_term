@@ -4,10 +4,10 @@
 //! list of `PaneLayout` records for the renderer, plus `DividerLayout`
 //! records for split divider rendering.
 
-use crate::id::PaneId;
-use crate::layout::floating::FloatingLayer;
-use crate::layout::rect::Rect;
-use crate::layout::split_tree::{SplitDirection, SplitTree};
+use super::floating::FloatingLayer;
+use super::rect::Rect;
+use super::split_tree::{SplitDirection, SplitTree};
+use oriterm_mux::PaneId;
 
 /// Input parameters for layout computation.
 #[derive(Debug, Clone)]
@@ -179,7 +179,7 @@ fn append_floating(
     desc: &LayoutDescriptor,
     out: &mut Vec<PaneLayout>,
 ) {
-    use crate::layout::floating::MIN_FLOATING_PANE_CELLS;
+    use super::floating::MIN_FLOATING_PANE_CELLS;
 
     let min_w = f32::from(MIN_FLOATING_PANE_CELLS.0) * desc.cell_width;
     let min_h = f32::from(MIN_FLOATING_PANE_CELLS.1) * desc.cell_height;

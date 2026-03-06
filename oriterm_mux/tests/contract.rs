@@ -17,22 +17,18 @@ use oriterm_core::{Side, Theme};
 use oriterm_mux::backend::MuxBackend;
 use oriterm_mux::domain::SpawnConfig;
 use oriterm_mux::server::MuxServer;
-use oriterm_mux::{EmbeddedMux, MuxClient, PaneId, PaneSnapshot, TabId, WindowId, WireCursorShape};
+use oriterm_mux::{EmbeddedMux, MuxClient, PaneId, PaneSnapshot, WireCursorShape};
 
 // ---------------------------------------------------------------------------
 // Test context: holds the backend + IDs + optional daemon handle
 // ---------------------------------------------------------------------------
 
-/// Wrapper providing a `MuxBackend` and the IDs needed for testing.
+/// Wrapper providing a `MuxBackend` and the pane ID needed for testing.
 ///
 /// Owns either an `EmbeddedMux` directly or a `MuxClient` + `TestDaemon`.
 /// The daemon (if any) is kept alive by the `_daemon` field.
 struct TestContext {
     backend: Box<dyn MuxBackend>,
-    #[expect(dead_code, reason = "stored for future contract tests")]
-    window_id: WindowId,
-    #[expect(dead_code, reason = "stored for future contract tests")]
-    tab_id: TabId,
     pane_id: PaneId,
     _daemon: Option<TestDaemon>,
 }
@@ -143,11 +139,8 @@ fn embedded_context() -> TestContext {
     let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let mut mux = EmbeddedMux::new(wakeup);
 
-    let window_id = mux.create_window().expect("create_window");
     let config = SpawnConfig::default();
-    let (tab_id, pane_id) = mux
-        .create_tab(window_id, &config, Theme::Dark)
-        .expect("create_tab");
+    let pane_id = mux.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
     // Let the shell start up.
     thread::sleep(Duration::from_millis(500));
@@ -157,8 +150,6 @@ fn embedded_context() -> TestContext {
 
     TestContext {
         backend: Box::new(mux),
-        window_id,
-        tab_id,
         pane_id,
         _daemon: None,
     }
@@ -169,12 +160,8 @@ fn daemon_context() -> TestContext {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let window_id = client.create_window().expect("create_window");
     let config = SpawnConfig::default();
-    let (tab_id, pane_id) = client
-        .create_tab(window_id, &config, Theme::Dark)
-        .expect("create_tab");
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = client.spawn_pane(&config, Theme::Dark).expect("spawn_pane");
 
     // Let the shell start up.
     thread::sleep(Duration::from_millis(500));
@@ -184,8 +171,6 @@ fn daemon_context() -> TestContext {
 
     TestContext {
         backend: Box::new(client),
-        window_id,
-        tab_id,
         pane_id,
         _daemon: Some(daemon),
     }
@@ -215,7 +200,7 @@ macro_rules! muxbackend_contract_tests {
         use super::*;
 
         #[test]
-        fn contract_create_tab_and_see_output() {
+        fn contract_spawn_pane_and_see_output() {
             let mut ctx = $factory();
             let pid = ctx.pane_id;
             ctx.b().send_input(pid, b"echo CONTRACT_OUTPUT\n");

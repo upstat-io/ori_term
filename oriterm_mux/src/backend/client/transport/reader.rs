@@ -22,10 +22,10 @@ use oriterm_ipc::ClientStream;
 
 use crate::mux_event::MuxNotification;
 use crate::protocol::{DecodedFrame, MuxPdu, ProtocolCodec};
-use crate::{PaneId, PaneSnapshot, TabId};
+use crate::{PaneId, PaneSnapshot};
 
 use super::super::notification::pdu_to_notification;
-use super::{PING_INTERVAL, READ_POLL_INTERVAL, SendRequest, TabLayoutUpdate};
+use super::{PING_INTERVAL, READ_POLL_INTERVAL, SendRequest};
 
 /// Dispatch a received notification PDU.
 ///
@@ -35,7 +35,6 @@ use super::{PING_INTERVAL, READ_POLL_INTERVAL, SendRequest, TabLayoutUpdate};
 fn dispatch_notification(
     pdu: MuxPdu,
     pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
-    pushed_layouts: &Mutex<HashMap<TabId, TabLayoutUpdate>>,
     notif_tx: &mpsc::Sender<MuxNotification>,
     wakeup: &dyn Fn(),
 ) {
@@ -45,7 +44,7 @@ fn dispatch_notification(
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .insert(pane_id, snapshot);
-            let _ = notif_tx.send(MuxNotification::PaneDirty(pane_id));
+            let _ = notif_tx.send(MuxNotification::PaneOutput(pane_id));
             (wakeup)();
         }
         MuxPdu::NotifyPaneOutput { pane_id } => {
@@ -53,29 +52,7 @@ fn dispatch_notification(
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .remove(&pane_id);
-            let _ = notif_tx.send(MuxNotification::PaneDirty(pane_id));
-            (wakeup)();
-        }
-        MuxPdu::NotifyTabLayoutChanged {
-            tab_id,
-            tree,
-            floating,
-            active_pane,
-            zoomed_pane,
-        } => {
-            pushed_layouts
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(
-                    tab_id,
-                    TabLayoutUpdate {
-                        tree,
-                        floating,
-                        active_pane,
-                        zoomed_pane,
-                    },
-                );
-            let _ = notif_tx.send(MuxNotification::TabLayoutChanged(tab_id));
+            let _ = notif_tx.send(MuxNotification::PaneOutput(pane_id));
             (wakeup)();
         }
         other => {
@@ -152,7 +129,6 @@ pub(super) fn reader_loop(
     wakeup: Arc<dyn Fn() + Send + Sync>,
     alive: Arc<AtomicBool>,
     pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
-    pushed_layouts: Arc<Mutex<HashMap<TabId, TabLayoutUpdate>>>,
     #[cfg(unix)] wake_read: RawFd,
 ) {
     // Set a short read timeout as a safety net for edge cases where poll(2)
@@ -250,7 +226,6 @@ pub(super) fn reader_loop(
             &mut pending,
             &mut outstanding_ping_seq,
             &pushed_snapshots,
-            &pushed_layouts,
             &notif_tx,
             &*wakeup,
         ) {
@@ -275,7 +250,6 @@ fn read_and_dispatch_frames(
     pending: &mut HashMap<u32, mpsc::Sender<MuxPdu>>,
     outstanding_ping_seq: &mut Option<u32>,
     pushed_snapshots: &Mutex<HashMap<PaneId, PaneSnapshot>>,
-    pushed_layouts: &Mutex<HashMap<TabId, TabLayoutUpdate>>,
     notif_tx: &mpsc::Sender<MuxNotification>,
     wakeup: &dyn Fn(),
 ) -> bool {
@@ -292,7 +266,7 @@ fn read_and_dispatch_frames(
                 }
 
                 if seq == 0 || pdu.is_notification() {
-                    dispatch_notification(pdu, pushed_snapshots, pushed_layouts, notif_tx, wakeup);
+                    dispatch_notification(pdu, pushed_snapshots, notif_tx, wakeup);
                 } else if let Some(reply_tx) = pending.remove(&seq) {
                     let _ = reply_tx.send(pdu);
                 } else {

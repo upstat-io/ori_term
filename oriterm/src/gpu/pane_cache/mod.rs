@@ -7,7 +7,8 @@
 use std::collections::HashMap;
 
 use oriterm_mux::id::PaneId;
-use oriterm_mux::layout::PaneLayout;
+
+use crate::session::PaneLayout;
 
 use super::prepared_frame::PreparedFrame;
 

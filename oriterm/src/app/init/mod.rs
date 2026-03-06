@@ -51,25 +51,20 @@ impl App {
         let gpu = GpuState::new(&window_arc, window_config.transparent)?;
         let t_gpu = t_gpu_start.elapsed();
 
-        // 4. Allocate a mux window early (ID needed by TermWindow for mapping).
+        // 4. Allocate a GUI-local window ID (mux is a flat pane server).
         //    In daemon mode, the window may already be claimed via `--window`.
-        let mux = self.mux.as_mut().ok_or("mux backend missing at init")?;
-        let is_daemon = mux.is_daemon_mode();
-        let mux_window_id = if let Some(claimed) = self.active_window {
-            // Daemon mode with a pre-claimed window ID.
+        let session_wid = if let Some(claimed) = self.active_window {
             claimed
         } else {
-            mux.create_window()?
+            self.session.alloc_window_id()
         };
 
-        // 4b. Tell the daemon which window this client renders so it can
-        //     route `WindowTabsChanged` notifications to us.
-        if is_daemon {
-            mux.claim_window(mux_window_id)?;
-        }
+        // Register window in local session.
+        self.session
+            .add_window(crate::session::Window::new(session_wid));
 
         // 5. Wrap the same window into TermWindow (creates surface, applies effects).
-        let window = TermWindow::from_window(window_arc, &window_config, &gpu, mux_window_id)?;
+        let window = TermWindow::from_window(window_arc, &window_config, &gpu, session_wid)?;
 
         // 6. Join font thread (GPU init + surface setup ran concurrently).
         let (mut font_collection, user_fb_count, t_fonts) = match font_handle.join() {
@@ -164,9 +159,10 @@ impl App {
 
         // 11. Create initial tab + pane (skip if daemon mode with a claimed window).
         let t_mux_start = std::time::Instant::now();
+        let is_daemon = self.mux.as_ref().is_some_and(|m| m.is_daemon_mode());
         let is_claimed = is_daemon && self.active_window.is_some();
         if !is_claimed {
-            self.create_initial_tab(mux_window_id, rows as u16, cols as u16)?;
+            self.create_initial_tab(session_wid, rows as u16, cols as u16)?;
         }
         let t_mux = t_mux_start.elapsed();
 
@@ -206,7 +202,7 @@ impl App {
         self.user_fb_count = user_fb_count;
         self.windows.insert(winit_id, ctx);
         self.focused_window_id = Some(winit_id);
-        self.active_window = Some(mux_window_id);
+        self.active_window = Some(session_wid);
         Ok(())
     }
 
@@ -309,7 +305,7 @@ impl App {
     /// inside the backend. Setup notifications are drained and discarded.
     pub(super) fn create_initial_tab(
         &mut self,
-        window_id: oriterm_mux::WindowId,
+        session_wid: crate::session::WindowId,
         rows: u16,
         cols: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -329,13 +325,21 @@ impl App {
         let palette = config_reload::build_palette_from_config(&self.config.colors, theme);
 
         let mux = self.mux.as_mut().ok_or("mux backend missing")?;
-        let (_tab_id, pane_id) = mux.create_tab(window_id, &config, theme)?;
+        let pane_id = mux.spawn_pane(&config, theme)?;
 
         // Apply color scheme + user overrides to the pane's terminal palette.
         mux.set_pane_theme(pane_id, theme, palette);
 
         // Discard setup notifications (not useful at init time).
         mux.discard_notifications();
+
+        // Local tab creation.
+        let tab_id = self.session.alloc_tab_id();
+        let tab = crate::session::Tab::new(tab_id, pane_id);
+        self.session.add_tab(tab);
+        if let Some(win) = self.session.get_window_mut(session_wid) {
+            win.add_tab(tab_id);
+        }
 
         Ok(())
     }

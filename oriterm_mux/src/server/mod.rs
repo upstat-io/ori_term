@@ -28,7 +28,7 @@ use mio::{Events, Interest, Poll, Token, Waker};
 
 use crate::id::ClientId;
 use crate::pane::Pane;
-use crate::{IdAllocator, InProcessMux, MuxNotification, PaneId, WindowId};
+use crate::{IdAllocator, InProcessMux, MuxNotification, PaneId};
 
 use self::notify::TargetClients;
 use self::snapshot::SnapshotCache;
@@ -67,8 +67,6 @@ pub struct MuxServer {
     subscriptions: HashMap<PaneId, Vec<ClientId>>,
     /// mio token → client ID for O(1) event dispatch.
     token_to_client: HashMap<Token, ClientId>,
-    /// window → client ID for O(1) notification routing.
-    window_to_client: HashMap<WindowId, ClientId>,
     /// Allocator for client IDs.
     client_alloc: IdAllocator<ClientId>,
 
@@ -144,7 +142,6 @@ impl MuxServer {
             connections: HashMap::new(),
             subscriptions: HashMap::new(),
             token_to_client: HashMap::new(),
-            window_to_client: HashMap::new(),
             client_alloc: IdAllocator::new(),
             poll,
             waker,
@@ -244,7 +241,7 @@ impl MuxServer {
     ///
     /// Three-phase processing:
     /// 1. Trailing-edge flush — retry deferred pushes from previous cycles.
-    /// 2. Route new notifications — `PaneDirty` triggers snapshot push
+    /// 2. Route new notifications — `PaneOutput` triggers snapshot push
     ///    (or deferral); other notifications use existing routing.
     /// 3. Update write interests for connections with pending data.
     fn drain_mux_events(&mut self) {
@@ -268,7 +265,7 @@ impl MuxServer {
 
         // Phase 2: Route new notifications.
         for notif in &self.notification_buf {
-            if let MuxNotification::PaneDirty(pane_id) = notif {
+            if let MuxNotification::PaneOutput(pane_id) = notif {
                 let mut push_ctx = push::PushContext {
                     last_snapshot_push: &mut self.last_snapshot_push,
                     subscriptions: &self.subscriptions,
@@ -280,9 +277,7 @@ impl MuxServer {
                 };
                 push::push_or_defer_pane(&mut push_ctx, now, *pane_id);
             } else {
-                let Some((target, pdu)) =
-                    notify::notification_to_pdu(notif, &self.panes, self.mux.session())
-                else {
+                let Some((target, pdu)) = notify::notification_to_pdu(notif, &self.panes) else {
                     continue;
                 };
                 match target {
@@ -294,13 +289,6 @@ impl MuxServer {
                                 if let Some(conn) = self.connections.get_mut(&cid) {
                                     let _ = conn.queue_frame(0, &pdu);
                                 }
-                            }
-                        }
-                    }
-                    TargetClients::WindowClient(window_id) => {
-                        if let Some(&cid) = self.window_to_client.get(&window_id) {
-                            if let Some(conn) = self.connections.get_mut(&cid) {
-                                let _ = conn.queue_frame(0, &pdu);
                             }
                         }
                     }
@@ -367,7 +355,7 @@ impl MuxServer {
         if !self.had_client {
             return false;
         }
-        self.connections.is_empty() && self.mux.session().window_count() == 0
+        self.connections.is_empty() && self.panes.is_empty()
     }
 }
 

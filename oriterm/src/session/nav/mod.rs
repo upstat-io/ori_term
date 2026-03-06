@@ -5,8 +5,9 @@
 
 use std::fmt;
 
-use crate::id::PaneId;
-use crate::layout::compute::PaneLayout;
+use oriterm_mux::PaneId;
+
+use super::compute::PaneLayout;
 
 /// Direction for spatial navigation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

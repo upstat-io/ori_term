@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{SplitDirection, SplitTree};
-use crate::id::PaneId;
+use oriterm_mux::PaneId;
 
 fn p(n: u64) -> PaneId {
     PaneId::from_raw(n)

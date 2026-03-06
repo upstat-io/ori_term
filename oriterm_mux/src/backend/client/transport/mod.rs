@@ -24,11 +24,9 @@ use std::os::fd::RawFd;
 use oriterm_ipc::ClientStream;
 
 use crate::id::ClientId;
-use crate::layout::floating::FloatingLayer;
-use crate::layout::split_tree::SplitTree;
 use crate::mux_event::MuxNotification;
 use crate::protocol::{MuxPdu, ProtocolCodec};
-use crate::{PaneId, PaneSnapshot, TabId};
+use crate::{PaneId, PaneSnapshot};
 
 /// RPC timeout for blocking responses.
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
@@ -55,18 +53,6 @@ struct SendRequest {
     reply_tx: Option<mpsc::Sender<MuxPdu>>,
 }
 
-/// Server-pushed tab layout update data.
-pub(super) struct TabLayoutUpdate {
-    /// Current split tree.
-    pub tree: SplitTree,
-    /// Current floating layer.
-    pub floating: FloatingLayer,
-    /// Currently focused pane.
-    pub active_pane: PaneId,
-    /// Zoomed pane, if any.
-    pub zoomed_pane: Option<PaneId>,
-}
-
 /// IPC transport to the mux daemon.
 ///
 /// Manages a background reader thread that owns the stream. The main thread
@@ -90,9 +76,6 @@ pub(super) struct ClientTransport {
     /// Shared snapshot slot: reader thread inserts pushed snapshots,
     /// main thread takes them at render time. Bounds memory to `O(num_panes)`.
     pushed_snapshots: Arc<Mutex<HashMap<PaneId, PaneSnapshot>>>,
-    /// Shared layout slot: reader thread inserts pushed layouts,
-    /// main thread takes them when processing notifications.
-    pushed_layouts: Arc<Mutex<HashMap<TabId, TabLayoutUpdate>>>,
     /// Coalescing flag: prevents redundant `PostMessage` wakeup syscalls
     /// during flood output. Set by the guarded wakeup closure, cleared
     /// by [`clear_wakeup_pending`](Self::clear_wakeup_pending) in `poll_events`.
@@ -161,9 +144,6 @@ impl ClientTransport {
         let alive_flag = alive.clone();
         let pushed_snapshots = Arc::new(Mutex::new(HashMap::new()));
         let pushed_snapshots_reader = Arc::clone(&pushed_snapshots);
-        let pushed_layouts: Arc<Mutex<HashMap<TabId, TabLayoutUpdate>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let pushed_layouts_reader = Arc::clone(&pushed_layouts);
 
         // Wrap wakeup with coalescing flag to prevent redundant PostMessage
         // syscalls during flood output (hundreds per second → at most one).
@@ -203,7 +183,6 @@ impl ClientTransport {
                     guarded_wakeup,
                     alive_flag,
                     pushed_snapshots_reader,
-                    pushed_layouts_reader,
                     #[cfg(unix)]
                     wake_read,
                 );
@@ -222,7 +201,6 @@ impl ClientTransport {
             client_id,
             alive,
             pushed_snapshots,
-            pushed_layouts,
             wakeup_pending,
             #[cfg(unix)]
             wake_write,
@@ -321,14 +299,6 @@ impl ClientTransport {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&pane_id);
-    }
-
-    /// Take a pushed layout update for a specific tab, if one exists.
-    pub(super) fn take_pushed_layout(&self, tab_id: TabId) -> Option<TabLayoutUpdate> {
-        self.pushed_layouts
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&tab_id)
     }
 
     /// Whether the reader thread is still running.

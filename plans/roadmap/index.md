@@ -24,7 +24,7 @@ Sections listed here are worked on **before** sequential scanning. When `/contin
 ## Keyword Clusters by Section
 
 ### Section 01: Cell + Grid
-**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** Not Started
+**File:** `section-01-cell-grid.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
 
 ```
 cell, Cell, CellFlags, CellExtra, rich cell, 24 bytes
@@ -46,7 +46,7 @@ workspace, Cargo workspace, oriterm_core, multi-crate
 ---
 
 ### Section 02: Terminal State Machine + VTE
-**File:** `section-02-term-vte.md` | **Tier:** 0 | **Status:** Not Started
+**File:** `section-02-term-vte.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
 
 ```
 Term, Term<T>, terminal state machine, terminal emulation
@@ -80,7 +80,7 @@ damage, DamageLine, dirty, damage tracking, incremental
 ---
 
 ### Section 03: Cross-Platform
-**File:** `section-03-cross-platform.md` | **Tier:** 0 | **Status:** Not Started
+**File:** `section-03-cross-platform.md` | **Tier:** 0 | **Status:** Complete <!-- reviewed: accuracy fix -->
 
 ```
 cross-platform, day one, Windows, Linux, macOS, platform abstraction
@@ -110,7 +110,7 @@ shell detection, $SHELL, cmd.exe, TERM, COLORTERM
 ---
 
 ### Section 04: PTY + Event Loop
-**File:** `section-04-pty-eventloop.md` | **Tier:** 1 | **Status:** Not Started
+**File:** `section-04-pty-eventloop.md` | **Tier:** 1 | **Status:** Complete <!-- reviewed: accuracy fix -->
 
 ```
 PTY, pty, ConPTY, portable-pty, pseudo-terminal
@@ -130,7 +130,7 @@ contention, starvation, fair lock, reader thread lock
 ---
 
 ### Section 05: Window + GPU Rendering
-**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** In Progress (5.1–5.11 complete)
+**File:** `section-05-window-gpu.md` | **Tier:** 2 | **Status:** Complete <!-- reviewed: accuracy fix -->
 
 ```
 render pipeline, staged pipeline, Extract, Prepare, Render, 3-phase
@@ -165,7 +165,7 @@ determinism, pixel readback, decode_instance, assert_instance_count
 ---
 
 ### Section 05B: Startup Performance
-**File:** `section-05b-startup-perf.md` | **Tier:** 2 | **Status:** Not Started | **Blocks:** 06
+**File:** `section-05b-startup-perf.md` | **Tier:** 2 | **Status:** Complete <!-- reviewed: accuracy fix -->
 
 ```
 startup, launch, performance, cold start, warm start

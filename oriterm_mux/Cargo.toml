@@ -2,7 +2,7 @@
 name = "oriterm_mux"
 version = "0.1.0-alpha.3"
 edition = "2024"
-description = "Multiplexer for oriterm: data structures, PTY management, daemon server, and IPC protocol"
+description = "Pane server for oriterm: PTY management, pane lifecycle, daemon server, and IPC protocol"
 license = "MIT"
 
 [dependencies]

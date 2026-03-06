@@ -1,6 +1,6 @@
 use super::{FloatingLayer, FloatingPane, snap_to_edge};
-use crate::id::PaneId;
-use crate::layout::rect::Rect;
+use crate::session::rect::Rect;
+use oriterm_mux::PaneId;
 
 fn p(n: u64) -> PaneId {
     PaneId::from_raw(n)

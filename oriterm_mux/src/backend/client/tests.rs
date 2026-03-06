@@ -37,14 +37,14 @@ fn drain_returns_injected_notifications() {
     let p1 = PaneId::from_raw(1);
     let p2 = PaneId::from_raw(2);
 
-    client.notifications.push(MuxNotification::PaneDirty(p1));
+    client.notifications.push(MuxNotification::PaneOutput(p1));
     client.notifications.push(MuxNotification::PaneClosed(p2));
 
     let mut buf = Vec::new();
     client.drain_notifications(&mut buf);
 
     assert_eq!(buf.len(), 2);
-    assert!(matches!(buf[0], MuxNotification::PaneDirty(id) if id == p1));
+    assert!(matches!(buf[0], MuxNotification::PaneOutput(id) if id == p1));
     assert!(matches!(buf[1], MuxNotification::PaneClosed(id) if id == p2));
 
     // Buffer should be empty after drain.
@@ -59,7 +59,7 @@ fn discard_clears_notifications() {
     let mut client = MuxClient::new();
     client
         .notifications
-        .push(MuxNotification::PaneDirty(PaneId::from_raw(1)));
+        .push(MuxNotification::PaneOutput(PaneId::from_raw(1)));
 
     client.discard_notifications();
 
@@ -87,28 +87,6 @@ fn event_tx_none() {
 fn pane_ids_empty() {
     let client = MuxClient::new();
     assert!(client.pane_ids().is_empty());
-}
-
-// -- claim_window / refresh_window_tabs stubs --
-
-/// `claim_window` on an unconnected stub returns an error (no panic).
-#[test]
-fn claim_window_stub_returns_error() {
-    use crate::WindowId;
-
-    let mut client = MuxClient::new();
-    let result = client.claim_window(WindowId::from_raw(1));
-    assert!(result.is_err());
-}
-
-/// `refresh_window_tabs` on an unconnected stub is a no-op (no panic).
-#[test]
-fn refresh_window_tabs_stub_noop() {
-    use crate::WindowId;
-
-    let mut client = MuxClient::new();
-    // Should not panic — just logs an error internally.
-    client.refresh_window_tabs(WindowId::from_raw(1));
 }
 
 // -- Snapshot cache tests --
@@ -243,13 +221,13 @@ fn clear_dirty_idempotent() {
     assert!(!client.is_pane_snapshot_dirty(p));
 }
 
-/// `poll_events` marks panes dirty from `PaneDirty` notifications.
+/// `poll_events` marks panes dirty from `PaneOutput` notifications.
 #[test]
 fn poll_events_marks_dirty() {
     let mut client = MuxClient::new();
     let p = PaneId::from_raw(5);
 
-    client.notifications.push(MuxNotification::PaneDirty(p));
+    client.notifications.push(MuxNotification::PaneOutput(p));
     client.poll_events();
 
     assert!(client.is_pane_snapshot_dirty(p));
@@ -261,9 +239,9 @@ fn duplicate_dirty_notifications() {
     let mut client = MuxClient::new();
     let p = PaneId::from_raw(1);
 
-    client.notifications.push(MuxNotification::PaneDirty(p));
-    client.notifications.push(MuxNotification::PaneDirty(p));
-    client.notifications.push(MuxNotification::PaneDirty(p));
+    client.notifications.push(MuxNotification::PaneOutput(p));
+    client.notifications.push(MuxNotification::PaneOutput(p));
+    client.notifications.push(MuxNotification::PaneOutput(p));
     client.poll_events();
 
     assert!(client.is_pane_snapshot_dirty(p));
@@ -273,7 +251,7 @@ fn duplicate_dirty_notifications() {
     assert!(!client.is_pane_snapshot_dirty(p));
 }
 
-/// Non-PaneDirty notifications don't set dirty flags.
+/// Non-PaneOutput notifications don't set dirty flags.
 #[test]
 fn non_dirty_notifications_ignored() {
     let mut client = MuxClient::new();
@@ -362,7 +340,7 @@ mod transport_tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use crate::id::{ClientId, PaneId, WindowId};
+    use crate::id::{ClientId, PaneId};
     use crate::mux_event::MuxNotification;
     use crate::protocol::{MuxPdu, ProtocolCodec};
 
@@ -420,38 +398,13 @@ mod transport_tests {
             pane_id: PaneId::from_raw(4),
         };
         let notif = pdu_to_notification(pdu).unwrap();
-        assert!(matches!(notif, MuxNotification::Alert(id) if id == PaneId::from_raw(4)));
-    }
-
-    /// `NotifyWindowTabsChanged` converts to `WindowTabsChanged`.
-    #[test]
-    fn notify_window_tabs() {
-        let pdu = MuxPdu::NotifyWindowTabsChanged {
-            window_id: WindowId::from_raw(5),
-        };
-        let notif = pdu_to_notification(pdu).unwrap();
-        assert!(
-            matches!(notif, MuxNotification::WindowTabsChanged(id) if id == WindowId::from_raw(5))
-        );
-    }
-
-    /// `NotifyTabMoved` returns `None` (no direct equivalent).
-    #[test]
-    fn notify_tab_moved_none() {
-        let pdu = MuxPdu::NotifyTabMoved {
-            tab_id: crate::TabId::from_raw(1),
-            from_window: WindowId::from_raw(1),
-            to_window: WindowId::from_raw(2),
-        };
-        assert!(pdu_to_notification(pdu).is_none());
+        assert!(matches!(notif, MuxNotification::PaneBell(id) if id == PaneId::from_raw(4)));
     }
 
     /// Non-notification PDUs return `None`.
     #[test]
     fn non_notification_returns_none() {
-        let pdu = MuxPdu::WindowCreated {
-            window_id: WindowId::from_raw(1),
-        };
+        let pdu = MuxPdu::PingAck;
         assert!(pdu_to_notification(pdu).is_none());
     }
 
@@ -462,12 +415,12 @@ mod transport_tests {
     fn codec_roundtrip_over_socket() {
         let (mut a, mut b) = UnixStream::pair().unwrap();
 
-        let pdu = MuxPdu::CreateWindow;
+        let pdu = MuxPdu::Ping;
         ProtocolCodec::encode_frame(&mut a, 7, &pdu).unwrap();
 
         let frame = ProtocolCodec::new().decode_frame(&mut b).unwrap();
         assert_eq!(frame.seq, 7);
-        assert!(matches!(frame.pdu, MuxPdu::CreateWindow));
+        assert!(matches!(frame.pdu, MuxPdu::Ping));
     }
 
     /// Multiple frames round-trip in order.
@@ -475,26 +428,16 @@ mod transport_tests {
     fn multiple_frames_in_order() {
         let (mut a, mut b) = UnixStream::pair().unwrap();
 
-        ProtocolCodec::encode_frame(&mut a, 1, &MuxPdu::CreateWindow).unwrap();
-        ProtocolCodec::encode_frame(
-            &mut a,
-            2,
-            &MuxPdu::CreateTab {
-                window_id: WindowId::from_raw(1),
-                shell: None,
-                cwd: None,
-                theme: None,
-            },
-        )
-        .unwrap();
+        ProtocolCodec::encode_frame(&mut a, 1, &MuxPdu::Ping).unwrap();
+        ProtocolCodec::encode_frame(&mut a, 2, &MuxPdu::ListPanes).unwrap();
 
         let f1 = ProtocolCodec::new().decode_frame(&mut b).unwrap();
         let f2 = ProtocolCodec::new().decode_frame(&mut b).unwrap();
 
         assert_eq!(f1.seq, 1);
-        assert!(matches!(f1.pdu, MuxPdu::CreateWindow));
+        assert!(matches!(f1.pdu, MuxPdu::Ping));
         assert_eq!(f2.seq, 2);
-        assert!(matches!(f2.pdu, MuxPdu::CreateTab { .. }));
+        assert!(matches!(f2.pdu, MuxPdu::ListPanes));
     }
 
     // -- Integration tests using real ClientTransport::connect --
@@ -540,7 +483,7 @@ mod transport_tests {
         let _server_stream = server_handle.join().unwrap();
     }
 
-    /// RPC roundtrip: send CreateWindow, receive WindowCreated.
+    /// RPC roundtrip: send Ping, receive PingAck.
     #[test]
     fn rpc_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
@@ -561,19 +504,12 @@ mod transport_tests {
             .unwrap();
             consume_set_capabilities(&mut stream);
 
-            // Read CreateWindow request.
+            // Read Ping request.
             let req = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
-            assert!(matches!(req.pdu, MuxPdu::CreateWindow));
+            assert!(matches!(req.pdu, MuxPdu::Ping));
 
-            // Reply with WindowCreated.
-            ProtocolCodec::encode_frame(
-                &mut stream,
-                req.seq,
-                &MuxPdu::WindowCreated {
-                    window_id: WindowId::from_raw(10),
-                },
-            )
-            .unwrap();
+            // Reply with PingAck.
+            ProtocolCodec::encode_frame(&mut stream, req.seq, &MuxPdu::PingAck).unwrap();
 
             stream
         });
@@ -581,11 +517,8 @@ mod transport_tests {
         let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
         let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
 
-        let resp = transport.rpc(MuxPdu::CreateWindow).unwrap();
-        assert!(matches!(
-            resp,
-            MuxPdu::WindowCreated { window_id } if window_id == WindowId::from_raw(10)
-        ));
+        let resp = transport.rpc(MuxPdu::Ping).unwrap();
+        assert!(matches!(resp, MuxPdu::PingAck));
 
         let _s = server_handle.join().unwrap();
     }
@@ -645,7 +578,7 @@ mod transport_tests {
             "expected at least one notification"
         );
         assert!(
-            matches!(notifications[0], MuxNotification::PaneDirty(id) if id == PaneId::from_raw(7))
+            matches!(notifications[0], MuxNotification::PaneOutput(id) if id == PaneId::from_raw(7))
         );
         assert!(wakeup_count.load(Ordering::Relaxed) > 0);
 
@@ -719,7 +652,7 @@ mod transport_tests {
         let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
         let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
 
-        let result = transport.rpc(MuxPdu::CreateWindow);
+        let result = transport.rpc(MuxPdu::Ping);
         assert!(result.is_err(), "should timeout");
         let err = result.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
@@ -757,14 +690,7 @@ mod transport_tests {
             for _ in 0..3 {
                 let frame = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
                 seqs.lock().unwrap().push(frame.seq);
-                ProtocolCodec::encode_frame(
-                    &mut stream,
-                    frame.seq,
-                    &MuxPdu::WindowCreated {
-                        window_id: WindowId::from_raw(1),
-                    },
-                )
-                .unwrap();
+                ProtocolCodec::encode_frame(&mut stream, frame.seq, &MuxPdu::PingAck).unwrap();
             }
             stream
         });
@@ -776,9 +702,9 @@ mod transport_tests {
         transport.test_set_next_seq(u32::MAX - 1);
 
         // Three RPCs: seqs should be MAX-1, MAX, 1 (skipping 0).
-        transport.rpc(MuxPdu::CreateWindow).unwrap();
-        transport.rpc(MuxPdu::CreateWindow).unwrap();
-        transport.rpc(MuxPdu::CreateWindow).unwrap();
+        transport.rpc(MuxPdu::Ping).unwrap();
+        transport.rpc(MuxPdu::Ping).unwrap();
+        transport.rpc(MuxPdu::Ping).unwrap();
 
         let _s = server.join().unwrap();
 
@@ -819,7 +745,7 @@ mod transport_tests {
 
         assert!(!transport.is_alive());
 
-        let result = transport.rpc(MuxPdu::CreateWindow);
+        let result = transport.rpc(MuxPdu::Ping);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
     }
@@ -862,14 +788,7 @@ mod transport_tests {
             .unwrap();
 
             // Now send the RPC response.
-            ProtocolCodec::encode_frame(
-                &mut stream,
-                req.seq,
-                &MuxPdu::WindowCreated {
-                    window_id: WindowId::from_raw(5),
-                },
-            )
-            .unwrap();
+            ProtocolCodec::encode_frame(&mut stream, req.seq, &MuxPdu::PingAck).unwrap();
 
             // Keep alive briefly.
             std::thread::sleep(Duration::from_millis(200));
@@ -882,11 +801,8 @@ mod transport_tests {
         let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
 
         // RPC should succeed despite interleaved notification.
-        let resp = transport.rpc(MuxPdu::CreateWindow).unwrap();
-        assert!(matches!(
-            resp,
-            MuxPdu::WindowCreated { window_id } if window_id == WindowId::from_raw(5)
-        ));
+        let resp = transport.rpc(MuxPdu::Ping).unwrap();
+        assert!(matches!(resp, MuxPdu::PingAck));
 
         // Notification should be in the buffer.
         std::thread::sleep(Duration::from_millis(50));
@@ -894,7 +810,7 @@ mod transport_tests {
         transport.poll_notifications(&mut notifications);
         assert!(
             notifications.iter().any(
-                |n| matches!(n, MuxNotification::PaneDirty(id) if *id == PaneId::from_raw(42))
+                |n| matches!(n, MuxNotification::PaneOutput(id) if *id == PaneId::from_raw(42))
             )
         );
 
@@ -1001,8 +917,8 @@ mod transport_tests {
         for (i, notif) in notifications.iter().enumerate() {
             let expected_id = PaneId::from_raw((i + 1) as u64);
             assert!(
-                matches!(notif, MuxNotification::PaneDirty(id) if *id == expected_id),
-                "notification {i} should be PaneDirty({expected_id:?}), got {notif:?}"
+                matches!(notif, MuxNotification::PaneOutput(id) if *id == expected_id),
+                "notification {i} should be PaneOutput({expected_id:?}), got {notif:?}"
             );
         }
 
@@ -1047,139 +963,11 @@ mod transport_tests {
         let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
         let mut transport = ClientTransport::connect(&sock, wakeup).unwrap();
 
-        let result = transport.rpc(MuxPdu::CreateWindow);
+        let result = transport.rpc(MuxPdu::Ping);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("test error"));
 
         let _s = server_handle.join().unwrap();
-    }
-
-    // -- MuxClient-level transport tests --
-    //
-    // These use MuxClient::connect() to exercise the full MuxBackend
-    // trait methods through the IPC transport.
-
-    use super::super::MuxClient;
-    use crate::backend::MuxBackend;
-    use crate::protocol::MuxTabInfo;
-
-    /// Helper: start a fake server that handles Hello, then calls `handler`
-    /// for subsequent requests. Returns the server thread handle.
-    fn fake_server<F>(sock_path: &std::path::Path, handler: F) -> std::thread::JoinHandle<()>
-    where
-        F: FnOnce(&mut UnixStream) + Send + 'static,
-    {
-        let listener = std::os::unix::net::UnixListener::bind(sock_path).unwrap();
-
-        std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            // Handshake.
-            let hello = ProtocolCodec::new().decode_frame(&mut stream).unwrap();
-            ProtocolCodec::encode_frame(
-                &mut stream,
-                hello.seq,
-                &MuxPdu::HelloAck {
-                    client_id: ClientId::from_raw(1),
-                },
-            )
-            .unwrap();
-            consume_set_capabilities(&mut stream);
-
-            handler(&mut stream);
-        })
-    }
-
-    /// `claim_window` sends ClaimWindow and receives WindowClaimed.
-    #[test]
-    fn mux_client_claim_window() {
-        let dir = tempfile::tempdir().unwrap();
-        let sock = dir.path().join("claim.sock");
-
-        let server = fake_server(&sock, |stream| {
-            let req = ProtocolCodec::new().decode_frame(stream).unwrap();
-            assert!(matches!(req.pdu, MuxPdu::ClaimWindow { .. }));
-            ProtocolCodec::encode_frame(stream, req.seq, &MuxPdu::WindowClaimed).unwrap();
-
-            // Keep alive briefly.
-            std::thread::sleep(Duration::from_millis(100));
-        });
-
-        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-        let mut client = MuxClient::connect(&sock, wakeup).unwrap();
-
-        // Need to add the window to local_session first (claim_window
-        // doesn't create the window — it just tells the daemon).
-        let wid = WindowId::from_raw(42);
-        client
-            .local_session
-            .add_window(crate::session::MuxWindow::new(wid));
-
-        let result = client.claim_window(wid);
-        assert!(result.is_ok(), "claim_window should succeed: {result:?}");
-
-        server.join().unwrap();
-    }
-
-    /// `refresh_window_tabs` sends ListTabs and replaces local tab list.
-    #[test]
-    fn mux_client_refresh_window_tabs() {
-        let dir = tempfile::tempdir().unwrap();
-        let sock = dir.path().join("refresh.sock");
-
-        let t1 = crate::TabId::from_raw(10);
-        let t2 = crate::TabId::from_raw(20);
-
-        let server = fake_server(&sock, move |stream| {
-            let req = ProtocolCodec::new().decode_frame(stream).unwrap();
-            assert!(matches!(req.pdu, MuxPdu::ListTabs { .. }));
-            ProtocolCodec::encode_frame(
-                stream,
-                req.seq,
-                &MuxPdu::TabList {
-                    tabs: vec![
-                        MuxTabInfo {
-                            tab_id: t1,
-                            active_pane_id: PaneId::from_raw(100),
-                            pane_count: 1,
-                            title: "tab1".into(),
-                            tree: crate::layout::split_tree::SplitTree::leaf(PaneId::from_raw(100)),
-                            floating: crate::layout::floating::FloatingLayer::new(),
-                            zoomed_pane: None,
-                        },
-                        MuxTabInfo {
-                            tab_id: t2,
-                            active_pane_id: PaneId::from_raw(200),
-                            pane_count: 1,
-                            title: "tab2".into(),
-                            tree: crate::layout::split_tree::SplitTree::leaf(PaneId::from_raw(200)),
-                            floating: crate::layout::floating::FloatingLayer::new(),
-                            zoomed_pane: None,
-                        },
-                    ],
-                },
-            )
-            .unwrap();
-
-            // Keep alive.
-            std::thread::sleep(Duration::from_millis(100));
-        });
-
-        let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-        let mut client = MuxClient::connect(&sock, wakeup).unwrap();
-
-        // Set up local state: a window with one stale tab.
-        let wid = WindowId::from_raw(42);
-        let mut win = crate::session::MuxWindow::new(wid);
-        win.add_tab(crate::TabId::from_raw(999)); // stale tab
-        client.local_session.add_window(win);
-
-        // refresh_window_tabs should replace local tabs with server's.
-        client.refresh_window_tabs(wid);
-
-        let win = client.local_session.get_window(wid).unwrap();
-        assert_eq!(win.tabs(), &[t1, t2], "local tabs should match server");
-
-        server.join().unwrap();
     }
 }

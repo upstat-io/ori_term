@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::id::PaneId;
+use oriterm_mux::PaneId;
 
 use super::{SplitDirection, SplitTree, clamp_ratio};
 

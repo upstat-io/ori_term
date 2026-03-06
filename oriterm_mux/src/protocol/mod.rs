@@ -25,8 +25,8 @@ mod snapshot;
 pub use codec::{DecodeError, DecodedFrame, ProtocolCodec};
 pub use messages::{MsgType, MuxPdu};
 pub use snapshot::{
-    MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireCell, WireCellFlags, WireColor, WireCursor,
-    WireCursorShape, WireRgb, WireSearchMatch, WireSelection,
+    PaneSnapshot, WireCell, WireCellFlags, WireColor, WireCursor, WireCursorShape, WireRgb,
+    WireSearchMatch, WireSelection,
 };
 
 /// Frame header size in bytes.

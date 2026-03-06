@@ -1,7 +1,7 @@
 ---
 plan: "mux-flatten"
 title: "Flatten Mux to Pure Pane Server"
-status: not-started
+status: complete
 references:
   - "plans/roadmap/"
   - "plans/muxbackend-boundary/"
@@ -68,7 +68,7 @@ opinion on how those processes are presented to the user. A GUI client may rende
 them as tabs in windows with split panes. An SSH client may show one at a time.
 A headless test may not render at all. The mux serves all of them identically.
 
-**Motivated by:** The current mux has ~744 references to "window" across 38
+**Motivated by:** The current mux has ~1,046 references to "window" across 39
 files, comments that name `winit`, describe "tab bar order," and emit
 "GUI notifications." An SSH attach client would need to either fake this entire
 session model or ignore it — both are wrong.
@@ -142,12 +142,14 @@ Phase 1 - Migration (parallelizable)
   Gate: oriterm builds and tests pass with local session + layout types
 
 Phase 2 - Mux Surgery
-  +-- 03: Strip InProcessMux of tab/window CRUD
+  NOTE: 03.1 must rewrite tests BEFORE deleting source files to maintain
+  buildability. See section-03 Phase A/B/C execution order.
+  +-- 03: Strip InProcessMux of tab/window CRUD (tests first, then source)
   +-- 03: Simplify MuxEvent/MuxNotification to pane-only
   +-- 03: Remove SessionRegistry, MuxTab, MuxWindow, TabId, WindowId
   Gate: oriterm_mux builds with zero tab/window references
         (layout/ and nav/ still exist but have no internal consumers
-         except protocol/server/backend — stripped in Phase 3)
+         except protocol/backend — stripped in Phase 3)
 
 Phase 3 - Protocol & Server
   +-- 05: Strip tab/window messages from wire protocol
@@ -176,14 +178,17 @@ Phase 4 - Verification
   consumers (session, in_process, protocol, server, backend) are stripped.
 
 **File size warnings:**
-- `rpc_methods.rs` is **825 lines** — already over the 500-line limit.
+- `rpc_methods.rs` is **832 lines** — already over the 500-line limit.
   Phase 3 deletes ~40 methods from it, which will shrink it below the
   limit. If intermediate states leave it over 500 lines, split before
   continuing.
 - `messages.rs` is **761 lines** — already over. Phase 3 deletes ~15
   message types. Same rule: split if intermediate state exceeds 500 lines.
-- `transport.rs` is **525 lines** — slightly over. Phase 3 removes
-  `TabLayoutUpdate` and related code, which should bring it under.
+- `transport/` is a **directory module** (`transport/mod.rs` 396 lines +
+  `transport/reader.rs` 331 lines). Phase 3 removes `TabLayoutUpdate`
+  and related code from both files.
+- `embedded/mod.rs` is **507 lines** — slightly over the 500-line limit.
+  Removing tab/window methods in Phase 3 should bring it under.
 
 ## Metrics (Current State)
 
@@ -192,13 +197,13 @@ Phase 4 - Verification
 | `id/` | `TabId`, `WindowId`, `SessionId` | 2 |
 | `session/` | `MuxTab`, `MuxWindow` | 2 |
 | `registry/` | `SessionRegistry` | 2 |
-| `mux_event/` | 6 notification variants | 2 |
+| `mux_event/` | 7 notification variants (5 removed, 2 renamed) | 2 |
 | `in_process/` | tab/window CRUD | 4 |
 | `layout/` | `SplitTree`, `FloatingLayer`, `Rect`, `compute`, `nav` | 10+ |
 | `protocol/` | ~15 tab/window message types | 4 |
 | `server/` | `window_to_client`, dispatch, notify | 8+ |
-| `backend/` | session queries, snapshot cache | 6 |
-| **Total** | **~744 "window" refs across 38 files** | |
+| `backend/` | session queries, snapshot cache | 7 |
+| **Total** | **~1,046 "window" refs across 39 files** | |
 
 ## Estimated Effort
 
@@ -219,8 +224,8 @@ Phase 4 - Verification
 | ID | Title | File | Status |
 |----|-------|------|--------|
 | 01 | Target API & GUI Session Layer | `section-01-target-api.md` | Complete |
-| 02 | Migrate oriterm to Own Session Types | `section-02-migrate-oriterm.md` | Not Started |
-| 03 | Flatten Mux Core | `section-03-flatten-core.md` | Not Started |
-| 04 | Relocate Layout Modules | `section-04-relocate-layout.md` | Not Started |
-| 05 | Flatten Protocol & Server | `section-05-flatten-protocol.md` | Not Started |
-| 06 | Verification | `section-06-verification.md` | Not Started |
+| 02 | Migrate oriterm to Own Session Types | `section-02-migrate-oriterm.md` | Complete |
+| 03 | Flatten Mux Core | `section-03-flatten-core.md` | Complete |
+| 04 | Relocate Layout Modules | `section-04-relocate-layout.md` | Complete |
+| 05 | Flatten Protocol & Server | `section-05-flatten-protocol.md` | Complete |
+| 06 | Verification | `section-06-verification.md` | Complete |

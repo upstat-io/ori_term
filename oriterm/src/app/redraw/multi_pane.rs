@@ -7,8 +7,8 @@
 
 use std::collections::HashMap;
 
+use crate::session::{DividerLayout, LayoutDescriptor, PaneLayout, Rect, compute_all};
 use oriterm_core::{Column, CursorShape, TermMode};
-use oriterm_mux::layout::{DividerLayout, LayoutDescriptor, PaneLayout, Rect, compute_all};
 
 use super::App;
 use super::mouse_selection::{self, GridCtx};
@@ -25,11 +25,10 @@ impl App {
     pub(in crate::app) fn compute_pane_layouts(
         &self,
     ) -> Option<(Vec<PaneLayout>, Vec<DividerLayout>)> {
-        let mux = self.mux.as_ref()?;
         let win_id = self.active_window?;
-        let win = mux.session().get_window(win_id)?;
+        let win = self.session.get_window(win_id)?;
         let tab_id = win.active_tab()?;
-        let tab = mux.session().get_tab(tab_id)?;
+        let tab = self.session.get_tab(tab_id)?;
 
         let is_zoomed = tab.zoomed_pane().is_some();
 

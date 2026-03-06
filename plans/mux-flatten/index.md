@@ -2,7 +2,7 @@
 reroute: true
 name: "Mux Flatten"
 full_name: "Flatten Mux to Pure Pane Server"
-status: active
+status: complete
 order: 1
 ---
 
@@ -33,7 +33,7 @@ MuxTab replacement, MuxWindow replacement, TabId, WindowId
 ---
 
 ### Section 02: Migrate oriterm to Own Session Types
-**File:** `section-02-migrate-oriterm.md` | **Status:** Not Started
+**File:** `section-02-migrate-oriterm.md` | **Status:** Complete
 
 ```
 import swap, type migration, MuxTab to local, MuxWindow to local
@@ -47,19 +47,22 @@ session sync, spawn flow, close flow, split flow, ID allocation
 ---
 
 ### Section 03: Flatten Mux Core
-**File:** `section-03-flatten-core.md` | **Status:** Not Started
+**File:** `section-03-flatten-core.md` | **Status:** Complete
 
 ```
 InProcessMux, strip tab window, pane-only CRUD
 MuxEvent, MuxNotification, pane events, remove tab variants
+PaneDirty rename PaneOutput, Alert rename PaneBell
 SessionRegistry remove, PaneRegistry keep, IdAllocator
-event_pump simplify, tab_ops delete, floating_ops strip
+event_pump simplify, tab_ops delete, floating_ops delete
+spawn_standalone_pane rename spawn_pane, ClosePaneResult simplify
+Phase A tests, Phase B source delete, Phase C struct strip
 ```
 
 ---
 
 ### Section 04: Relocate Layout Modules
-**File:** `section-04-relocate-layout.md` | **Status:** Not Started
+**File:** `section-04-relocate-layout.md` | **Status:** Complete
 
 ```
 SplitTree copy, FloatingLayer copy, nav copy, layout compute copy
@@ -72,7 +75,7 @@ two-phase: copy (04.1-04.4), delete (04.5)
 ---
 
 ### Section 05: Flatten Protocol & Server
-**File:** `section-05-flatten-protocol.md` | **Status:** Not Started
+**File:** `section-05-flatten-protocol.md` | **Status:** Complete (protocol pane-only, server state stripped, MuxBackend flattened, backends updated; transitional session methods kept in trait until oriterm owns session state)
 
 ```
 wire protocol, MuxPdu, message types, pane-centric protocol
@@ -81,19 +84,20 @@ window_to_client remove, subscriptions simplify, should_exit rewrite
 ClientConnection strip, disconnect_client rewrite
 snapshot, push notifications, pane-only push, TargetClients
 MuxBackend trait simplify, embedded backend, client backend
-transport.rs, TabLayoutUpdate, pushed_layouts, apply_layout_update
-notification.rs, pdu_to_notification, rpc_methods strip
+transport/, TabLayoutUpdate, pushed_layouts, apply_layout_update
+notification.rs, notification_to_pdu, rpc_methods strip
 ```
 
 ---
 
 ### Section 06: Verification
-**File:** `section-06-verification.md` | **Status:** Not Started
+**File:** `section-06-verification.md` | **Status:** Complete (automated verification done; manual GUI smoke test deferred to next Windows run)
 
 ```
 test suite, clippy, build, behavioral equivalence
 contract tests, e2e tests, unit tests
-test migration, test helpers, inject_test_tab
+test migration, test helpers, inject_test_tab, spawn_test_pane
+cargo udeps, dependency audit, public API surface
 ```
 
 ---

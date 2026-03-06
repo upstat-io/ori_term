@@ -7,7 +7,7 @@
 use std::fmt::Write as _;
 use std::time::Duration;
 
-use oriterm_mux::{PaneId, WindowId as MuxWindowId};
+use oriterm_mux::PaneId;
 
 use crate::config::NotifyOnCommandFinish;
 use crate::platform::notify;
@@ -46,7 +46,7 @@ impl App {
     /// Process a single mux notification.
     fn handle_mux_notification(&mut self, notification: MuxNotification) {
         match notification {
-            MuxNotification::PaneDirty(id) => {
+            MuxNotification::PaneOutput(id) => {
                 // Invalidate client-side selection when terminal content changes.
                 // New output can shift scrollback, making selection coordinates stale.
                 self.clear_pane_selection(id);
@@ -64,57 +64,16 @@ impl App {
                 self.mark_all_windows_dirty();
             }
             MuxNotification::PaneClosed(id) => {
-                // Clean up client-side state for this pane.
-                self.pane_selections.remove(&id);
-                self.mark_cursors.remove(&id);
-
-                // Clean up backend-side resources (PTY kill + reader thread
-                // join + child reap on a background thread in embedded mode).
-                if let Some(mux) = self.mux.as_mut() {
-                    mux.cleanup_closed_pane(id);
-                }
-                for ctx in self.windows.values_mut() {
-                    ctx.pane_cache.remove(id);
-                    ctx.dirty = true;
-                }
-            }
-            MuxNotification::TabLayoutChanged(_) => {
-                // Layout changed (split/close) — pane positions shifted.
-                for ctx in self.windows.values_mut() {
-                    ctx.pane_cache.invalidate_all();
-                    ctx.cached_dividers = None;
-                }
-                self.resize_all_panes();
-                self.mark_all_windows_dirty();
-            }
-            MuxNotification::FloatingPaneChanged(_) => {
-                // Floating pane moved/resized — positions shifted but
-                // PTY dimensions unchanged. Skip resize_all_panes.
-                for ctx in self.windows.values_mut() {
-                    ctx.pane_cache.invalidate_all();
-                    ctx.dirty = true;
-                }
+                self.handle_pane_closed(id);
             }
             MuxNotification::PaneTitleChanged(_) => {
-                self.sync_tab_bar_from_mux();
-                self.mark_all_windows_dirty();
-            }
-            MuxNotification::WindowTabsChanged(window_id) => {
-                // In daemon mode, another client may have moved a tab to/from
-                // this window. Re-fetch the authoritative tab list before
-                // rebuilding the tab bar.
-                if let Some(mux) = &mut self.mux {
-                    if mux.is_daemon_mode() {
-                        mux.refresh_window_tabs(window_id);
-                    }
-                }
                 self.sync_tab_bar_from_mux();
                 self.mark_all_windows_dirty();
             }
             MuxNotification::CommandComplete { pane_id, duration } => {
                 self.handle_command_complete(pane_id, duration);
             }
-            MuxNotification::Alert(id) => {
+            MuxNotification::PaneBell(id) => {
                 if let Some(mux) = self.mux.as_mut() {
                     mux.set_bell(id);
                 }
@@ -124,13 +83,6 @@ impl App {
                     }
                 }
                 self.mark_all_windows_dirty();
-            }
-            MuxNotification::WindowClosed(mux_wid) => {
-                self.handle_mux_window_closed(mux_wid);
-            }
-            MuxNotification::LastWindowClosed => {
-                log::info!("last mux window closed, exiting");
-                self.exit_app();
             }
             MuxNotification::ClipboardStore {
                 clipboard_type,
@@ -228,6 +180,68 @@ fn format_duration_body(duration: Duration) -> String {
 }
 
 impl App {
+    /// Handle a pane being closed (shell exit, PTY EOF, or explicit close).
+    ///
+    /// Cleans up client-side state, backend resources, and removes the pane
+    /// from the local session (tree/floating). If the tab becomes empty,
+    /// removes the tab; if the window becomes empty, closes the window.
+    fn handle_pane_closed(&mut self, id: PaneId) {
+        // Clean up client-side state.
+        self.pane_selections.remove(&id);
+        self.mark_cursors.remove(&id);
+
+        // Clean up backend-side resources.
+        if let Some(mux) = self.mux.as_mut() {
+            mux.cleanup_closed_pane(id);
+        }
+        for ctx in self.windows.values_mut() {
+            ctx.pane_cache.remove(id);
+            ctx.dirty = true;
+        }
+
+        // Remove pane from local session (tab tree/floating).
+        let tab_id = self.session.tab_for_pane(id);
+        let Some(tab_id) = tab_id else { return };
+
+        let tab_empty = if let Some(tab) = self.session.get_tab_mut(tab_id) {
+            if tab.is_floating(id) {
+                let new_layer = tab.floating().remove(id);
+                tab.set_floating(new_layer);
+            } else if let Some(new_tree) = tab.tree().remove(id) {
+                tab.replace_layout(new_tree);
+            } else {
+                // Pane already removed from tree/floating.
+            }
+            if tab.active_pane() == id {
+                tab.set_active_pane(tab.tree().first_pane());
+            }
+            tab.all_panes().is_empty()
+        } else {
+            false
+        };
+
+        if tab_empty {
+            let win_id = self.session.window_for_tab(tab_id);
+            self.session.remove_tab(tab_id);
+            if let Some(wid) = win_id {
+                if let Some(win) = self.session.get_window_mut(wid) {
+                    win.remove_tab(tab_id);
+                }
+                let window_empty = self
+                    .session
+                    .get_window(wid)
+                    .is_some_and(|w| w.tabs().is_empty());
+                if window_empty {
+                    self.close_empty_session_window(wid);
+                    return;
+                }
+            }
+        }
+
+        self.sync_tab_bar_from_mux();
+        self.resize_all_panes();
+    }
+
     /// Handle daemon disconnect by closing the window.
     ///
     /// When the daemon connection is lost the terminal state is gone —
@@ -236,29 +250,6 @@ impl App {
     fn handle_daemon_disconnect(&self) {
         log::warn!("daemon connection lost, closing window");
         self.exit_app();
-    }
-
-    /// Handle a mux window being closed by removing its `WindowContext`.
-    ///
-    /// Scans `self.windows` for the winit ID matching the closed mux window,
-    /// removes the context, and updates focus if needed.
-    fn handle_mux_window_closed(&mut self, mux_wid: MuxWindowId) {
-        let winit_id = self
-            .windows
-            .iter()
-            .find(|(_, ctx)| ctx.window.mux_window_id() == mux_wid)
-            .map(|(&id, _)| id);
-        let Some(wid) = winit_id else { return };
-
-        self.windows.remove(&wid);
-
-        // Update focus if the closed window was focused.
-        self.transfer_focus_from(wid);
-
-        log::info!(
-            "mux window closed: {wid:?}, {} remaining",
-            self.windows.len()
-        );
     }
 }
 

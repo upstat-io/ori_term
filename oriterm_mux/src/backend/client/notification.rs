@@ -21,21 +21,7 @@ pub(super) fn pdu_to_notification(pdu: MuxPdu) -> Option<MuxNotification> {
         MuxPdu::NotifyPaneTitleChanged { pane_id, .. } => {
             Some(MuxNotification::PaneTitleChanged(pane_id))
         }
-        MuxPdu::NotifyPaneBell { pane_id } => Some(MuxNotification::Alert(pane_id)),
-        MuxPdu::NotifyWindowTabsChanged { window_id } => {
-            Some(MuxNotification::WindowTabsChanged(window_id))
-        }
-        MuxPdu::NotifyTabMoved {
-            tab_id,
-            from_window,
-            to_window,
-        } => {
-            log::debug!(
-                "tab {tab_id} moved from {from_window} to {to_window} \
-                 (no direct MuxNotification equivalent)"
-            );
-            None
-        }
+        MuxPdu::NotifyPaneBell { pane_id } => Some(MuxNotification::PaneBell(pane_id)),
         other => {
             log::debug!("unexpected notification PDU: {other:?}");
             None

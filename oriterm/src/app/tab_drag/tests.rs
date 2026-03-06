@@ -131,7 +131,7 @@ fn tear_off_within_bar_never_exceeds() {
 #[test]
 fn drag_state_construction() {
     let state = TabDragState {
-        tab_id: oriterm_mux::TabId::from_raw(42),
+        tab_id: crate::session::TabId::from_raw(42),
         original_index: 2,
         current_index: 2,
         origin_x: 100.0,
@@ -242,7 +242,7 @@ fn sequential_drag_left_decrements_index() {
 fn cancel_pending_is_noop() {
     // In Pending phase, cancel should not require undo since no swap happened.
     let state = TabDragState {
-        tab_id: oriterm_mux::TabId::from_raw(1),
+        tab_id: crate::session::TabId::from_raw(1),
         original_index: 2,
         current_index: 2,
         origin_x: 100.0,
@@ -262,7 +262,7 @@ fn cancel_pending_is_noop() {
 fn cancel_dragging_with_swaps_needs_undo() {
     // After swaps, original_index != current_index → undo needed.
     let state = TabDragState {
-        tab_id: oriterm_mux::TabId::from_raw(1),
+        tab_id: crate::session::TabId::from_raw(1),
         original_index: 0,
         current_index: 3,
         origin_x: 100.0,
@@ -282,7 +282,7 @@ fn cancel_dragging_with_swaps_needs_undo() {
 fn cancel_dragging_no_swap_no_undo() {
     // DraggingInBar but tab never actually moved (jittered but same slot).
     let state = TabDragState {
-        tab_id: oriterm_mux::TabId::from_raw(1),
+        tab_id: crate::session::TabId::from_raw(1),
         original_index: 2,
         current_index: 2,
         origin_x: 100.0,

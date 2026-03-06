@@ -6,15 +6,12 @@
 use std::collections::HashMap;
 
 use crate::pane::Pane;
-use crate::registry::SessionRegistry;
-use crate::{MuxNotification, MuxPdu, PaneId, WindowId};
+use crate::{MuxNotification, MuxPdu, PaneId};
 
 /// Which clients should receive a notification.
 pub enum TargetClients {
     /// All clients subscribed to a specific pane.
     PaneSubscribers(PaneId),
-    /// The client that owns a specific window.
-    WindowClient(WindowId),
 }
 
 /// Convert a mux notification into a target + PDU pair for IPC dispatch.
@@ -24,10 +21,9 @@ pub enum TargetClients {
 pub fn notification_to_pdu(
     notif: &MuxNotification,
     panes: &HashMap<PaneId, Pane>,
-    session: &SessionRegistry,
 ) -> Option<(TargetClients, MuxPdu)> {
     match notif {
-        MuxNotification::PaneDirty(pane_id) => Some((
+        MuxNotification::PaneOutput(pane_id) => Some((
             TargetClients::PaneSubscribers(*pane_id),
             MuxPdu::NotifyPaneOutput { pane_id: *pane_id },
         )),
@@ -51,50 +47,16 @@ pub fn notification_to_pdu(
             ))
         }
 
-        MuxNotification::Alert(pane_id) => Some((
+        MuxNotification::PaneBell(pane_id) => Some((
             TargetClients::PaneSubscribers(*pane_id),
             MuxPdu::NotifyPaneBell { pane_id: *pane_id },
         )),
 
-        MuxNotification::WindowTabsChanged(window_id) => Some((
-            TargetClients::WindowClient(*window_id),
-            MuxPdu::NotifyWindowTabsChanged {
-                window_id: *window_id,
-            },
-        )),
-
-        MuxNotification::TabLayoutChanged(tab_id)
-        | MuxNotification::FloatingPaneChanged(tab_id) => tab_layout_changed_pdu(*tab_id, session),
-
         // Notifications not pushed over IPC.
         MuxNotification::CommandComplete { .. }
-        | MuxNotification::WindowClosed(_)
-        | MuxNotification::LastWindowClosed
         | MuxNotification::ClipboardStore { .. }
         | MuxNotification::ClipboardLoad { .. } => None,
     }
-}
-
-/// Build a `NotifyTabLayoutChanged` PDU for a tab.
-///
-/// Looks up the tab's current layout from the session and determines the
-/// owning window for client routing.
-fn tab_layout_changed_pdu(
-    tab_id: crate::TabId,
-    session: &SessionRegistry,
-) -> Option<(TargetClients, MuxPdu)> {
-    let tab = session.get_tab(tab_id)?;
-    let window_id = session.window_for_tab(tab_id)?;
-    Some((
-        TargetClients::WindowClient(window_id),
-        MuxPdu::NotifyTabLayoutChanged {
-            tab_id,
-            tree: tab.tree().clone(),
-            floating: tab.floating().clone(),
-            active_pane: tab.active_pane(),
-            zoomed_pane: tab.zoomed_pane(),
-        },
-    ))
 }
 
 #[cfg(test)]

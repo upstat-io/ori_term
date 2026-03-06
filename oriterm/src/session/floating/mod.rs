@@ -7,8 +7,8 @@
 //! Hot-path operations (drag move/resize) have in-place `_mut` variants
 //! that avoid cloning the entire `Vec` on every mouse move.
 
-use crate::id::PaneId;
-use crate::layout::rect::Rect;
+use super::rect::Rect;
+use oriterm_mux::PaneId;
 
 /// Default floating pane width as a fraction of available tab width.
 const DEFAULT_WIDTH_FRACTION: f32 = 0.6;

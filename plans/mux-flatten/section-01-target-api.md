@@ -18,7 +18,7 @@ sections:
 
 # Section 01: Target API & GUI Session Layer
 
-**Status:** Not Started
+**Status:** Complete
 **Goal:** The flat mux API is defined and documented. GUI-side session types
 exist in `oriterm` and can model the current tab/window/layout hierarchy
 without depending on any mux types beyond `PaneId` and `DomainId`.
@@ -56,7 +56,9 @@ client's problem.
 **Pane lifecycle:**
 - `spawn_pane(config, wakeup) -> io::Result<(PaneId, Pane)>`
 - `close_pane(pane_id)` — kills PTY, unregisters
-- `resize_pane(pane_id, cols, rows)` — resizes PTY
+- `resize_pane(pane_id, cols, rows)` -- resizes PTY
+  (currently named `resize_pane_grid` in `MuxBackend` trait; rename
+  after the tab-scoped `resize_pane` is removed in section 05.4)
 - `write_to_pane(pane_id, data)` — sends bytes to PTY stdin
 - `get_pane(pane_id) -> Option<&Pane>` / `get_pane_mut`
 

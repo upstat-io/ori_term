@@ -4,17 +4,17 @@
 use oriterm_core::{TermMode, Theme};
 use oriterm_ui::theme::UiTheme;
 
-use oriterm_mux::session::{MuxTab, MuxWindow};
-use oriterm_mux::{PaneId, SessionRegistry, TabId, WindowId};
+use oriterm_mux::PaneId;
 
 use crate::config::{Config, ThemeOverride};
+use crate::session::{SessionRegistry, Tab, TabId, Window, WindowId};
 
 use super::resolve_ui_theme_with;
 
 /// Mirror of `App::active_pane_id()` — same query chain, testable without App.
 ///
-/// App::active_pane_id additionally requires `self.mux.as_ref()?` before
-/// accessing the session. This helper tests the session resolution chain.
+/// App::active_pane_id reads from `self.session` (local session registry).
+/// This helper tests the session resolution chain.
 fn resolve_active_pane(
     session: &SessionRegistry,
     active_window: Option<WindowId>,
@@ -79,9 +79,9 @@ fn resolve_auto_unknown_falls_back_to_dark() {
 
 // -- active_pane_id resolution chain --
 //
-// These test the session query chain that `App::active_pane_id()` delegates to.
-// App adds a None check for `self.mux` and `self.active_window` first, then
-// performs the same chain: get_window → active_tab → get_tab → active_pane.
+// These test the session query chain that `App::active_pane_id()` uses.
+// App reads from `self.session` (local session registry): get_window →
+// active_tab → get_tab → active_pane.
 
 /// Build a session with one window, one tab, one pane.
 fn session_with_one_pane() -> (SessionRegistry, WindowId, TabId, PaneId) {
@@ -90,10 +90,10 @@ fn session_with_one_pane() -> (SessionRegistry, WindowId, TabId, PaneId) {
     let tid = TabId::from_raw(1);
     let pid = PaneId::from_raw(1);
 
-    let mut win = MuxWindow::new(wid);
+    let mut win = Window::new(wid);
     win.add_tab(tid);
     session.add_window(win);
-    session.add_tab(MuxTab::new(tid, pid));
+    session.add_tab(Tab::new(tid, pid));
 
     (session, wid, tid, pid)
 }
@@ -118,7 +118,7 @@ fn active_pane_resolve_none_for_empty_window() {
     let mut session = SessionRegistry::new();
     let wid = WindowId::from_raw(1);
     // Window exists but has no tabs.
-    session.add_window(MuxWindow::new(wid));
+    session.add_window(Window::new(wid));
     assert_eq!(resolve_active_pane(&session, Some(wid)), None);
 }
 
@@ -131,7 +131,7 @@ fn active_pane_resolve_happy_path() {
 #[test]
 fn active_pane_resolve_after_close_returns_reassigned() {
     // Two panes in one tab. Close the active pane → active should shift.
-    use oriterm_mux::layout::SplitDirection;
+    use crate::session::SplitDirection;
 
     let mut session = SessionRegistry::new();
     let wid = WindowId::from_raw(1);
@@ -139,11 +139,11 @@ fn active_pane_resolve_after_close_returns_reassigned() {
     let p1 = PaneId::from_raw(1);
     let p2 = PaneId::from_raw(2);
 
-    let mut win = MuxWindow::new(wid);
+    let mut win = Window::new(wid);
     win.add_tab(tid);
     session.add_window(win);
 
-    let mut tab = MuxTab::new(tid, p1);
+    let mut tab = Tab::new(tid, p1);
     let tree = tab.tree().split_at(p1, SplitDirection::Vertical, p2, 0.5);
     tab.set_tree(tree);
     session.add_tab(tab);
@@ -200,7 +200,7 @@ fn focus_in_out_combined_with_other_modes() {
 // -- Multi-window active_window tracking --
 //
 // When focus moves between windows, `active_window` updates to track which
-// mux window corresponds to the focused OS window. These tests verify the
+// session window corresponds to the focused OS window. These tests verify the
 // session model supports distinct per-window pane resolution.
 
 #[test]
@@ -211,19 +211,19 @@ fn multi_window_focus_switch_resolves_different_panes() {
     let w1 = WindowId::from_raw(1);
     let t1 = TabId::from_raw(1);
     let pa = PaneId::from_raw(1);
-    let mut win1 = MuxWindow::new(w1);
+    let mut win1 = Window::new(w1);
     win1.add_tab(t1);
     session.add_window(win1);
-    session.add_tab(MuxTab::new(t1, pa));
+    session.add_tab(Tab::new(t1, pa));
 
     // Window 2: tab with pane B.
     let w2 = WindowId::from_raw(2);
     let t2 = TabId::from_raw(2);
     let pb = PaneId::from_raw(2);
-    let mut win2 = MuxWindow::new(w2);
+    let mut win2 = Window::new(w2);
     win2.add_tab(t2);
     session.add_window(win2);
-    session.add_tab(MuxTab::new(t2, pb));
+    session.add_tab(Tab::new(t2, pb));
 
     // Focus window 1 → active pane is A.
     assert_eq!(resolve_active_pane(&session, Some(w1)), Some(pa));
@@ -240,10 +240,10 @@ fn multi_window_stale_window_returns_none() {
     let w1 = WindowId::from_raw(1);
     let t1 = TabId::from_raw(1);
     let pa = PaneId::from_raw(1);
-    let mut win1 = MuxWindow::new(w1);
+    let mut win1 = Window::new(w1);
     win1.add_tab(t1);
     session.add_window(win1);
-    session.add_tab(MuxTab::new(t1, pa));
+    session.add_tab(Tab::new(t1, pa));
 
     // Focus a window that doesn't exist → None.
     let stale = WindowId::from_raw(42);
@@ -264,18 +264,18 @@ fn two_window_session() -> (SessionRegistry, WindowId, WindowId, PaneId, PaneId)
     let w1 = WindowId::from_raw(1);
     let t1 = TabId::from_raw(1);
     let p1 = PaneId::from_raw(1);
-    let mut win1 = MuxWindow::new(w1);
+    let mut win1 = Window::new(w1);
     win1.add_tab(t1);
     session.add_window(win1);
-    session.add_tab(MuxTab::new(t1, p1));
+    session.add_tab(Tab::new(t1, p1));
 
     let w2 = WindowId::from_raw(2);
     let t2 = TabId::from_raw(2);
     let p2 = PaneId::from_raw(2);
-    let mut win2 = MuxWindow::new(w2);
+    let mut win2 = Window::new(w2);
     win2.add_tab(t2);
     session.add_window(win2);
-    session.add_tab(MuxTab::new(t2, p2));
+    session.add_tab(Tab::new(t2, p2));
 
     (session, w1, w2, p1, p2)
 }
@@ -343,10 +343,10 @@ fn multi_window_close_preserves_other_window_tabs() {
             let w = WindowId::from_raw(i);
             let t = TabId::from_raw(i);
             let p = PaneId::from_raw(i);
-            let mut win = MuxWindow::new(w);
+            let mut win = Window::new(w);
             win.add_tab(t);
             session.add_window(win);
-            session.add_tab(MuxTab::new(t, p));
+            session.add_tab(Tab::new(t, p));
             (w, t, p)
         })
         .collect();

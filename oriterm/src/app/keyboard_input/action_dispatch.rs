@@ -215,14 +215,10 @@ impl App {
             Action::MoveTabToNewWindow => {
                 // Resolve the active tab index and defer to `about_to_wait`
                 // where `ActiveEventLoop` is available.
-                let idx = self
-                    .mux
-                    .as_ref()
-                    .zip(self.active_window)
-                    .and_then(|(m, wid)| {
-                        let win = m.session().get_window(wid)?;
-                        Some(win.active_tab_idx())
-                    });
+                let idx = self.active_window.and_then(|wid| {
+                    let win = self.session.get_window(wid)?;
+                    Some(win.active_tab_idx())
+                });
                 if let Some(i) = idx {
                     self.move_tab_to_new_window_deferred(i);
                 }

@@ -84,7 +84,13 @@ Colors downgrade gracefully: TrueColor → nearest ANSI256 → nearest ANSI → 
 
 ## Key Paths
 
-`src/app.rs` — App struct, winit event loop, input dispatch | `src/tab.rs` — Tab (Grid + PTY + VTE) | `src/grid/mod.rs` — Grid (rows, cursor, scrollback, reflow) | `src/term_handler.rs` — VTE Handler impl (~50 methods) | `src/gpu/renderer.rs` — GPU rendering (wgpu, draw_frame) | `src/gpu/atlas.rs` — Glyph atlas (1024x1024 shelf packing) | `src/gpu/pipeline.rs` — WGSL shader pipelines | `src/tab_bar.rs` — Tab bar rendering + hit-testing | `src/drag.rs` — Chrome-style drag state machine | `src/cell.rs` — Rich Cell (24 bytes) + CellFlags | `src/key_encoding.rs` — Kitty + legacy key encoding | `src/config.rs` — TOML config | `src/render.rs` — FontSet (fontdue, 4 style variants + fallback chain) | `src/palette.rs` — 270-entry color palette | `src/selection.rs` — 3-point selection model | `src/search.rs` — Search (plain + regex) | `src/url_detect.rs` — Implicit URL detection
+**oriterm (GUI binary):** `oriterm/src/app/` — App struct, winit event loop, input dispatch | `oriterm/src/session/` — GUI session model (tabs, windows, layouts) | `oriterm/src/session/split_tree/` — SplitTree pane tiling | `oriterm/src/session/floating/` — FloatingLayer pane overlay | `oriterm/src/session/compute/` — Layout computation (pixel-space) | `oriterm/src/session/nav/` — Directional pane navigation
+
+**oriterm_mux (pane server):** `oriterm_mux/src/in_process/` — InProcessMux (pane CRUD, event pump) | `oriterm_mux/src/registry/` — PaneRegistry (flat pane storage) | `oriterm_mux/src/pane/` — Pane (terminal state, PTY I/O) | `oriterm_mux/src/backend/` — MuxBackend trait (embedded + daemon) | `oriterm_mux/src/server/` — Daemon server (IPC protocol) | `oriterm_mux/src/protocol/` — Wire protocol (PDU codec)
+
+**oriterm_core (terminal emulation):** `oriterm_core/src/grid/` — Grid (rows, cursor, scrollback, reflow) | `oriterm_core/src/term_handler.rs` — VTE Handler impl | `oriterm_core/src/cell.rs` — Rich Cell + CellFlags | `oriterm_core/src/palette.rs` — Color palette | `oriterm_core/src/selection.rs` — Selection model | `oriterm_core/src/search.rs` — Search (plain + regex)
+
+**oriterm_gpu (rendering):** `oriterm_gpu/src/renderer.rs` — GPU rendering (wgpu, draw_frame) | `oriterm_gpu/src/atlas.rs` — Glyph atlas | `oriterm_gpu/src/pipeline.rs` — WGSL shader pipelines
 
 ## Reference Repos (`~/projects/reference_repos/console_repos/`)
 

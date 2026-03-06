@@ -8,7 +8,7 @@
 
 use winit::window::WindowId;
 
-use oriterm_mux::TabId;
+use crate::session::TabId;
 use oriterm_ui::platform_windows::{self, OsDragResult};
 use oriterm_ui::widgets::tab_bar::constants::{
     CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN,
@@ -63,24 +63,21 @@ impl App {
 
         if let Some((target_wid, screen_x)) = target {
             let idx = self.compute_drop_index(target_wid, screen_x);
-            let target_mux_wid = self
+            let target_session_wid = self
                 .windows
                 .get(&target_wid)
-                .map(|c| c.window.mux_window_id());
+                .map(|c| c.window.session_window_id());
 
-            // Move tab from torn window to target via mux.
-            if let Some(dest_mux) = target_mux_wid {
-                let moved = {
-                    let Some(mux) = &mut self.mux else { return };
-                    mux.move_tab_to_window_at(tab_id, dest_mux, idx)
-                };
-                if !moved {
-                    log::error!("check_torn_off_merge: move_tab_to_window_at failed");
-                    // Show the torn window as fallback.
-                    if let Some(ctx) = self.windows.get(&winit_id) {
-                        platform_windows::show_window(ctx.window.window());
+            // Move tab from torn window to target (local session).
+            if let Some(dest_wid) = target_session_wid {
+                let src_wid = self.session.window_for_tab(tab_id);
+                if let Some(wid) = src_wid {
+                    if let Some(win) = self.session.get_window_mut(wid) {
+                        win.remove_tab(tab_id);
                     }
-                    return;
+                }
+                if let Some(win) = self.session.get_window_mut(dest_wid) {
+                    win.insert_tab_at(idx, tab_id);
                 }
             }
 
@@ -92,7 +89,7 @@ impl App {
 
             // Activate and focus the target window.
             if let Some(ctx) = self.windows.get(&target_wid) {
-                self.active_window = Some(ctx.window.mux_window_id());
+                self.active_window = Some(ctx.window.session_window_id());
                 ctx.window.window().focus_window();
             }
             self.focused_window_id = Some(target_wid);
@@ -198,15 +195,13 @@ impl App {
             let ly = local_y / scale;
 
             // Resolve tab index in target window.
-            let idx = self
-                .mux
-                .as_ref()
-                .and_then(|m| {
-                    let mux_wid = ctx.window.mux_window_id();
-                    let win = m.session().get_window(mux_wid)?;
-                    win.tabs().iter().position(|&t| t == tab_id)
-                })
-                .unwrap_or(0);
+            let idx = {
+                let session_wid = ctx.window.session_window_id();
+                self.session
+                    .get_window(session_wid)
+                    .and_then(|win| win.tabs().iter().position(|&t| t == tab_id))
+                    .unwrap_or(0)
+            };
 
             let cap = ctx.chrome.caption_height();
             (idx, lx, ly, cap)
@@ -244,7 +239,7 @@ impl App {
         // Focus + activate the target window and acquire width lock.
         self.focused_window_id = Some(target_wid);
         if let Some(ctx) = self.windows.get(&target_wid) {
-            self.active_window = Some(ctx.window.mux_window_id());
+            self.active_window = Some(ctx.window.session_window_id());
             let tw = ctx.tab_bar.layout().tab_width;
             self.acquire_tab_width_lock(tw);
         }

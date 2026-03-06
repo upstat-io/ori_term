@@ -26,8 +26,7 @@ use self::helpers::drop_pane_background;
 /// Dispatch a client request PDU to the mux, returning a [`DispatchResult`].
 ///
 /// The result contains the response PDU and side-effect flags that the
-/// caller uses for subscription sync, pending-push cleanup, and
-/// window-to-client index updates.
+/// caller uses for subscription sync and pending-push cleanup.
 #[allow(
     clippy::too_many_lines,
     reason = "exhaustive match dispatch — splitting would scatter the routing table"
@@ -43,14 +42,6 @@ pub fn dispatch_request(
         MuxPdu::Unsubscribe { pane_id } => Some(*pane_id),
         _ => None,
     };
-    let claim_wid = match &pdu {
-        MuxPdu::ClaimWindow { window_id } => Some(*window_id),
-        _ => None,
-    };
-    let close_wid = match &pdu {
-        MuxPdu::CloseWindow { window_id } => Some(*window_id),
-        _ => None,
-    };
 
     let response = match pdu {
         MuxPdu::Hello { pid } => {
@@ -60,51 +51,29 @@ pub fn dispatch_request(
             })
         }
 
-        MuxPdu::CreateWindow => {
-            let window_id = ctx.mux.create_window();
-            conn.track_created_window(window_id);
-            log::debug!("created {window_id}");
-            Some(MuxPdu::WindowCreated { window_id })
-        }
-
-        MuxPdu::CreateTab {
-            window_id,
-            shell,
-            cwd,
-            theme,
-        } => {
+        MuxPdu::SpawnPane { shell, cwd, theme } => {
             let config = SpawnConfig {
                 shell,
                 cwd: cwd.map(PathBuf::from),
                 ..SpawnConfig::default()
             };
             let theme = parse_theme(theme.as_deref());
-            match ctx.mux.create_tab(window_id, &config, theme, ctx.wakeup) {
-                Ok((tab_id, pane_id, pane)) => {
+            match ctx.mux.spawn_standalone_pane(&config, theme, ctx.wakeup) {
+                Ok((pane_id, pane)) => {
                     ctx.panes.insert(pane_id, pane);
                     let domain_id = ctx.mux.default_domain();
-                    log::debug!("created {tab_id} with {pane_id} in {window_id}");
-                    Some(MuxPdu::TabCreated {
-                        tab_id,
-                        pane_id,
-                        domain_id,
-                    })
+                    log::debug!("spawned {pane_id}");
+                    Some(MuxPdu::SpawnPaneResponse { pane_id, domain_id })
                 }
                 Err(e) => Some(MuxPdu::Error {
-                    message: format!("create_tab failed: {e}"),
+                    message: format!("spawn_pane failed: {e}"),
                 }),
             }
         }
 
-        MuxPdu::CloseTab { tab_id } => {
-            let removed = ctx.mux.close_tab(tab_id);
-            for &pid in &removed {
-                drop_pane_background(ctx.panes.remove(&pid));
-                ctx.snapshot_cache.remove(pid);
-            }
-            ctx.closed_panes.extend_from_slice(&removed);
-            log::debug!("closed {tab_id}");
-            Some(MuxPdu::TabClosed)
+        MuxPdu::ListPanes => {
+            let pane_ids: Vec<_> = ctx.panes.keys().copied().collect();
+            Some(MuxPdu::ListPanesResponse { pane_ids })
         }
 
         MuxPdu::ClosePane { pane_id } => {
@@ -114,17 +83,6 @@ pub fn dispatch_request(
             ctx.closed_panes.push(pane_id);
             log::debug!("closed {pane_id}");
             Some(MuxPdu::PaneClosedAck)
-        }
-
-        MuxPdu::CloseWindow { window_id } => {
-            let pane_ids = ctx.mux.close_window(window_id);
-            for &pid in &pane_ids {
-                drop_pane_background(ctx.panes.remove(&pid));
-                ctx.snapshot_cache.remove(pid);
-            }
-            ctx.closed_panes.extend_from_slice(&pane_ids);
-            log::debug!("closed {window_id}, {} panes removed", pane_ids.len());
-            Some(MuxPdu::WindowClosed { pane_ids })
         }
 
         MuxPdu::Input { pane_id, data } => {
@@ -278,32 +236,11 @@ pub fn dispatch_request(
             None // Fire-and-forget — no ack.
         }
 
-        MuxPdu::ClaimWindow { window_id } => {
-            conn.add_window_id(window_id);
-            log::info!("client {} claimed {window_id}", conn.id());
-            Some(MuxPdu::WindowClaimed)
-        }
-
         MuxPdu::Ping => Some(MuxPdu::PingAck),
 
         MuxPdu::Shutdown => {
             log::info!("shutdown requested by client {}", conn.id());
             Some(MuxPdu::ShutdownAck)
-        }
-
-        MuxPdu::MoveTabToWindow {
-            tab_id,
-            target_window_id,
-        } => {
-            let ok = ctx.mux.move_tab_to_window(tab_id, target_window_id);
-            if ok {
-                log::debug!("moved {tab_id} to {target_window_id}");
-                Some(MuxPdu::TabMovedAck)
-            } else {
-                Some(MuxPdu::Error {
-                    message: format!("move_tab_to_window failed: {tab_id} -> {target_window_id}"),
-                })
-            }
         }
 
         MuxPdu::Subscribe { pane_id } => {
@@ -324,21 +261,6 @@ pub fn dispatch_request(
             Some(MuxPdu::Unsubscribed)
         }
 
-        MuxPdu::ListWindows => {
-            let windows = snapshot::build_window_list(ctx.mux.session());
-            Some(MuxPdu::WindowList { windows })
-        }
-
-        MuxPdu::ListTabs { window_id } => {
-            let tabs = snapshot::build_tab_list(
-                ctx.mux.session(),
-                ctx.mux.pane_registry(),
-                ctx.panes,
-                window_id,
-            );
-            Some(MuxPdu::TabList { tabs })
-        }
-
         MuxPdu::GetPaneSnapshot { pane_id } => match ctx.panes.get(&pane_id) {
             Some(pane) => {
                 let snap = ctx.snapshot_cache.build_and_take(pane_id, pane);
@@ -348,90 +270,6 @@ pub fn dispatch_request(
                 message: format!("pane not found: {pane_id}"),
             }),
         },
-
-        MuxPdu::SpawnFloatingPane {
-            tab_id,
-            shell,
-            cwd,
-            theme,
-            available,
-        } => {
-            let config = SpawnConfig {
-                shell,
-                cwd: cwd.map(PathBuf::from),
-                ..SpawnConfig::default()
-            };
-            let theme = parse_theme(theme.as_deref());
-            match ctx
-                .mux
-                .spawn_floating_pane(tab_id, &config, theme, ctx.wakeup, &available)
-            {
-                Ok((new_pane_id, pane)) => {
-                    ctx.panes.insert(new_pane_id, pane);
-                    let domain_id = ctx.mux.default_domain();
-                    log::debug!("spawned floating pane {new_pane_id} in {tab_id}");
-                    Some(MuxPdu::FloatingPaneSpawned {
-                        new_pane_id,
-                        domain_id,
-                    })
-                }
-                Err(e) => Some(MuxPdu::Error {
-                    message: format!("spawn_floating_pane failed: {e}"),
-                }),
-            }
-        }
-
-        MuxPdu::SplitPane {
-            tab_id,
-            pane_id,
-            direction,
-            shell,
-            cwd,
-            theme,
-        } => {
-            let config = SpawnConfig {
-                shell,
-                cwd: cwd.map(PathBuf::from),
-                ..SpawnConfig::default()
-            };
-            let theme = parse_theme(theme.as_deref());
-            match ctx
-                .mux
-                .split_pane(tab_id, pane_id, direction, &config, theme, ctx.wakeup)
-            {
-                Ok((new_pane_id, pane)) => {
-                    ctx.panes.insert(new_pane_id, pane);
-                    let domain_id = ctx.mux.default_domain();
-                    log::debug!("split {pane_id} -> {new_pane_id}");
-                    Some(MuxPdu::PaneSplit {
-                        new_pane_id,
-                        domain_id,
-                    })
-                }
-                Err(e) => Some(MuxPdu::Error {
-                    message: format!("split_pane failed: {e}"),
-                }),
-            }
-        }
-
-        MuxPdu::CycleTab { window_id, delta } => {
-            match ctx.mux.cycle_active_tab(window_id, delta as isize) {
-                Some(tab_id) => Some(MuxPdu::ActiveTabChanged { tab_id }),
-                None => Some(MuxPdu::Error {
-                    message: format!("cycle_tab failed for {window_id}"),
-                }),
-            }
-        }
-
-        MuxPdu::SetActiveTab { window_id, tab_id } => {
-            if ctx.mux.switch_active_tab(window_id, tab_id) {
-                Some(MuxPdu::ActiveTabChanged { tab_id })
-            } else {
-                Some(MuxPdu::Error {
-                    message: format!("set_active_tab failed: {window_id}/{tab_id}"),
-                })
-            }
-        }
 
         MuxPdu::ExtractText { pane_id, selection } => {
             let sel = selection.to_selection();
@@ -482,8 +320,6 @@ pub fn dispatch_request(
     DispatchResult {
         sub_changed,
         unsubscribed_pane: unsub_pane,
-        claimed_window: claim_wid.filter(|_| matches!(&response, Some(MuxPdu::WindowClaimed))),
-        closed_window: close_wid.filter(|_| matches!(&response, Some(MuxPdu::WindowClosed { .. }))),
         response,
     }
 }

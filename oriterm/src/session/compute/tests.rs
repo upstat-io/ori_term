@@ -1,8 +1,8 @@
 use super::{LayoutDescriptor, compute_dividers, compute_layout};
-use crate::id::PaneId;
-use crate::layout::floating::{FloatingLayer, FloatingPane};
-use crate::layout::rect::Rect;
-use crate::layout::split_tree::{SplitDirection, SplitTree};
+use crate::session::floating::{FloatingLayer, FloatingPane};
+use crate::session::rect::Rect;
+use crate::session::split_tree::{SplitDirection, SplitTree};
+use oriterm_mux::PaneId;
 
 fn p(n: u64) -> PaneId {
     PaneId::from_raw(n)
@@ -402,7 +402,7 @@ fn hit_test_consistent_after_resize() {
     let midpoint_x = l1.pixel_rect.x + l1.pixel_rect.width + desc.divider_px / 2.0;
 
     // Point just left of divider should be in pane 1.
-    let hit_left = super::super::super::nav::nearest_pane(&before, midpoint_x - 5.0, 400.0);
+    let hit_left = crate::session::nav::nearest_pane(&before, midpoint_x - 5.0, 400.0);
     assert_eq!(hit_left, Some(p(1)));
 
     // Now resize to 70/30 — divider moves right.
@@ -411,11 +411,11 @@ fn hit_test_consistent_after_resize() {
 
     // Same x that was in pane 1's territory should still be in pane 1
     // (divider moved further right).
-    let hit_after = super::super::super::nav::nearest_pane(&after, midpoint_x - 5.0, 400.0);
+    let hit_after = crate::session::nav::nearest_pane(&after, midpoint_x - 5.0, 400.0);
     assert_eq!(hit_after, Some(p(1)));
 
     // Point at old divider position should now be inside pane 1.
-    let hit_old_div = super::super::super::nav::nearest_pane(&after, midpoint_x, 400.0);
+    let hit_old_div = crate::session::nav::nearest_pane(&after, midpoint_x, 400.0);
     assert_eq!(hit_old_div, Some(p(1)));
 }
 

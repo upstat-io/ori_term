@@ -11,10 +11,6 @@ use oriterm_core::Side;
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::selection::{Selection, SelectionMode, SelectionPoint};
 
-use crate::id::{PaneId, TabId, WindowId};
-use crate::layout::floating::FloatingLayer;
-use crate::layout::split_tree::SplitTree;
-
 /// RGB color on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireRgb {
@@ -287,34 +283,4 @@ impl WireSelection {
             },
         }
     }
-}
-
-/// Summary info for a mux window (used in `ListWindows` response).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MuxWindowInfo {
-    /// Window identity.
-    pub window_id: WindowId,
-    /// Number of tabs in the window.
-    pub tab_count: u32,
-    /// Currently active tab (`None` for empty windows).
-    pub active_tab_id: Option<TabId>,
-}
-
-/// Summary info for a mux tab (used in `ListTabs` response).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MuxTabInfo {
-    /// Tab identity.
-    pub tab_id: TabId,
-    /// Currently focused pane.
-    pub active_pane_id: PaneId,
-    /// Number of panes in the tab.
-    pub pane_count: u32,
-    /// Tab title (derived from the active pane's title).
-    pub title: String,
-    /// Current split tree layout.
-    pub tree: SplitTree,
-    /// Floating pane layer.
-    pub floating: FloatingLayer,
-    /// Pane currently zoomed to fill the tab, if any.
-    pub zoomed_pane: Option<PaneId>,
 }

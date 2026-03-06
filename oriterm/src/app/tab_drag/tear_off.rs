@@ -8,7 +8,7 @@
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use oriterm_mux::TabId;
+use crate::session::TabId;
 use oriterm_ui::platform_windows::{self, OsDragConfig};
 use oriterm_ui::widgets::tab_bar::constants::{
     CONTROLS_ZONE_WIDTH, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN,
@@ -44,29 +44,28 @@ impl App {
         self.release_tab_width_lock();
 
         // Refuse to tear off the last tab in the session.
-        let is_last = self
-            .mux
-            .as_ref()
-            .is_some_and(|m| m.session().tab_count() <= 1);
+        let is_last = self.session.tab_count() <= 1;
         if is_last {
             log::warn!("tear_off_tab: refused — last tab in session");
             return;
         }
 
         // Create bare window (hidden, no tabs).
-        let Some((new_winit_id, new_mux_wid)) = self.create_window_bare(event_loop) else {
+        let Some((new_winit_id, new_session_wid)) = self.create_window_bare(event_loop) else {
             return;
         };
 
-        // Move tab from source window to new window via mux.
-        let moved = {
-            let Some(mux) = &mut self.mux else { return };
-            mux.move_tab_to_window_at(tab_id, new_mux_wid, 0)
-        };
-        if !moved {
-            log::error!("tear_off_tab: move_tab_to_window_at failed");
-            self.remove_empty_window(new_winit_id);
-            return;
+        // Move tab from source window to new window (local session).
+        {
+            let src_wid = self.session.window_for_tab(tab_id);
+            if let Some(wid) = src_wid {
+                if let Some(win) = self.session.get_window_mut(wid) {
+                    win.remove_tab(tab_id);
+                }
+            }
+            if let Some(win) = self.session.get_window_mut(new_session_wid) {
+                win.insert_tab_at(0, tab_id);
+            }
         }
 
         // Drain mux notifications from the move.
@@ -108,7 +107,7 @@ impl App {
             let saved_focused = self.focused_window_id;
             let saved_active = self.active_window;
             self.focused_window_id = Some(new_winit_id);
-            self.active_window = Some(new_mux_wid);
+            self.active_window = Some(new_session_wid);
             self.handle_redraw();
             self.focused_window_id = saved_focused;
             self.active_window = saved_active;
@@ -131,8 +130,7 @@ impl App {
             .windows
             .get(&source_winit_id)
             .and_then(|ctx| {
-                let mux = self.mux.as_ref()?;
-                let win = mux.session().get_window(ctx.window.mux_window_id())?;
+                let win = self.session.get_window(ctx.window.session_window_id())?;
                 Some(win.tabs().is_empty())
             })
             .unwrap_or(false);

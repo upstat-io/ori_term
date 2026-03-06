@@ -7,7 +7,7 @@
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use oriterm_mux::WindowId as MuxWindowId;
+use crate::session::WindowId as SessionWindowId;
 use oriterm_ui::window::WindowConfig;
 
 use super::App;
@@ -24,7 +24,7 @@ impl App {
     ///
     /// Returns the winit [`WindowId`] of the new window, or `None` on failure.
     pub(super) fn create_window(&mut self, event_loop: &ActiveEventLoop) -> Option<WindowId> {
-        let (winit_id, mux_window_id) = self.create_window_bare(event_loop)?;
+        let (winit_id, session_wid) = self.create_window_bare(event_loop)?;
 
         // Extract geometry from the new window's per-window renderer
         // (scoped to release the borrow before mux operations).
@@ -58,19 +58,27 @@ impl App {
         };
         let palette =
             crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
-        let tab_result = mux.create_tab(mux_window_id, &spawn_config, theme);
-        match tab_result {
-            Ok((_tab_id, pane_id)) => {
-                mux.set_pane_theme(pane_id, theme, palette);
+        let pane_id = match mux.spawn_pane(&spawn_config, theme) {
+            Ok(pid) => {
+                mux.set_pane_theme(pid, theme, palette);
                 mux.discard_notifications();
+                pid
             }
             Err(e) => {
                 log::error!("failed to create initial tab for new window: {e}");
-                mux.close_window(mux_window_id);
                 mux.discard_notifications();
+                self.session.remove_window(session_wid);
                 self.windows.remove(&winit_id);
                 return None;
             }
+        };
+
+        // Local tab creation.
+        let tab_id = self.session.alloc_tab_id();
+        let tab = crate::session::Tab::new(tab_id, pane_id);
+        self.session.add_tab(tab);
+        if let Some(win) = self.session.get_window_mut(session_wid) {
+            win.add_tab(tab_id);
         }
 
         // Clear frame and show.
@@ -88,29 +96,28 @@ impl App {
 
         // Focus the new window.
         self.focused_window_id = Some(winit_id);
-        self.active_window = Some(mux_window_id);
+        self.active_window = Some(session_wid);
 
-        log::info!("window created: {winit_id:?} → mux {mux_window_id:?}");
+        log::info!("window created: {winit_id:?} → session {session_wid:?}");
 
         Some(winit_id)
     }
 
     /// Create an OS window without spawning any tabs.
     ///
-    /// Allocates a mux window ID, creates the OS window + GPU surface,
+    /// Allocates a GUI-local window ID, creates the OS window + GPU surface,
     /// per-window renderer, chrome/tab bar widgets, and grid widget. The
     /// window starts hidden. The caller is responsible for moving or
     /// creating tabs, clearing the surface, and showing the window.
     ///
-    /// Returns `(winit_id, mux_window_id)` or `None` on failure.
+    /// Returns `(winit_id, session_window_id)` or `None` on failure.
     pub(super) fn create_window_bare(
         &mut self,
         event_loop: &ActiveEventLoop,
-    ) -> Option<(WindowId, MuxWindowId)> {
+    ) -> Option<(WindowId, SessionWindowId)> {
         let gpu = self.gpu.as_ref()?;
         let pipelines = self.pipelines.as_ref()?;
         let font_set = self.font_set.as_ref()?.clone();
-        let mux = self.mux.as_mut()?;
 
         let opacity = self.config.window.effective_opacity();
         let window_config = WindowConfig {
@@ -121,33 +128,16 @@ impl App {
             ..WindowConfig::default()
         };
 
-        let mux_window_id = match mux.create_window() {
-            Ok(id) => id,
-            Err(e) => {
-                log::error!("failed to create mux window: {e}");
-                return None;
-            }
-        };
+        // Allocate a GUI-local window ID (mux is a flat pane server).
+        let session_wid = self.session.alloc_window_id();
+        self.session
+            .add_window(crate::session::Window::new(session_wid));
 
-        // Tell the daemon this client renders the new window.
-        if mux.is_daemon_mode() {
-            if let Err(e) = mux.claim_window(mux_window_id) {
-                log::error!("failed to claim mux window {mux_window_id}: {e}");
-                mux.close_window(mux_window_id);
-                mux.discard_notifications();
-                return None;
-            }
-        }
-
-        let window = match TermWindow::new(event_loop, &window_config, gpu, mux_window_id) {
+        let window = match TermWindow::new(event_loop, &window_config, gpu, session_wid) {
             Ok(w) => w,
             Err(e) => {
                 log::error!("failed to create window: {e}");
-                // mux borrow from above ended (NLL); re-borrow for cleanup.
-                if let Some(mux) = self.mux.as_mut() {
-                    mux.close_window(mux_window_id);
-                    mux.discard_notifications();
-                }
+                self.session.remove_window(session_wid);
                 return None;
             }
         };
@@ -156,10 +146,7 @@ impl App {
         let (chrome_widget, tab_bar_widget, caption_height) = self.create_chrome_widgets(&window);
 
         let Some(renderer) = self.create_window_renderer(&window, gpu, pipelines, font_set) else {
-            if let Some(mux) = self.mux.as_mut() {
-                mux.close_window(mux_window_id);
-                mux.discard_notifications();
-            }
+            self.session.remove_window(session_wid);
             return None;
         };
 
@@ -194,11 +181,11 @@ impl App {
         self.windows.insert(winit_id, ctx);
 
         log::info!(
-            "bare window created: {winit_id:?} → mux {mux_window_id:?}, \
+            "bare window created: {winit_id:?} → session {session_wid:?}, \
              {w}x{h} px, {cols}x{rows} cells"
         );
 
-        Some((winit_id, mux_window_id))
+        Some((winit_id, session_wid))
     }
 
     /// Build a per-window renderer for the given window's DPI and font config.
@@ -262,7 +249,7 @@ impl App {
             log::warn!("close_window: unknown winit id {winit_id:?}");
             return;
         };
-        let mux_window_id = ctx.window.mux_window_id();
+        let session_wid = ctx.window.session_window_id();
 
         // If this is the last window, exit the process immediately.
         // ConPTY safety: process::exit() must run before pane destructors.
@@ -270,12 +257,18 @@ impl App {
             self.exit_app();
         }
 
-        // Close the mux window — returns pane IDs to clean up.
-        let pane_ids = if let Some(mux) = &mut self.mux {
-            mux.close_window(mux_window_id)
-        } else {
-            Vec::new()
-        };
+        // Collect all pane IDs from the local session for this window.
+        let pane_ids = self.collect_window_panes(session_wid);
+
+        // Close each pane in the mux (pane-only — no tab/window cascade).
+        if let Some(mux) = &mut self.mux {
+            for &pid in &pane_ids {
+                mux.close_pane(pid);
+            }
+        }
+
+        // Remove tabs and window from local session.
+        self.remove_window_session_state(session_wid);
 
         // Clean up pane resources (PTY kill + background drop in embedded mode).
         if let Some(mux) = &mut self.mux {
@@ -304,34 +297,27 @@ impl App {
     /// Resolves the mux window ID to a winit window ID. If this is the last
     /// OS window, exits the process. Otherwise closes the mux window (which
     /// has no tabs/panes left) and removes the OS window.
-    pub(super) fn close_empty_mux_window(&mut self, mux_window_id: MuxWindowId) {
+    pub(super) fn close_empty_session_window(&mut self, session_wid: SessionWindowId) {
         // If this is the only OS window, exit.
         if self.windows.len() <= 1 {
             self.exit_app();
         }
 
-        // Find the winit window that renders this mux window.
+        // Find the winit window that renders this session window.
         let winit_id = self
             .windows
             .iter()
-            .find(|(_, ctx)| ctx.window.mux_window_id() == mux_window_id)
+            .find(|(_, ctx)| ctx.window.session_window_id() == session_wid)
             .map(|(&id, _)| id);
 
         let Some(winit_id) = winit_id else {
-            // No OS window for this mux window (daemon mode, rendered by
-            // another process). Close the mux window to avoid orphans.
-            if let Some(mux) = &mut self.mux {
-                mux.close_window(mux_window_id);
-                mux.discard_notifications();
-            }
+            // No OS window for this session window — just remove local state.
+            self.session.remove_window(session_wid);
             return;
         };
 
-        // Close the (empty) mux window.
-        if let Some(mux) = &mut self.mux {
-            mux.close_window(mux_window_id);
-            mux.discard_notifications();
-        }
+        // Window is already empty (no tabs/panes) — just remove session state.
+        self.session.remove_window(session_wid);
 
         // Remove the OS window.
         self.windows.remove(&winit_id);
@@ -339,25 +325,21 @@ impl App {
         self.transfer_focus_from(winit_id);
 
         log::info!(
-            "empty window closed: {winit_id:?} (mux {mux_window_id:?}), {} remaining",
+            "empty window closed: {winit_id:?} (session {session_wid:?}), {} remaining",
             self.windows.len()
         );
     }
 
     /// Remove a window from the App without closing mux resources.
     ///
-    /// Used by tear-off merge: the mux tab was already moved out, so the
-    /// window's mux state is empty. This removes the OS window and context
+    /// Used by tear-off merge: the tab was already moved out, so the
+    /// window's state is empty. This removes the OS window and context
     /// without touching the mux layer.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(super) fn remove_empty_window(&mut self, winit_id: WindowId) {
-        // Close the mux window to clean up the empty container.
         if let Some(ctx) = self.windows.get(&winit_id) {
-            let mux_wid = ctx.window.mux_window_id();
-            if let Some(mux) = &mut self.mux {
-                mux.close_window(mux_wid);
-                mux.discard_notifications();
-            }
+            let session_wid = ctx.window.session_window_id();
+            self.session.remove_window(session_wid);
         }
 
         self.windows.remove(&winit_id);
@@ -384,11 +366,44 @@ impl App {
         std::process::exit(0)
     }
 
-    /// Drain mux notifications generated by window close operations.
+    /// Collect all pane IDs from the local session for a window.
     ///
-    /// Handles `PaneClosed` and `WindowClosed` notifications that arise from
-    /// `mux.close_window()`. Separated from the main `pump_mux_events` to
-    /// avoid re-entrancy issues during `close_window`.
+    /// Iterates each tab in the window and collects pane IDs from the split
+    /// tree and floating layer. Returns an empty list if the window has no tabs.
+    fn collect_window_panes(
+        &self,
+        session_wid: crate::session::WindowId,
+    ) -> Vec<oriterm_mux::PaneId> {
+        let Some(win) = self.session.get_window(session_wid) else {
+            return Vec::new();
+        };
+        let mut panes = Vec::new();
+        for &tab_id in win.tabs() {
+            if let Some(tab) = self.session.get_tab(tab_id) {
+                panes.extend(tab.all_panes());
+            }
+        }
+        panes
+    }
+
+    /// Remove a window and all its tabs from the local session.
+    fn remove_window_session_state(&mut self, session_wid: crate::session::WindowId) {
+        let tab_ids: Vec<crate::session::TabId> = self
+            .session
+            .get_window(session_wid)
+            .map(|w| w.tabs().to_vec())
+            .unwrap_or_default();
+        for tid in tab_ids {
+            self.session.remove_tab(tid);
+        }
+        self.session.remove_window(session_wid);
+    }
+
+    /// Drain mux notifications generated by pane close operations.
+    ///
+    /// Handles `PaneClosed` notifications that arise from individual
+    /// `mux.close_pane()` calls. Separated from the main `pump_mux_events`
+    /// to avoid re-entrancy issues during `close_window`.
     fn pump_close_notifications(&mut self) {
         let Some(mux) = &mut self.mux else { return };
         mux.drain_notifications(&mut self.notification_buf);
@@ -406,8 +421,7 @@ impl App {
                     ctx.pane_cache.remove(id);
                 }
             }
-            // Other notifications (WindowClosed, LastWindowClosed, etc.)
-            // are handled by the caller or are no-ops during close.
+            // Other pane notifications are no-ops during close.
         });
     }
 }

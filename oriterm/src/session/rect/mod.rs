@@ -27,3 +27,6 @@ impl Rect {
         (self.x + self.width / 2.0, self.y + self.height / 2.0)
     }
 }
+
+#[cfg(test)]
+mod tests;

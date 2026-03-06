@@ -86,7 +86,10 @@ impl App {
             if let Some(ctx) = self.windows.get_mut(&wid) {
                 ctx.dirty = false;
             }
-            let mux_wid = self.windows.get(&wid).map(|ctx| ctx.window.mux_window_id());
+            let mux_wid = self
+                .windows
+                .get(&wid)
+                .map(|ctx| ctx.window.session_window_id());
             self.focused_window_id = Some(wid);
             self.active_window = mux_wid;
             self.handle_redraw();
@@ -196,7 +199,7 @@ impl ApplicationHandler<TermEvent> for App {
                     if let Some(mux_id) = self
                         .windows
                         .get(&window_id)
-                        .map(|ctx| ctx.window.mux_window_id())
+                        .map(|ctx| ctx.window.session_window_id())
                     {
                         self.active_window = Some(mux_id);
                     }
@@ -364,16 +367,12 @@ impl ApplicationHandler<TermEvent> for App {
                 self.create_window(event_loop);
             }
             TermEvent::MoveTabToNewWindow(tab_index) => {
-                let tab_id = {
-                    let mux = self.mux.as_ref();
-                    let win_id = self.active_window;
-                    mux.zip(win_id).and_then(|(m, wid)| {
-                        let win = m.session().get_window(wid)?;
-                        win.tabs().get(tab_index).copied()
-                    })
-                };
-                if let Some(tab_id) = tab_id {
-                    self.move_tab_to_new_window(tab_id, event_loop);
+                let tab_id = self.active_window.and_then(|wid| {
+                    let win = self.session.get_window(wid)?;
+                    win.tabs().get(tab_index).copied()
+                });
+                if let Some(tid) = tab_id {
+                    self.move_tab_to_new_window(tid, event_loop);
                 }
             }
         }
@@ -448,7 +447,10 @@ impl ApplicationHandler<TermEvent> for App {
                 if let Some(ctx) = self.windows.get_mut(&wid) {
                     ctx.dirty = false;
                 }
-                let mux_wid = self.windows.get(&wid).map(|ctx| ctx.window.mux_window_id());
+                let mux_wid = self
+                    .windows
+                    .get(&wid)
+                    .map(|ctx| ctx.window.session_window_id());
                 self.focused_window_id = Some(wid);
                 self.active_window = mux_wid;
                 self.handle_redraw();

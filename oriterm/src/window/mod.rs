@@ -19,7 +19,8 @@ use oriterm_ui::scale::ScaleFactor;
 use oriterm_ui::window::WindowConfig;
 
 use oriterm_core::Rgb;
-use oriterm_mux::WindowId as MuxWindowId;
+
+use crate::session::WindowId as SessionWindowId;
 
 use crate::gpu::{GpuState, apply_transparency};
 
@@ -40,8 +41,8 @@ const DEFAULT_BLUR_TINT: Rgb = Rgb {
 /// window handle and wgpu rendering surface. Does NOT own tabs, content,
 /// or any terminal state — the [`App`] maps windows to tabs.
 pub(crate) struct TermWindow {
-    /// Mux-layer window identity (maps this OS window to the mux session model).
-    mux_window_id: MuxWindowId,
+    /// Session-layer window identity (maps this OS window to the GUI session model).
+    session_window_id: SessionWindowId,
     /// Winit window handle (Arc for wgpu surface lifetime).
     window: Arc<Window>,
     /// wgpu rendering surface bound to this window.
@@ -71,7 +72,7 @@ impl TermWindow {
         event_loop: &ActiveEventLoop,
         config: &WindowConfig,
         gpu: &GpuState,
-        mux_window_id: MuxWindowId,
+        session_window_id: SessionWindowId,
     ) -> Result<Self, WindowCreateError> {
         let window = oriterm_ui::window::create_window(event_loop, config)?;
 
@@ -91,7 +92,7 @@ impl TermWindow {
         window.set_ime_purpose(winit::window::ImePurpose::Terminal);
 
         Ok(Self {
-            mux_window_id,
+            session_window_id,
             window,
             surface,
             surface_config,
@@ -110,7 +111,7 @@ impl TermWindow {
         window: Arc<Window>,
         config: &WindowConfig,
         gpu: &GpuState,
-        mux_window_id: MuxWindowId,
+        session_window_id: SessionWindowId,
     ) -> Result<Self, WindowCreateError> {
         let (surface, surface_config) = gpu.create_surface(&window)?;
 
@@ -126,7 +127,7 @@ impl TermWindow {
         window.set_ime_purpose(winit::window::ImePurpose::Terminal);
 
         Ok(Self {
-            mux_window_id,
+            session_window_id,
             window,
             surface,
             surface_config,
@@ -138,9 +139,9 @@ impl TermWindow {
 
     // Accessors
 
-    /// Returns the mux-layer window identity.
-    pub(crate) fn mux_window_id(&self) -> MuxWindowId {
-        self.mux_window_id
+    /// Returns the session-layer window identity.
+    pub(crate) fn session_window_id(&self) -> SessionWindowId {
+        self.session_window_id
     }
 
     /// Returns the winit [`WindowId`] for event routing.

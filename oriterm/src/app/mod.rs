@@ -42,7 +42,9 @@ use winit::window::WindowId;
 
 use oriterm_core::grid::StableRowIndex;
 use oriterm_core::{Selection, SelectionPoint, TermMode};
-use oriterm_mux::{MarkCursor, PaneId, WindowId as MuxWindowId};
+use oriterm_mux::{MarkCursor, PaneId};
+
+use crate::session::{SessionRegistry, WindowId as SessionWindowId};
 
 use self::cursor_blink::CursorBlink;
 use self::keyboard_input::ImeState;
@@ -97,11 +99,15 @@ pub(crate) struct App {
     // Winit ID of the currently focused window (set on Focused(true)).
     focused_window_id: Option<WindowId>,
 
+    // GUI-side session registry: tabs, windows, and ID allocators.
+    // Owns the session model — the mux only provides panes.
+    session: SessionRegistry,
+
     // Mux backend (Section 44.3): abstracts in-process vs daemon mux access.
     // Owns pane structs (embedded) or proxies IPC (client).
     mux: Option<Box<dyn MuxBackend>>,
-    // Active mux window ID (maps to the focused TermWindow).
-    active_window: Option<MuxWindowId>,
+    // Active session window ID (maps to the focused TermWindow).
+    active_window: Option<SessionWindowId>,
     // Double-buffer for mux notifications (avoids per-frame allocation).
     notification_buf: Vec<MuxNotification>,
 
@@ -278,26 +284,24 @@ impl App {
 
     /// The active pane's ID for a specific winit window.
     ///
-    /// Resolves the mux window from the winit window context, then walks
-    /// the session model (window → active tab → active pane) to find the
-    /// `PaneId`. Used by window-specific operations (resize, DPI change).
+    /// Resolves the session window from the winit window context, then walks
+    /// the local session model (window → active tab → active pane) to find
+    /// the `PaneId`. Used by window-specific operations (resize, DPI change).
     fn active_pane_id_for_window(&self, winit_id: WindowId) -> Option<PaneId> {
         let ctx = self.windows.get(&winit_id)?;
-        let mux_wid = ctx.window.mux_window_id();
-        let mux = self.mux.as_ref()?;
-        let win = mux.session().get_window(mux_wid)?;
+        let session_wid = ctx.window.session_window_id();
+        let win = self.session.get_window(session_wid)?;
         let tab_id = win.active_tab()?;
-        let tab = mux.session().get_tab(tab_id)?;
+        let tab = self.session.get_tab(tab_id)?;
         Some(tab.active_pane())
     }
 
-    /// The active pane's ID, derived from the mux session model.
+    /// The active pane's ID, derived from the local session model.
     fn active_pane_id(&self) -> Option<PaneId> {
-        let mux = self.mux.as_ref()?;
         let win_id = self.active_window?;
-        let win = mux.session().get_window(win_id)?;
+        let win = self.session.get_window(win_id)?;
         let tab_id = win.active_tab()?;
-        let tab = mux.session().get_tab(tab_id)?;
+        let tab = self.session.get_tab(tab_id)?;
         Some(tab.active_pane())
     }
 
@@ -391,20 +395,21 @@ impl App {
     fn transfer_focus_from(&mut self, winit_id: WindowId) {
         if self.focused_window_id == Some(winit_id) {
             self.focused_window_id = self.windows.keys().next().copied();
-            self.active_window = self
-                .focused_window_id
-                .and_then(|id| self.windows.get(&id).map(|ctx| ctx.window.mux_window_id()));
+            self.active_window = self.focused_window_id.and_then(|id| {
+                self.windows
+                    .get(&id)
+                    .map(|ctx| ctx.window.session_window_id())
+            });
         }
     }
 
     /// Tab index for a given pane within the active window's tab list.
     ///
-    /// Traverses pane registry → tab → window tab list to find the position.
+    /// Traverses local session: pane → tab → window tab list to find the position.
     fn tab_index_for_pane(&self, pane_id: PaneId) -> Option<usize> {
-        let mux = self.mux.as_ref()?;
-        let tab_id = mux.get_pane_entry(pane_id)?.tab;
+        let tab_id = self.session.tab_for_pane(pane_id)?;
         let win_id = self.active_window?;
-        let win = mux.session().get_window(win_id)?;
+        let win = self.session.get_window(win_id)?;
         win.tabs().iter().position(|&t| t == tab_id)
     }
 

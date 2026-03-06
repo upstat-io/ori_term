@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::config::monitor::ConfigMonitor;
 use crate::event::TermEvent;
 use crate::keybindings;
+use crate::session::SessionRegistry;
 
 impl App {
     /// Create a new application instance in daemon mode.
@@ -68,6 +69,7 @@ impl App {
             user_fb_count: 0,
             windows: HashMap::new(),
             focused_window_id: None,
+            session: SessionRegistry::new(),
             mux,
             active_window: None,
             notification_buf: Vec::new(),
@@ -93,7 +95,7 @@ impl App {
 
         // Store the claimed window ID so init can use it instead of creating one.
         if let Some(wid) = window_id {
-            app.active_window = Some(oriterm_mux::WindowId::from_raw(wid));
+            app.active_window = Some(crate::session::WindowId::from_raw(wid));
         }
 
         app
@@ -131,6 +133,7 @@ impl App {
             user_fb_count: 0,
             windows: HashMap::new(),
             focused_window_id: None,
+            session: SessionRegistry::new(),
             mux: Some(Box::new(mux)),
             active_window: None,
             notification_buf: Vec::new(),

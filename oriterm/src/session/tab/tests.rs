@@ -47,7 +47,7 @@ fn set_tree_pushes_undo() {
     let original_tree = tab.tree().clone();
 
     // Replace tree with a new one.
-    let new_tree = oriterm_mux::layout::split_tree::SplitTree::leaf(pid(20));
+    let new_tree = crate::session::split_tree::SplitTree::leaf(pid(20));
     tab.set_tree(new_tree.clone());
 
     assert_eq!(tab.tree().panes(), vec![pid(20)]);
@@ -64,7 +64,7 @@ fn undo_redo_cycle() {
     let live = HashSet::from([pid(10), pid(20)]);
 
     let tree_a = tab.tree().clone();
-    let tree_b = oriterm_mux::layout::split_tree::SplitTree::leaf(pid(20));
+    let tree_b = crate::session::split_tree::SplitTree::leaf(pid(20));
     tab.set_tree(tree_b);
 
     // Undo: back to tree_a.
@@ -81,9 +81,9 @@ fn undo_skips_stale_entries() {
     let mut tab = Tab::new(tid(1), pid(10));
 
     // Push a tree referencing pid(20), then another referencing pid(10).
-    let stale_tree = oriterm_mux::layout::split_tree::SplitTree::leaf(pid(20));
+    let stale_tree = crate::session::split_tree::SplitTree::leaf(pid(20));
     tab.set_tree(stale_tree);
-    let current = oriterm_mux::layout::split_tree::SplitTree::leaf(pid(10));
+    let current = crate::session::split_tree::SplitTree::leaf(pid(10));
     tab.set_tree(current);
 
     // Only pid(10) is live — the stale tree (pid(20)) should be skipped.
@@ -110,7 +110,7 @@ fn redo_returns_false_when_empty() {
 #[test]
 fn replace_layout_does_not_push_undo() {
     let mut tab = Tab::new(tid(1), pid(10));
-    let new_tree = oriterm_mux::layout::split_tree::SplitTree::leaf(pid(20));
+    let new_tree = crate::session::split_tree::SplitTree::leaf(pid(20));
     tab.replace_layout(new_tree);
 
     // Undo stack should be empty.
@@ -123,14 +123,14 @@ fn set_tree_clears_redo() {
     let mut tab = Tab::new(tid(1), pid(10));
     let live = HashSet::from([pid(10), pid(20), pid(30)]);
 
-    let tree_b = oriterm_mux::layout::split_tree::SplitTree::leaf(pid(20));
+    let tree_b = crate::session::split_tree::SplitTree::leaf(pid(20));
     tab.set_tree(tree_b);
 
     // Undo to create a redo entry.
     assert!(tab.undo_tree(&live));
 
     // New mutation should clear redo.
-    let tree_c = oriterm_mux::layout::split_tree::SplitTree::leaf(pid(30));
+    let tree_c = crate::session::split_tree::SplitTree::leaf(pid(30));
     tab.set_tree(tree_c);
     assert!(!tab.redo_tree(&live));
 }

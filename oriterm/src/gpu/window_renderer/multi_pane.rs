@@ -14,7 +14,7 @@ use super::super::prepared_frame::PreparedFrame;
 use super::super::state::GpuState;
 use super::{CombinedAtlasLookup, WindowRenderer};
 use crate::gpu::frame_input::ViewportSize;
-use oriterm_mux::layout::{DividerLayout, Rect};
+use crate::session::{DividerLayout, Rect};
 
 use helpers::{ensure_glyphs_cached, grid_raster_keys, shape_frame};
 

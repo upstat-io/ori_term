@@ -11,7 +11,7 @@ mod mutations;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::id::PaneId;
+use oriterm_mux::PaneId;
 
 /// Minimum ratio for any split. Prevents zero-size panes.
 const MIN_RATIO: f32 = 0.1;

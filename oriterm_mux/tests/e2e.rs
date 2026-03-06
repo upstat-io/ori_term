@@ -17,9 +17,7 @@ use oriterm_core::{Side, Theme};
 use oriterm_mux::backend::MuxBackend;
 use oriterm_mux::domain::SpawnConfig;
 use oriterm_mux::server::MuxServer;
-use oriterm_mux::{
-    MuxClient, MuxNotification, PaneId, PaneSnapshot, TabId, WindowId, WireCursorShape,
-};
+use oriterm_mux::{MuxClient, MuxNotification, PaneId, PaneSnapshot, WireCursorShape};
 
 // ---------------------------------------------------------------------------
 // Test daemon harness
@@ -87,16 +85,12 @@ impl Drop for TestDaemon {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Create a window and tab in a single client, returning IDs.
-fn create_window_and_tab(client: &mut MuxClient) -> (WindowId, TabId, PaneId) {
-    let window_id = client
-        .create_window()
-        .expect("create_window should succeed");
+/// Spawn a pane in the daemon, returning its ID.
+fn spawn_test_pane(client: &mut MuxClient) -> PaneId {
     let config = SpawnConfig::default();
-    let (tab_id, pane_id) = client
-        .create_tab(window_id, &config, Theme::Dark)
-        .expect("create_tab should succeed");
-    (window_id, tab_id, pane_id)
+    client
+        .spawn_pane(&config, Theme::Dark)
+        .expect("spawn_pane should succeed")
 }
 
 /// Wait until a direct snapshot fetch contains the expected text.
@@ -151,15 +145,14 @@ fn snapshot_contains(snapshot: &PaneSnapshot, text: &str) -> bool {
 // Tests: Section 44.3 — Window-as-Client Model
 // ---------------------------------------------------------------------------
 
-/// 44.3: MuxClient backend creates a tab, sends input, and sees output
+/// MuxClient backend spawns a pane, sends input, and sees output
 /// in the pane snapshot.
 #[test]
-fn client_create_tab_type_see_output() {
+fn client_spawn_pane_type_see_output() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
 
     // Give the shell time to initialize.
     thread::sleep(Duration::from_millis(500));
@@ -181,15 +174,14 @@ fn client_create_tab_type_see_output() {
     );
 }
 
-/// 44.3: Push notification flow — daemon PaneOutput → client PaneDirty
+/// 44.3: Push notification flow — daemon PaneOutput → client PaneOutput
 /// → snapshot refresh → rendered content.
 #[test]
 fn push_notification_triggers_dirty_flag() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
 
     // Give shell time to start, then clear any initial dirty state.
     thread::sleep(Duration::from_millis(500));
@@ -201,7 +193,7 @@ fn push_notification_triggers_dirty_flag() {
     // Send input to generate new output.
     client.send_input(pane_id, b"echo PUSH_TEST\n");
 
-    // Wait for PaneDirty notification.
+    // Wait for PaneOutput notification.
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         client.poll_events();
@@ -224,7 +216,7 @@ fn push_notification_triggers_dirty_flag() {
 
         assert!(
             Instant::now() < deadline,
-            "timed out waiting for PaneDirty notification"
+            "timed out waiting for PaneOutput notification"
         );
         thread::sleep(Duration::from_millis(20));
     }
@@ -237,13 +229,11 @@ fn multiple_clients_independent_windows() {
 
     // Client A creates window A with one tab.
     let mut client_a = daemon.connect_client();
-    let (win_a, _tab_a, pane_a) = create_window_and_tab(&mut client_a);
-    client_a.claim_window(win_a).expect("claim A");
+    let pane_a = spawn_test_pane(&mut client_a);
 
-    // Client B creates window B with one tab.
+    // Client B creates a pane.
     let mut client_b = daemon.connect_client();
-    let (win_b, _tab_b, pane_b) = create_window_and_tab(&mut client_b);
-    client_b.claim_window(win_b).expect("claim B");
+    let pane_b = spawn_test_pane(&mut client_b);
 
     // Wait for shells to initialize.
     thread::sleep(Duration::from_millis(500));
@@ -280,8 +270,7 @@ fn client_crash_cleans_up_owned_window() {
     // Client creates window and tab, sends some output.
     let pane_id = {
         let mut client = daemon.connect_client();
-        let (win, _tab, pane) = create_window_and_tab(&mut client);
-        client.claim_window(win).expect("claim");
+        let pane = spawn_test_pane(&mut client);
 
         thread::sleep(Duration::from_millis(500));
         client.send_input(pane, b"echo BEFORE_CRASH\n");
@@ -303,253 +292,6 @@ fn client_crash_cleans_up_owned_window() {
         snap.is_none(),
         "pane should be cleaned up after owning client disconnects"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Tests: Section 44.4 — Cross-Process Tab Migration
-// ---------------------------------------------------------------------------
-
-/// 44.4: PTY session survives tab move — running command continues.
-#[test]
-fn pty_session_survives_tab_move() {
-    let daemon = TestDaemon::start();
-    let mut client = daemon.connect_client();
-
-    // Create two windows.
-    let (win_a, tab_a, pane_a) = create_window_and_tab(&mut client);
-    let win_b = client.create_window().expect("create second window");
-    client.claim_window(win_a).expect("claim A");
-
-    // Let shell start and send a marker.
-    thread::sleep(Duration::from_millis(500));
-    client.send_input(pane_a, b"echo BEFORE_MOVE\n");
-    wait_for_text_in_snapshot(&mut client, pane_a, "BEFORE_MOVE", Duration::from_secs(5));
-
-    // Move tab from window A to window B.
-    assert!(
-        client.move_tab_to_window(tab_a, win_b),
-        "move_tab_to_window should succeed"
-    );
-
-    // Send more input — PTY should still be alive.
-    client.send_input(pane_a, b"echo AFTER_MOVE\n");
-    let snap = wait_for_text_in_snapshot(&mut client, pane_a, "AFTER_MOVE", Duration::from_secs(5));
-
-    assert!(
-        snapshot_contains(&snap, "AFTER_MOVE"),
-        "PTY should continue working after tab move"
-    );
-}
-
-/// 44.4: Scrollback preserved after tab move.
-#[test]
-fn scrollback_preserved_after_move() {
-    let daemon = TestDaemon::start();
-    let mut client = daemon.connect_client();
-
-    let (win_a, tab_a, pane_a) = create_window_and_tab(&mut client);
-    let win_b = client.create_window().expect("create second window");
-    client.claim_window(win_a).expect("claim A");
-
-    // Let shell start.
-    thread::sleep(Duration::from_millis(500));
-
-    // Generate scrollback and wait for completion.
-    client.send_input(
-        pane_a,
-        b"for i in $(seq 1 100); do echo SCROLL_LINE_$i; done\n",
-    );
-    wait_for_text_in_snapshot(
-        &mut client,
-        pane_a,
-        "SCROLL_LINE_100",
-        Duration::from_secs(10),
-    );
-    thread::sleep(Duration::from_millis(200));
-
-    // Get scrollback length before move.
-    let snap_before = client
-        .refresh_pane_snapshot(pane_a)
-        .expect("snapshot before move");
-    let scrollback_before = snap_before.scrollback_len;
-
-    // Move tab.
-    assert!(client.move_tab_to_window(tab_a, win_b));
-
-    // Get scrollback length after move.
-    let snap_after = client
-        .refresh_pane_snapshot(pane_a)
-        .expect("snapshot after move");
-
-    assert_eq!(
-        snap_after.scrollback_len, scrollback_before,
-        "scrollback length should be preserved after tab move"
-    );
-}
-
-/// 44.4: Terminal modes preserved after tab move.
-#[test]
-fn terminal_modes_preserved_after_move() {
-    let daemon = TestDaemon::start();
-    let mut client = daemon.connect_client();
-
-    let (win_a, tab_a, pane_a) = create_window_and_tab(&mut client);
-    let win_b = client.create_window().expect("create second window");
-    client.claim_window(win_a).expect("claim A");
-
-    // Let shell start.
-    thread::sleep(Duration::from_millis(500));
-
-    // Enable bracketed paste mode (DECSET 2004).
-    client.send_input(pane_a, b"\x1b[?2004h");
-    thread::sleep(Duration::from_millis(200));
-
-    // Get modes before move.
-    let snap_before = client
-        .refresh_pane_snapshot(pane_a)
-        .expect("snapshot before move");
-    let modes_before = snap_before.modes;
-
-    // Move tab.
-    assert!(client.move_tab_to_window(tab_a, win_b));
-
-    // Get modes after move.
-    let snap_after = client
-        .refresh_pane_snapshot(pane_a)
-        .expect("snapshot after move");
-
-    assert_eq!(
-        snap_after.modes, modes_before,
-        "terminal modes should be preserved after tab move"
-    );
-}
-
-/// 44.4: Concurrent tab moves don't corrupt state.
-#[test]
-fn concurrent_tab_moves_no_corruption() {
-    let daemon = TestDaemon::start();
-    let mut client = daemon.connect_client();
-
-    // Create window A with two tabs (so neither is the "last tab").
-    let (win_a, tab_a, pane_a) = create_window_and_tab(&mut client);
-    let config = SpawnConfig::default();
-    let (tab_a2, pane_a2) = client
-        .create_tab(win_a, &config, Theme::Dark)
-        .expect("second tab in A");
-    // Create window C as move target.
-    let win_c = client.create_window().expect("create window C");
-    client.claim_window(win_a).expect("claim A");
-
-    // Let shells start and mark them.
-    thread::sleep(Duration::from_millis(500));
-    client.send_input(pane_a, b"echo TAB_A_MARKER\n");
-    client.send_input(pane_a2, b"echo TAB_A2_MARKER\n");
-    wait_for_text_in_snapshot(&mut client, pane_a, "TAB_A_MARKER", Duration::from_secs(5));
-    wait_for_text_in_snapshot(
-        &mut client,
-        pane_a2,
-        "TAB_A2_MARKER",
-        Duration::from_secs(5),
-    );
-
-    // Move both tabs from window A to window C simultaneously.
-    assert!(client.move_tab_to_window(tab_a, win_c), "move tab A to C");
-    assert!(client.move_tab_to_window(tab_a2, win_c), "move tab A2 to C");
-
-    // Verify both panes still have their markers — no state corruption.
-    client.refresh_pane_snapshot(pane_a);
-    let snap_a = client
-        .pane_snapshot(pane_a)
-        .expect("snapshot pane A after moves")
-        .clone();
-    client.refresh_pane_snapshot(pane_a2);
-    let snap_a2 = client
-        .pane_snapshot(pane_a2)
-        .expect("snapshot pane A2 after moves")
-        .clone();
-
-    assert!(
-        snapshot_contains(&snap_a, "TAB_A_MARKER"),
-        "pane A should retain its content after concurrent moves"
-    );
-    assert!(
-        snapshot_contains(&snap_a2, "TAB_A2_MARKER"),
-        "pane A2 should retain its content after concurrent moves"
-    );
-}
-
-/// 44.4: Keystrokes route to the correct pane after tab migration.
-#[test]
-fn keystrokes_route_correctly_after_move() {
-    let daemon = TestDaemon::start();
-    let mut client = daemon.connect_client();
-
-    let (win_a, tab_a, pane_a) = create_window_and_tab(&mut client);
-    let win_b = client.create_window().expect("create window B");
-    client.claim_window(win_a).expect("claim A");
-
-    // Let shell start.
-    thread::sleep(Duration::from_millis(500));
-
-    // Move tab to window B.
-    assert!(client.move_tab_to_window(tab_a, win_b));
-
-    // Send input after the move — should still reach the pane.
-    client.send_input(pane_a, b"echo AFTER_MOVE_TYPING\n");
-
-    let snap = wait_for_text_in_snapshot(
-        &mut client,
-        pane_a,
-        "AFTER_MOVE_TYPING",
-        Duration::from_secs(5),
-    );
-
-    assert!(
-        snapshot_contains(&snap, "AFTER_MOVE_TYPING"),
-        "keystrokes should route to the pane after tab migration"
-    );
-}
-
-/// 44.4: Tab tear-off mechanics — moving to a new window works at the
-/// daemon level (window positioning is a GUI concern, not tested here).
-#[test]
-fn tab_tearoff_mechanics() {
-    let daemon = TestDaemon::start();
-    let mut client = daemon.connect_client();
-
-    // Create window with two tabs so moving one doesn't leave empty window.
-    let (win_a, tab_a1, pane_a1) = create_window_and_tab(&mut client);
-    let config = SpawnConfig::default();
-    let (_tab_a2, _pane_a2) = client
-        .create_tab(win_a, &config, Theme::Dark)
-        .expect("create second tab");
-    client.claim_window(win_a).expect("claim A");
-
-    // Let shell start.
-    thread::sleep(Duration::from_millis(500));
-    client.send_input(pane_a1, b"echo TEAROFF_TEST\n");
-    wait_for_text_in_snapshot(&mut client, pane_a1, "TEAROFF_TEST", Duration::from_secs(5));
-
-    // "Tear off" — move tab to a new window (daemon creates it).
-    let new_win = client.create_window().expect("create tear-off window");
-    assert!(client.move_tab_to_window(tab_a1, new_win));
-
-    // Verify: pane still alive, content preserved.
-    let snap = client
-        .refresh_pane_snapshot(pane_a1)
-        .expect("snapshot after tear-off");
-    assert!(
-        snapshot_contains(snap, "TEAROFF_TEST"),
-        "content should survive tear-off"
-    );
-
-    // Verify: original window still has the other tab.
-    let tabs = client
-        .session()
-        .get_window(win_a)
-        .map(|w| w.tabs().to_vec())
-        .unwrap_or_default();
-    assert_eq!(tabs.len(), 1, "original window should have 1 remaining tab");
 }
 
 // ---------------------------------------------------------------------------
@@ -588,8 +330,7 @@ fn test_resize_pane() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
 
     // Let shell initialize.
     thread::sleep(Duration::from_millis(500));
@@ -611,8 +352,7 @@ fn test_scroll_display() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Generate scrollback and wait for completion. The fence output
@@ -670,8 +410,7 @@ fn test_scroll_to_bottom() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Generate scrollback and wait for completion via 2-row fence.
@@ -728,8 +467,7 @@ fn test_pane_mode() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Enable bracketed paste mode via printf (stdout path ensures the
@@ -761,8 +499,7 @@ fn test_set_cursor_shape() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Set cursor to bar shape.
@@ -787,8 +524,7 @@ fn test_snapshot_cols() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Resize to 120 cols.
@@ -805,8 +541,7 @@ fn test_snapshot_dirty_flag() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Clear initial dirty state.
@@ -824,7 +559,7 @@ fn test_snapshot_dirty_flag() {
     // Generate output to make it dirty.
     client.send_input(pane_id, b"echo DIRTY_TEST\n");
 
-    // Wait for PaneDirty notification.
+    // Wait for PaneOutput notification.
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         client.poll_events();
@@ -865,8 +600,7 @@ fn test_search_lifecycle() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
 
     // Send known text.
     thread::sleep(Duration::from_millis(500));
@@ -920,8 +654,7 @@ fn test_search_navigation() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Generate multiple matches.
@@ -964,8 +697,7 @@ fn test_extract_text() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Send echo command and wait until the marker appears on at least
@@ -1054,14 +786,13 @@ fn test_extract_text() {
     );
 }
 
-/// 14.4: PaneDirty notification flow — output triggers dirty notification.
+/// 14.4: PaneOutput notification flow — output triggers dirty notification.
 #[test]
 fn test_notification_pane_dirty() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Clear initial state.
@@ -1073,7 +804,7 @@ fn test_notification_pane_dirty() {
     // Send input.
     client.send_input(pane_id, b"echo NOTIF_TEST\n");
 
-    // Wait for PaneDirty notification.
+    // Wait for PaneOutput notification.
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut got_dirty = false;
     loop {
@@ -1082,7 +813,7 @@ fn test_notification_pane_dirty() {
         client.drain_notifications(&mut notifs);
 
         for notif in &notifs {
-            if let MuxNotification::PaneDirty(id) = notif {
+            if let MuxNotification::PaneOutput(id) = notif {
                 if *id == pane_id {
                     got_dirty = true;
                 }
@@ -1095,14 +826,14 @@ fn test_notification_pane_dirty() {
 
         assert!(
             Instant::now() < deadline,
-            "timed out waiting for PaneDirty notification"
+            "timed out waiting for PaneOutput notification"
         );
         thread::sleep(Duration::from_millis(20));
     }
 
     assert!(
         got_dirty,
-        "should receive PaneDirty notification after output"
+        "should receive PaneOutput notification after output"
     );
 }
 
@@ -1117,8 +848,7 @@ fn test_flood_output_no_hang() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
 
     // Let shell initialize.
     thread::sleep(Duration::from_millis(500));
@@ -1173,8 +903,7 @@ fn test_infinite_flood_streams_updates() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Start an unbounded flood loop.
@@ -1216,8 +945,7 @@ fn test_infinite_flood_random_streams_updates() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     client.send_input(
@@ -1264,8 +992,7 @@ fn test_notification_title_changed() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Clear any pending notifications.
@@ -1320,8 +1047,7 @@ fn test_flood_snapshot_responsiveness() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
     thread::sleep(Duration::from_millis(500));
 
     // Start infinite flood: `yes` outputs lines continuously until killed.
@@ -1420,8 +1146,7 @@ fn daemon_restart_detection_and_reconnect() {
         let wakeup: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
         let mut client = MuxClient::connect(&sock, wakeup).expect("connect to daemon 1");
 
-        let (win, _tab, pane) = create_window_and_tab(&mut client);
-        client.claim_window(win).expect("claim_window");
+        let pane = spawn_test_pane(&mut client);
         thread::sleep(Duration::from_millis(500));
 
         client.send_input(pane, b"echo DAEMON1_ALIVE\n");
@@ -1467,10 +1192,7 @@ fn daemon_restart_detection_and_reconnect() {
     assert!(client2.is_connected(), "client2 should be connected");
 
     // Create fresh session (old sessions are lost — daemon is stateless across restarts).
-    let (win2, _tab2, pane2) = create_window_and_tab(&mut client2);
-    client2
-        .claim_window(win2)
-        .expect("claim_window on daemon 2");
+    let pane2 = spawn_test_pane(&mut client2);
     thread::sleep(Duration::from_millis(500));
 
     client2.send_input(pane2, b"echo DAEMON2_ALIVE\n");
@@ -1550,8 +1272,7 @@ fn ipc_latency_under_5ms() {
     let daemon = TestDaemon::start();
     let mut client = daemon.connect_client();
 
-    let (window_id, _tab_id, pane_id) = create_window_and_tab(&mut client);
-    client.claim_window(window_id).expect("claim_window");
+    let pane_id = spawn_test_pane(&mut client);
 
     // Let the shell fully initialize.
     thread::sleep(Duration::from_millis(500));

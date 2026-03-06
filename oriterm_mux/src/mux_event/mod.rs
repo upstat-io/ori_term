@@ -4,8 +4,8 @@
 //! via an mpsc channel. [`MuxEventProxy`] implements [`EventListener`] so it
 //! can be plugged into `Term<MuxEventProxy>` as the event sink.
 //!
-//! [`MuxNotification`] carries mux-to-GUI notifications (pane dirty, closed,
-//! layout changes). The GUI subscribes via a separate channel.
+//! [`MuxNotification`] carries pane lifecycle notifications (output, closed,
+//! title changes, bell). Clients drain these via the notification channel.
 
 use std::fmt;
 use std::sync::Arc;
@@ -14,12 +14,12 @@ use std::sync::mpsc;
 
 use oriterm_core::{ClipboardType, Event, EventListener};
 
-use crate::{PaneId, TabId, WindowId};
+use crate::PaneId;
 
 /// Events from pane PTY reader threads to the mux layer.
 ///
 /// Sent over `mpsc::Sender<MuxEvent>`. The mux processes these on the main
-/// thread after a winit wakeup.
+/// thread during each event loop iteration.
 pub enum MuxEvent {
     /// Pane has new terminal output — grid is dirty.
     PaneOutput(PaneId),
@@ -252,25 +252,19 @@ impl EventListener for MuxEventProxy {
     }
 }
 
-/// Notifications from the mux layer to the GUI.
+/// Pane lifecycle notifications from the mux layer.
 ///
-/// These flow from the mux to the winit event loop after the mux has
-/// processed incoming [`MuxEvent`]s and updated its state.
+/// These flow from the mux to clients after the mux has processed
+/// incoming [`MuxEvent`]s and updated its state.
 pub enum MuxNotification {
-    /// A pane's title or icon name changed — re-sync tab bar.
+    /// A pane's title or icon name changed.
     PaneTitleChanged(PaneId),
     /// A pane has new content to render.
-    PaneDirty(PaneId),
+    PaneOutput(PaneId),
     /// A pane was closed (PTY exited, removed from registry).
     PaneClosed(PaneId),
-    /// A tab's split tree layout changed.
-    TabLayoutChanged(TabId),
-    /// A floating pane moved or resized (position-only, no PTY resize needed).
-    FloatingPaneChanged(TabId),
-    /// A window's tab list changed.
-    WindowTabsChanged(WindowId),
-    /// An alert fired in a pane (bell, urgent notification).
-    Alert(PaneId),
+    /// A bell or urgent notification fired in a pane.
+    PaneBell(PaneId),
     /// A long-running command completed in a pane.
     CommandComplete {
         /// Which pane completed a command.
@@ -278,10 +272,6 @@ pub enum MuxNotification {
         /// Command execution duration.
         duration: std::time::Duration,
     },
-    /// A window was closed (but other windows remain).
-    WindowClosed(WindowId),
-    /// The last window was closed — application should exit.
-    LastWindowClosed,
     /// OSC 52 clipboard store request forwarded from a pane.
     ClipboardStore {
         /// Originating pane.
@@ -306,17 +296,12 @@ impl fmt::Debug for MuxNotification {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::PaneTitleChanged(id) => write!(f, "PaneTitleChanged({id})"),
-            Self::PaneDirty(id) => write!(f, "PaneDirty({id})"),
+            Self::PaneOutput(id) => write!(f, "PaneOutput({id})"),
             Self::PaneClosed(id) => write!(f, "PaneClosed({id})"),
-            Self::TabLayoutChanged(id) => write!(f, "TabLayoutChanged({id})"),
-            Self::FloatingPaneChanged(id) => write!(f, "FloatingPaneChanged({id})"),
-            Self::WindowTabsChanged(id) => write!(f, "WindowTabsChanged({id})"),
-            Self::WindowClosed(id) => write!(f, "WindowClosed({id})"),
-            Self::Alert(id) => write!(f, "Alert({id})"),
+            Self::PaneBell(id) => write!(f, "PaneBell({id})"),
             Self::CommandComplete { pane_id, duration } => {
                 write!(f, "CommandComplete({pane_id}, {duration:?})")
             }
-            Self::LastWindowClosed => write!(f, "LastWindowClosed"),
             Self::ClipboardStore {
                 pane_id,
                 clipboard_type,

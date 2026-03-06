@@ -2,7 +2,7 @@
 //!
 //! Extracted from `tab_management/mod.rs` for file size compliance.
 
-use oriterm_mux::{TabId, WindowId as MuxWindowId};
+use crate::session::{TabId, WindowId as SessionWindowId};
 
 use super::super::App;
 
@@ -12,15 +12,23 @@ impl App {
     /// Preserves the tab's panes and split layout. If the source window
     /// becomes empty, it is closed. Panes in the moved tab are resized to
     /// fit the destination window dimensions.
-    pub(in crate::app) fn move_tab_to_window(&mut self, tab_id: TabId, dest_window: MuxWindowId) {
-        let Some(mux) = &mut self.mux else { return };
-        if !mux.move_tab_to_window(tab_id, dest_window) {
-            return;
+    pub(in crate::app) fn move_tab_to_window(
+        &mut self,
+        tab_id: TabId,
+        dest_window: SessionWindowId,
+    ) {
+        // Remove tab from source window.
+        let src_wid = self.session.window_for_tab(tab_id);
+        if let Some(wid) = src_wid {
+            if let Some(win) = self.session.get_window_mut(wid) {
+                win.remove_tab(tab_id);
+            }
+        }
+        // Add tab to destination window.
+        if let Some(win) = self.session.get_window_mut(dest_window) {
+            win.add_tab(tab_id);
         }
 
-        // Mux notifications (WindowTabsChanged, WindowClosed, TabLayoutChanged)
-        // are processed in the normal pump_mux_events cycle. Sync both windows'
-        // tab bars immediately so the UI doesn't lag.
         self.release_tab_width_lock();
         self.sync_tab_bar_from_mux();
 
@@ -60,10 +68,7 @@ impl App {
         event_loop: &winit::event_loop::ActiveEventLoop,
     ) {
         // Refuse if this is the last tab in the entire session.
-        let is_last = self
-            .mux
-            .as_ref()
-            .is_some_and(|m| m.session().tab_count() <= 1);
+        let is_last = self.session.tab_count() <= 1;
         if is_last {
             log::warn!("move_tab_to_new_window: refused — last tab in session");
             return;
@@ -78,51 +83,51 @@ impl App {
         }
     }
 
-    /// Daemon-mode: create window via daemon, move tab, spawn new process.
+    /// Daemon-mode: move tab to a new window process.
+    ///
+    /// Spawns a new oriterm process connected to the same daemon, and moves
+    /// the tab's panes to render in the new process. The local session is
+    /// updated directly — no mux session sync needed (mux is a flat pane
+    /// server, it doesn't know about tabs or windows).
     pub(in crate::app) fn move_tab_to_new_window_daemon(&mut self, tab_id: TabId) {
-        let Some(mux) = &mut self.mux else { return };
+        // Allocate a new local window and move the tab there.
+        let new_session_wid = self.session.alloc_window_id();
+        self.session
+            .add_window(crate::session::Window::new(new_session_wid));
 
-        // Create a new empty window in the daemon.
-        let new_window_id = match mux.create_window() {
-            Ok(id) => id,
-            Err(e) => {
-                log::error!("move_tab_to_new_window_daemon: failed to create window: {e}");
-                return;
+        // Move tab from source to destination window locally.
+        if let Some(src_wid) = self.session.window_for_tab(tab_id) {
+            if let Some(win) = self.session.get_window_mut(src_wid) {
+                win.remove_tab(tab_id);
             }
-        };
-
-        // Move the tab to the new window.
-        if !mux.move_tab_to_window(tab_id, new_window_id) {
-            log::error!("move_tab_to_new_window_daemon: failed to move tab");
-            return;
+        }
+        if let Some(win) = self.session.get_window_mut(new_session_wid) {
+            win.add_tab(tab_id);
         }
 
         // Spawn a new oriterm process to render the new window.
-        // It connects to the same daemon socket and claims the window ID.
-        {
-            let exe = match std::env::current_exe() {
-                Ok(p) => p,
-                Err(e) => {
-                    log::error!("move_tab_to_new_window_daemon: cannot determine exe path: {e}");
-                    return;
-                }
-            };
-            let socket_path = oriterm_mux::server::socket_path();
-            let mut cmd = std::process::Command::new(exe);
-            cmd.arg("--connect")
-                .arg(&socket_path)
-                .arg("--window")
-                .arg(new_window_id.raw().to_string());
-            match cmd.spawn() {
-                Ok(child) => {
-                    log::info!(
-                        "spawned new window process (pid={}) for {new_window_id}",
-                        child.id()
-                    );
-                }
-                Err(e) => {
-                    log::error!("failed to spawn new window process: {e}");
-                }
+        let exe = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("move_tab_to_new_window_daemon: cannot determine exe path: {e}");
+                return;
+            }
+        };
+        let socket_path = oriterm_mux::server::socket_path();
+        let mut cmd = std::process::Command::new(exe);
+        cmd.arg("--connect")
+            .arg(&socket_path)
+            .arg("--window")
+            .arg(new_session_wid.raw().to_string());
+        match cmd.spawn() {
+            Ok(child) => {
+                log::info!(
+                    "spawned new window process (pid={}) for {new_session_wid}",
+                    child.id()
+                );
+            }
+            Err(e) => {
+                log::error!("failed to spawn new window process: {e}");
             }
         }
 
@@ -150,22 +155,35 @@ impl App {
         let Some(ctx) = self.windows.get(&new_winit_id) else {
             return;
         };
-        let new_mux_id = ctx.window.mux_window_id();
+        let new_session_wid = ctx.window.session_window_id();
 
         // Capture the initial tab ID before moving (the move changes active tab).
-        let initial_tab = self.mux.as_ref().and_then(|m| m.active_tab_id(new_mux_id));
+        let initial_tab = self
+            .session
+            .get_window(new_session_wid)
+            .and_then(crate::session::Window::active_tab);
 
         // Move the requested tab to the new window (now has 2 tabs).
-        self.move_tab_to_window(tab_id, new_mux_id);
+        self.move_tab_to_window(tab_id, new_session_wid);
 
         // Close the initial (empty) tab that `create_window` spawned
         // (window now has 1 tab — the moved one).
         if let Some(initial) = initial_tab {
+            let pane_ids: Vec<oriterm_mux::PaneId> = self
+                .session
+                .get_tab(initial)
+                .map(crate::session::Tab::all_panes)
+                .unwrap_or_default();
             if let Some(mux) = &mut self.mux {
-                let pane_ids = mux.close_tab(initial);
-                for pid in pane_ids {
+                for &pid in &pane_ids {
+                    mux.close_pane(pid);
                     mux.cleanup_closed_pane(pid);
                 }
+            }
+            // Remove initial tab from local session.
+            self.session.remove_tab(initial);
+            if let Some(win) = self.session.get_window_mut(new_session_wid) {
+                win.remove_tab(initial);
             }
         }
 
@@ -183,19 +201,21 @@ impl App {
         reason = "used by keybinding-driven reorder; drag uses reorder_tab_silent"
     )]
     pub(in crate::app) fn move_tab(&mut self, from: usize, to: usize) {
-        // Capture tab width before the mutable mux borrow.
         let tab_width = self
             .focused_ctx()
             .map_or(0.0, |ctx| ctx.tab_bar.layout().tab_width);
 
-        let Some(mux) = &mut self.mux else { return };
         let Some(win_id) = self.active_window else {
             return;
         };
-
-        if !mux.reorder_tab(win_id, from, to) {
+        let reordered = self
+            .session
+            .get_window_mut(win_id)
+            .is_some_and(|win| win.reorder_tab(from, to));
+        if !reordered {
             return;
         }
+
         self.sync_tab_bar_from_mux();
 
         // Start slide animation for displaced tabs.

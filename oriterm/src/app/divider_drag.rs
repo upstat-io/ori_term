@@ -7,8 +7,8 @@ use winit::dpi::PhysicalPosition;
 use winit::window::CursorIcon;
 
 use oriterm_mux::PaneId;
-use oriterm_mux::layout::split_tree::SplitDirection;
-use oriterm_mux::layout::{DividerLayout, Rect};
+
+use crate::session::{DividerLayout, Rect, SplitDirection};
 
 use super::App;
 
@@ -216,12 +216,18 @@ impl App {
         let delta_ratio = delta_px / total_px;
         let new_ratio = (initial_ratio + delta_ratio).clamp(0.1, 0.9);
 
-        // Update the tree through the mux.
+        // Update the tree locally.
         let Some((tab_id, _)) = self.active_pane_context() else {
             return;
         };
-        let Some(mux) = &mut self.mux else { return };
-        mux.set_divider_ratio(tab_id, pane_before, pane_after, new_ratio);
+        if let Some(tab) = self.session.get_tab_mut(tab_id) {
+            let new_tree = tab
+                .tree()
+                .set_divider_ratio(pane_before, pane_after, new_ratio);
+            if new_tree != *tab.tree() {
+                tab.set_tree(new_tree);
+            }
+        }
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
         }

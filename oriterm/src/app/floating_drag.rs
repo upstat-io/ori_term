@@ -8,8 +8,8 @@ use winit::dpi::PhysicalPosition;
 use winit::window::CursorIcon;
 
 use oriterm_mux::PaneId;
-use oriterm_mux::layout::Rect;
-use oriterm_mux::layout::floating::snap_to_edge;
+
+use crate::session::{Rect, snap_to_edge};
 
 use super::App;
 
@@ -154,10 +154,7 @@ impl App {
 
         // Find topmost floating pane under cursor.
         let floating_hit = {
-            let Some(mux) = self.mux.as_ref() else {
-                return false;
-            };
-            let Some(tab) = mux.session().get_tab(tab_id) else {
+            let Some(tab) = self.session.get_tab(tab_id) else {
                 return false;
             };
             // Check in reverse z-order (topmost first).
@@ -201,10 +198,7 @@ impl App {
         };
 
         let floating_hit = {
-            let Some(mux) = self.mux.as_ref() else {
-                return false;
-            };
-            let Some(tab) = mux.session().get_tab(tab_id) else {
+            let Some(tab) = self.session.get_tab(tab_id) else {
                 return false;
             };
             let mut result = None;
@@ -301,10 +295,7 @@ impl App {
 
                 // Snap to grid boundary edges.
                 let pane_rect = {
-                    let Some(mux) = self.mux.as_ref() else {
-                        return;
-                    };
-                    let Some(tab) = mux.session().get_tab(tab_id) else {
+                    let Some(tab) = self.session.get_tab(tab_id) else {
                         return;
                     };
                     tab.floating().pane_rect(pane_id)
@@ -318,8 +309,9 @@ impl App {
 
                 let (sx, sy) = snap_to_edge(new_x, new_y, rect.width, rect.height, &bounds);
 
-                let Some(mux) = &mut self.mux else { return };
-                mux.move_floating_pane(tab_id, pane_id, sx, sy);
+                if let Some(tab) = self.session.get_tab_mut(tab_id) {
+                    tab.floating_mut().move_pane_mut(pane_id, sx, sy);
+                }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;
                 }
@@ -336,11 +328,16 @@ impl App {
 
                 let (new_rect, needs_move) = compute_resize(ir, edge, dx, dy);
 
-                let Some(mux) = &mut self.mux else { return };
-                if needs_move {
-                    mux.set_floating_pane_rect(tab_id, pane_id, new_rect);
-                } else {
-                    mux.resize_floating_pane(tab_id, pane_id, new_rect.width, new_rect.height);
+                if let Some(tab) = self.session.get_tab_mut(tab_id) {
+                    if needs_move {
+                        tab.floating_mut().set_pane_rect_mut(pane_id, new_rect);
+                    } else {
+                        tab.floating_mut().resize_pane_mut(
+                            pane_id,
+                            new_rect.width,
+                            new_rect.height,
+                        );
+                    }
                 }
                 if let Some(ctx) = self.focused_ctx_mut() {
                     ctx.dirty = true;

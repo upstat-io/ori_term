@@ -1,6 +1,6 @@
 //! Mux backend abstraction.
 //!
-//! [`MuxBackend`] defines the interface between the GUI app and the
+//! [`MuxBackend`] defines the interface between the client app and the
 //! multiplexer state. Two implementations exist:
 //!
 //! - [`EmbeddedMux`] — in-process mux for single-process mode. Wraps
@@ -11,7 +11,6 @@
 pub mod client;
 pub mod embedded;
 
-use std::collections::HashSet;
 use std::io;
 use std::sync::mpsc;
 
@@ -21,10 +20,9 @@ use oriterm_core::selection::Selection;
 use crate::PaneSnapshot;
 use crate::domain::SpawnConfig;
 use crate::in_process::ClosePaneResult;
-use crate::layout::{Rect, SplitDirection};
 use crate::mux_event::{MuxEvent, MuxNotification};
-use crate::registry::{PaneEntry, SessionRegistry};
-use crate::{DomainId, PaneId, TabId, WindowId};
+use crate::registry::PaneEntry;
+use crate::{DomainId, PaneId};
 
 pub use self::client::MuxClient;
 pub use self::embedded::EmbeddedMux;
@@ -49,148 +47,19 @@ pub trait MuxBackend {
     /// Discard all pending notifications.
     fn discard_notifications(&mut self);
 
-    // -- Session queries --
-
-    /// Immutable access to the session registry.
-    fn session(&self) -> &SessionRegistry;
-
-    /// Active tab ID for a given window.
-    fn active_tab_id(&self, window_id: WindowId) -> Option<TabId>;
-
     /// Look up a pane's metadata entry.
     fn get_pane_entry(&self, pane_id: PaneId) -> Option<PaneEntry>;
 
-    /// True when this pane is the only pane in the entire session.
-    fn is_last_pane(&self, pane_id: PaneId) -> bool;
-
-    // -- Window operations --
-
-    /// Create a new empty mux window.
-    fn create_window(&mut self) -> io::Result<WindowId>;
-
-    /// Close a window and all its tabs/panes.
-    ///
-    /// Returns the list of `PaneId`s whose panes were removed.
-    fn close_window(&mut self, window_id: WindowId) -> Vec<PaneId>;
-
-    // -- Tab operations --
-
-    /// Create a new tab with a single pane in the given window.
-    ///
-    /// Returns `(TabId, PaneId)` — the pane is stored internally.
-    fn create_tab(
-        &mut self,
-        window_id: WindowId,
-        config: &SpawnConfig,
-        theme: Theme,
-    ) -> io::Result<(TabId, PaneId)>;
-
-    /// Close a tab and all its panes.
-    ///
-    /// Returns the list of `PaneId`s whose panes were removed.
-    fn close_tab(&mut self, tab_id: TabId) -> Vec<PaneId>;
-
-    /// Switch the active tab in a window.
-    fn switch_active_tab(&mut self, window_id: WindowId, tab_id: TabId) -> bool;
-
-    /// Cycle to the next or previous tab.
-    fn cycle_active_tab(&mut self, window_id: WindowId, delta: isize) -> Option<TabId>;
-
-    /// Reorder a tab within a window.
-    fn reorder_tab(&mut self, window_id: WindowId, from: usize, to: usize) -> bool;
-
-    /// Move a tab to a different window (appended).
-    fn move_tab_to_window(&mut self, tab_id: TabId, dest: WindowId) -> bool;
-
-    /// Move a tab to a specific index in the destination window.
-    fn move_tab_to_window_at(&mut self, tab_id: TabId, dest: WindowId, index: usize) -> bool;
-
     // -- Pane operations --
 
-    /// Split an existing pane, creating a new sibling.
+    /// Spawn a pane with a new PTY process.
     ///
-    /// Returns `PaneId` of the newly created pane.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "split requires source pane + direction on top of spawn params"
-    )]
-    fn split_pane(
-        &mut self,
-        tab_id: TabId,
-        source: PaneId,
-        dir: SplitDirection,
-        config: &SpawnConfig,
-        theme: Theme,
-    ) -> io::Result<PaneId>;
+    /// The client owns tab/window grouping — the mux creates the pane
+    /// and manages its PTY lifecycle. Returns `PaneId` for the new pane.
+    fn spawn_pane(&mut self, config: &SpawnConfig, theme: Theme) -> io::Result<PaneId>;
 
     /// Close a single pane.
     fn close_pane(&mut self, pane_id: PaneId) -> ClosePaneResult;
-
-    /// Change the focused pane within a tab.
-    fn set_active_pane(&mut self, tab_id: TabId, pane_id: PaneId) -> bool;
-
-    // -- Layout operations --
-
-    /// Toggle zoom on the active pane in a tab.
-    fn toggle_zoom(&mut self, tab_id: TabId);
-
-    /// Clear zoom without emitting a notification.
-    fn unzoom_silent(&mut self, tab_id: TabId);
-
-    /// Reset all split ratios to 0.5.
-    fn equalize_panes(&mut self, tab_id: TabId);
-
-    /// Set the ratio of a specific divider.
-    fn set_divider_ratio(&mut self, tab_id: TabId, before: PaneId, after: PaneId, ratio: f32);
-
-    /// Resize a pane by adjusting the nearest qualifying split border.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "resize requires tab + pane + axis + side + delta"
-    )]
-    fn resize_pane(
-        &mut self,
-        tab_id: TabId,
-        pane_id: PaneId,
-        axis: SplitDirection,
-        first: bool,
-        delta: f32,
-    );
-
-    /// Undo the last split tree mutation.
-    fn undo_split(&mut self, tab_id: TabId, live: &HashSet<PaneId>) -> bool;
-
-    /// Redo the last undone split tree mutation.
-    fn redo_split(&mut self, tab_id: TabId, live: &HashSet<PaneId>) -> bool;
-
-    // -- Floating pane operations --
-
-    /// Spawn a new floating pane.
-    fn spawn_floating_pane(
-        &mut self,
-        tab_id: TabId,
-        config: &SpawnConfig,
-        theme: Theme,
-        available: &Rect,
-    ) -> io::Result<PaneId>;
-
-    /// Move a tiled pane into the floating layer.
-    fn move_pane_to_floating(&mut self, tab_id: TabId, pane_id: PaneId, available: &Rect) -> bool;
-
-    /// Move a floating pane back into the tiled split tree.
-    fn move_pane_to_tiled(&mut self, tab_id: TabId, pane_id: PaneId) -> bool;
-
-    /// Move a floating pane to a new position.
-    fn move_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId, x: f32, y: f32);
-
-    /// Resize a floating pane.
-    fn resize_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId, w: f32, h: f32);
-
-    /// Set a floating pane's rect (position + size) in one call.
-    fn set_floating_pane_rect(&mut self, tab_id: TabId, pane_id: PaneId, rect: Rect);
-
-    /// Bring a floating pane to the front.
-    fn raise_floating_pane(&mut self, tab_id: TabId, pane_id: PaneId);
 
     // -- Grid operations --
 
@@ -292,13 +161,13 @@ pub trait MuxBackend {
     /// Mark the bell as active for a pane.
     ///
     /// In embedded mode, sets the pane's bell flag. In client mode this is
-    /// a no-op — the tab bar bell pulse is driven by `MuxNotification::Alert`.
+    /// a no-op — the bell state is driven by `MuxNotification::PaneBell`.
     fn set_bell(&mut self, _pane_id: PaneId) {}
 
     /// Clear the bell flag for a pane.
     ///
     /// In embedded mode, clears the pane's bell flag. In client mode this is
-    /// a no-op — the tab bar manages bell state locally.
+    /// a no-op — the client manages bell state locally.
     fn clear_bell(&mut self, _pane_id: PaneId) {}
 
     /// Clean up a closed pane's resources.
@@ -337,22 +206,6 @@ pub trait MuxBackend {
     /// Default domain ID for spawning.
     fn default_domain(&self) -> DomainId;
 
-    /// Tell the daemon which mux window this client renders.
-    ///
-    /// In embedded mode this is a no-op (the process owns its own state).
-    /// In daemon mode this sends a `ClaimWindow` RPC so the server can
-    /// route `WindowTabsChanged` notifications to this client.
-    fn claim_window(&mut self, _window_id: WindowId) -> io::Result<()> {
-        Ok(())
-    }
-
-    /// Re-fetch the tab list for `window_id` from the daemon.
-    ///
-    /// Called in daemon mode when a `WindowTabsChanged` notification
-    /// arrives — another client may have moved a tab to this window.
-    /// In embedded mode this is a no-op (local state is authoritative).
-    fn refresh_window_tabs(&mut self, _window_id: WindowId) {}
-
     /// Whether the daemon connection is alive.
     ///
     /// Always `true` for embedded mode (no remote connection).
@@ -364,8 +217,6 @@ pub trait MuxBackend {
     /// Whether this backend is running in daemon (IPC client) mode.
     ///
     /// Embedded mode returns `false`. Client mode returns `true`.
-    /// The App uses this to choose between in-process window creation
-    /// and cross-process tab migration.
     fn is_daemon_mode(&self) -> bool;
 
     // -- Snapshot access --
@@ -380,9 +231,6 @@ pub trait MuxBackend {
     ///
     /// Returns `true` if the swap succeeded (embedded mode). Returns `false`
     /// in daemon mode (caller must use `pane_snapshot()` + conversion).
-    ///
-    /// The swap reuses Vec allocations: `target.cells` gets the fresh data
-    /// while the old allocation goes back to the cache for the next frame.
     fn swap_renderable_content(
         &mut self,
         _pane_id: PaneId,

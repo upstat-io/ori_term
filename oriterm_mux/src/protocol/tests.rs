@@ -4,14 +4,9 @@ use std::io::Cursor;
 
 use super::codec::{DecodeError, DecodedFrame, ProtocolCodec};
 use super::messages::{MsgType, MuxPdu};
-use super::snapshot::{
-    MuxTabInfo, MuxWindowInfo, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb,
-};
+use super::snapshot::{PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
-use crate::id::{ClientId, DomainId, PaneId, TabId, WindowId};
-use crate::layout::SplitDirection;
-use crate::layout::floating::FloatingLayer;
-use crate::layout::split_tree::SplitTree;
+use crate::id::{ClientId, DomainId, PaneId};
 
 // -- FrameHeader tests --
 
@@ -56,50 +51,47 @@ fn header_max_values() {
 fn msg_type_roundtrip_all() {
     let types = [
         MsgType::Hello,
-        MsgType::CreateWindow,
-        MsgType::CreateTab,
-        MsgType::CloseTab,
         MsgType::ClosePane,
         MsgType::Input,
         MsgType::Resize,
-        MsgType::MoveTabToWindow,
         MsgType::Subscribe,
         MsgType::Unsubscribe,
-        MsgType::ListWindows,
-        MsgType::ListTabs,
         MsgType::GetPaneSnapshot,
-        MsgType::SplitPane,
-        MsgType::CycleTab,
-        MsgType::SetActiveTab,
-        MsgType::CloseWindow,
-        MsgType::ClaimWindow,
         MsgType::Ping,
         MsgType::Shutdown,
+        MsgType::ScrollDisplay,
+        MsgType::ScrollToBottom,
+        MsgType::ScrollToPrompt,
+        MsgType::SetTheme,
+        MsgType::SetCursorShape,
+        MsgType::MarkAllDirty,
+        MsgType::OpenSearch,
+        MsgType::CloseSearch,
+        MsgType::SearchSetQuery,
+        MsgType::SearchNextMatch,
+        MsgType::SearchPrevMatch,
+        MsgType::ExtractText,
+        MsgType::ExtractHtml,
         MsgType::SetCapabilities,
+        MsgType::SpawnPane,
+        MsgType::ListPanes,
         MsgType::HelloAck,
-        MsgType::WindowCreated,
-        MsgType::TabCreated,
-        MsgType::TabClosed,
         MsgType::PaneClosedAck,
-        MsgType::TabMovedAck,
         MsgType::Subscribed,
         MsgType::Unsubscribed,
-        MsgType::WindowList,
-        MsgType::TabList,
         MsgType::PaneSnapshotResp,
-        MsgType::PaneSplit,
-        MsgType::ActiveTabChanged,
-        MsgType::WindowClosed,
-        MsgType::WindowClaimed,
         MsgType::PingAck,
         MsgType::ShutdownAck,
+        MsgType::ScrollToPromptAck,
+        MsgType::ExtractTextResp,
+        MsgType::ExtractHtmlResp,
+        MsgType::SpawnPaneResponse,
+        MsgType::ListPanesResponse,
         MsgType::Error,
         MsgType::NotifyPaneOutput,
         MsgType::NotifyPaneExited,
         MsgType::NotifyPaneTitleChanged,
         MsgType::NotifyPaneBell,
-        MsgType::NotifyWindowTabsChanged,
-        MsgType::NotifyTabMoved,
         MsgType::NotifyPaneSnapshot,
     ];
     for t in types {
@@ -150,47 +142,6 @@ fn roundtrip_hello_ack() {
 }
 
 #[test]
-fn roundtrip_create_window() {
-    roundtrip(2, MuxPdu::CreateWindow);
-}
-
-#[test]
-fn roundtrip_create_tab() {
-    roundtrip(
-        3,
-        MuxPdu::CreateTab {
-            window_id: WindowId::from_raw(1),
-            shell: Some("/bin/bash".into()),
-            cwd: Some("/home/user".into()),
-            theme: Some("dark".into()),
-        },
-    );
-}
-
-#[test]
-fn roundtrip_create_tab_defaults() {
-    roundtrip(
-        4,
-        MuxPdu::CreateTab {
-            window_id: WindowId::from_raw(1),
-            shell: None,
-            cwd: None,
-            theme: None,
-        },
-    );
-}
-
-#[test]
-fn roundtrip_close_tab() {
-    roundtrip(
-        5,
-        MuxPdu::CloseTab {
-            tab_id: TabId::from_raw(3),
-        },
-    );
-}
-
-#[test]
 fn roundtrip_close_pane() {
     roundtrip(
         6,
@@ -222,17 +173,6 @@ fn roundtrip_resize_fire_and_forget() {
 }
 
 #[test]
-fn roundtrip_move_tab() {
-    roundtrip(
-        7,
-        MuxPdu::MoveTabToWindow {
-            tab_id: TabId::from_raw(2),
-            target_window_id: WindowId::from_raw(5),
-        },
-    );
-}
-
-#[test]
 fn roundtrip_subscribe() {
     roundtrip(
         8,
@@ -253,63 +193,11 @@ fn roundtrip_unsubscribe() {
 }
 
 #[test]
-fn roundtrip_list_windows() {
-    roundtrip(10, MuxPdu::ListWindows);
-}
-
-#[test]
-fn roundtrip_list_tabs() {
-    roundtrip(
-        11,
-        MuxPdu::ListTabs {
-            window_id: WindowId::from_raw(1),
-        },
-    );
-}
-
-#[test]
 fn roundtrip_get_pane_snapshot() {
     roundtrip(
         12,
         MuxPdu::GetPaneSnapshot {
             pane_id: PaneId::from_raw(1),
-        },
-    );
-}
-
-#[test]
-fn roundtrip_split_pane() {
-    roundtrip(
-        13,
-        MuxPdu::SplitPane {
-            tab_id: TabId::from_raw(1),
-            pane_id: PaneId::from_raw(1),
-            direction: SplitDirection::Vertical,
-            shell: None,
-            cwd: None,
-            theme: None,
-        },
-    );
-}
-
-#[test]
-fn roundtrip_cycle_tab() {
-    roundtrip(
-        14,
-        MuxPdu::CycleTab {
-            window_id: WindowId::from_raw(1),
-            delta: -1,
-        },
-    );
-}
-
-#[test]
-fn roundtrip_set_active_tab() {
-    roundtrip(
-        15,
-        MuxPdu::SetActiveTab {
-            window_id: WindowId::from_raw(1),
-            tab_id: TabId::from_raw(3),
         },
     );
 }
@@ -325,120 +213,9 @@ fn roundtrip_error_response() {
 }
 
 #[test]
-fn roundtrip_window_list() {
-    roundtrip(
-        16,
-        MuxPdu::WindowList {
-            windows: vec![
-                MuxWindowInfo {
-                    window_id: WindowId::from_raw(1),
-                    tab_count: 3,
-                    active_tab_id: Some(TabId::from_raw(2)),
-                },
-                MuxWindowInfo {
-                    window_id: WindowId::from_raw(2),
-                    tab_count: 1,
-                    active_tab_id: Some(TabId::from_raw(4)),
-                },
-            ],
-        },
-    );
-}
-
-#[test]
-fn roundtrip_tab_list() {
-    roundtrip(
-        17,
-        MuxPdu::TabList {
-            tabs: vec![MuxTabInfo {
-                tab_id: TabId::from_raw(1),
-                active_pane_id: PaneId::from_raw(1),
-                pane_count: 2,
-                title: "vim".into(),
-                tree: SplitTree::leaf(PaneId::from_raw(1)),
-                floating: FloatingLayer::new(),
-                zoomed_pane: None,
-            }],
-        },
-    );
-}
-
-#[test]
-fn roundtrip_tab_created() {
-    roundtrip(
-        18,
-        MuxPdu::TabCreated {
-            tab_id: TabId::from_raw(5),
-            pane_id: PaneId::from_raw(9),
-            domain_id: DomainId::from_raw(0),
-        },
-    );
-}
-
-#[test]
 fn roundtrip_unit_responses() {
-    roundtrip(19, MuxPdu::TabClosed);
     roundtrip(20, MuxPdu::PaneClosedAck);
-    roundtrip(21, MuxPdu::TabMovedAck);
     roundtrip(22, MuxPdu::Unsubscribed);
-}
-
-#[test]
-fn roundtrip_active_tab_changed() {
-    roundtrip(
-        23,
-        MuxPdu::ActiveTabChanged {
-            tab_id: TabId::from_raw(7),
-        },
-    );
-}
-
-#[test]
-fn roundtrip_pane_split() {
-    roundtrip(
-        24,
-        MuxPdu::PaneSplit {
-            new_pane_id: PaneId::from_raw(10),
-            domain_id: DomainId::from_raw(0),
-        },
-    );
-}
-
-#[test]
-fn roundtrip_close_window() {
-    roundtrip(
-        25,
-        MuxPdu::CloseWindow {
-            window_id: WindowId::from_raw(1),
-        },
-    );
-}
-
-#[test]
-fn roundtrip_window_closed() {
-    roundtrip(
-        26,
-        MuxPdu::WindowClosed {
-            pane_ids: vec![PaneId::from_raw(1), PaneId::from_raw(2)],
-        },
-    );
-}
-
-// -- ClaimWindow/WindowClaimed roundtrips --
-
-#[test]
-fn roundtrip_claim_window() {
-    roundtrip(
-        27,
-        MuxPdu::ClaimWindow {
-            window_id: WindowId::from_raw(3),
-        },
-    );
-}
-
-#[test]
-fn roundtrip_window_claimed() {
-    roundtrip(27, MuxPdu::WindowClaimed);
 }
 
 #[test]
@@ -459,6 +236,67 @@ fn roundtrip_shutdown() {
 #[test]
 fn roundtrip_shutdown_ack() {
     roundtrip(31, MuxPdu::ShutdownAck);
+}
+
+// -- SpawnPane / ListPanes roundtrips --
+
+#[test]
+fn roundtrip_spawn_pane() {
+    roundtrip(
+        32,
+        MuxPdu::SpawnPane {
+            shell: Some("/bin/bash".into()),
+            cwd: Some("/home/user".into()),
+            theme: Some("dark".into()),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_spawn_pane_defaults() {
+    roundtrip(
+        33,
+        MuxPdu::SpawnPane {
+            shell: None,
+            cwd: None,
+            theme: None,
+        },
+    );
+}
+
+#[test]
+fn roundtrip_spawn_pane_response() {
+    roundtrip(
+        34,
+        MuxPdu::SpawnPaneResponse {
+            pane_id: PaneId::from_raw(9),
+            domain_id: DomainId::from_raw(0),
+        },
+    );
+}
+
+#[test]
+fn roundtrip_list_panes() {
+    roundtrip(35, MuxPdu::ListPanes);
+}
+
+#[test]
+fn roundtrip_list_panes_response() {
+    roundtrip(
+        36,
+        MuxPdu::ListPanesResponse {
+            pane_ids: vec![
+                PaneId::from_raw(1),
+                PaneId::from_raw(3),
+                PaneId::from_raw(7),
+            ],
+        },
+    );
+}
+
+#[test]
+fn roundtrip_list_panes_response_empty() {
+    roundtrip(37, MuxPdu::ListPanesResponse { pane_ids: vec![] });
 }
 
 // -- Notification roundtrips --
@@ -498,28 +336,6 @@ fn roundtrip_notify_bell() {
         0,
         MuxPdu::NotifyPaneBell {
             pane_id: PaneId::from_raw(1),
-        },
-    );
-}
-
-#[test]
-fn roundtrip_notify_window_tabs_changed() {
-    roundtrip(
-        0,
-        MuxPdu::NotifyWindowTabsChanged {
-            window_id: WindowId::from_raw(1),
-        },
-    );
-}
-
-#[test]
-fn roundtrip_notify_tab_moved() {
-    roundtrip(
-        0,
-        MuxPdu::NotifyTabMoved {
-            tab_id: TabId::from_raw(3),
-            from_window: WindowId::from_raw(1),
-            to_window: WindowId::from_raw(2),
         },
     );
 }
@@ -701,7 +517,16 @@ fn sequence_correlation() {
         },
     )
     .unwrap();
-    ProtocolCodec::encode_frame(&mut buf, 101, &MuxPdu::CreateWindow).unwrap();
+    ProtocolCodec::encode_frame(
+        &mut buf,
+        101,
+        &MuxPdu::SpawnPane {
+            shell: None,
+            cwd: None,
+            theme: None,
+        },
+    )
+    .unwrap();
 
     let mut reader = Cursor::new(buf);
     let mut codec = ProtocolCodec::new();
@@ -853,28 +678,26 @@ fn multiple_frames_sequential() {
                 client_id: ClientId::from_raw(1),
             },
         ),
-        (2, MuxPdu::CreateWindow),
         (
             2,
-            MuxPdu::WindowCreated {
-                window_id: WindowId::from_raw(1),
-            },
-        ),
-        (
-            3,
-            MuxPdu::CreateTab {
-                window_id: WindowId::from_raw(1),
+            MuxPdu::SpawnPane {
                 shell: None,
                 cwd: None,
                 theme: None,
             },
         ),
         (
-            3,
-            MuxPdu::TabCreated {
-                tab_id: TabId::from_raw(1),
+            2,
+            MuxPdu::SpawnPaneResponse {
                 pane_id: PaneId::from_raw(1),
                 domain_id: DomainId::from_raw(0),
+            },
+        ),
+        (3, MuxPdu::ListPanes),
+        (
+            3,
+            MuxPdu::ListPanesResponse {
+                pane_ids: vec![PaneId::from_raw(1)],
             },
         ),
     ];

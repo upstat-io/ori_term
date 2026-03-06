@@ -9,7 +9,7 @@ mod merge;
 #[cfg(target_os = "windows")]
 mod tear_off;
 
-use oriterm_mux::TabId;
+use crate::session::TabId;
 
 use oriterm_ui::widgets::tab_bar::constants::{
     DRAG_START_THRESHOLD, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN, TEAR_OFF_THRESHOLD,
@@ -133,14 +133,11 @@ impl App {
             let tw = ctx.tab_bar.layout().tab_width;
             let caption_h = ctx.chrome.caption_height();
 
-            // Resolve the mux TabId from the index.
-            let Some(mux) = self.mux.as_ref() else {
-                return false;
-            };
+            // Resolve the session TabId from the index.
             let Some(win_id) = self.active_window else {
                 return false;
             };
-            let Some(win) = mux.session().get_window(win_id) else {
+            let Some(win) = self.session.get_window(win_id) else {
                 return false;
             };
             let Some(&tid) = win.tabs().get(tab_index) else {
@@ -386,18 +383,20 @@ impl App {
         self.focused_ctx().is_some_and(|ctx| ctx.tab_drag.is_some())
     }
 
-    /// Reorder a tab in the mux and sync the tab bar, without animation.
+    /// Reorder a tab in the local session and sync the tab bar, without animation.
     ///
     /// During an active drag, the visual position is controlled by
     /// `drag_visual_x`, not the compositor. Animation is triggered
     /// separately in `try_finish_tab_drag`.
     fn reorder_tab_silent(&mut self, from: usize, to: usize) {
-        let Some(mux) = &mut self.mux else { return };
         let Some(win_id) = self.active_window else {
             return;
         };
-
-        if !mux.reorder_tab(win_id, from, to) {
+        let reordered = self
+            .session
+            .get_window_mut(win_id)
+            .is_some_and(|win| win.reorder_tab(from, to));
+        if !reordered {
             return;
         }
         self.sync_tab_bar_from_mux();

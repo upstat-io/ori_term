@@ -5,11 +5,12 @@
 //! within a tab. The mux layer knows nothing about this; it just
 //! provides panes.
 
-// Section 02 will wire these types into App; until then they're unused.
+// Some session methods/fields are defined but not yet consumed — they are used
+// when section 02.4 switches all mutations to local-first (ID allocators,
+// undo/redo, tab reorder, etc.).
 #![allow(
     dead_code,
-    unused_imports,
-    reason = "consumed by App in mux-flatten section 02"
+    reason = "session API consumed incrementally across sections 02.2–02.4"
 )]
 
 pub mod id;
@@ -17,14 +18,20 @@ mod registry;
 mod tab;
 mod window;
 
-// Layout submodules (populated by section 04):
-// pub mod split_tree;
-// pub mod floating;
-// pub mod rect;
-// pub mod compute;
-// pub mod nav;
+// Layout submodules (copied from oriterm_mux in Section 04).
+pub mod compute;
+pub mod floating;
+pub mod nav;
+pub mod rect;
+pub mod split_tree;
 
-pub use id::{IdAllocator, SessionId, TabId, WindowId};
+pub use id::{TabId, WindowId};
 pub use registry::SessionRegistry;
 pub use tab::Tab;
 pub use window::Window;
+
+// Layout re-exports for convenient access from consuming modules.
+pub use compute::{DividerLayout, LayoutDescriptor, PaneLayout, compute_all};
+pub use floating::{FloatingPane, snap_to_edge};
+pub use rect::Rect;
+pub use split_tree::SplitDirection;

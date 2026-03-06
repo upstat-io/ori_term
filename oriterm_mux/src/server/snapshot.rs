@@ -14,10 +14,8 @@ use oriterm_core::{Column, CursorShape, Grid, RenderableCell, RenderableContent,
 
 use crate::mux_event::MuxEventProxy;
 use crate::pane::Pane;
-use crate::registry::PaneRegistry;
 use crate::{
-    MuxTabInfo, MuxWindowInfo, PaneId, PaneSnapshot, SessionRegistry, WindowId, WireCell,
-    WireCursor, WireCursorShape, WireRgb, WireSearchMatch,
+    PaneId, PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb, WireSearchMatch,
 };
 
 /// Cached snapshots with reusable allocation buffers.
@@ -298,55 +296,4 @@ fn cursor_shape_to_wire(shape: CursorShape) -> WireCursorShape {
         CursorShape::HollowBlock => WireCursorShape::HollowBlock,
         CursorShape::Hidden => WireCursorShape::Hidden,
     }
-}
-
-/// Build the list of all mux windows for a `ListWindows` response.
-pub fn build_window_list(session: &SessionRegistry) -> Vec<MuxWindowInfo> {
-    let mut windows = Vec::new();
-    // Iterate all windows by checking known IDs.
-    // SessionRegistry exposes get_window — we iterate via the session's
-    // internal window map. Since SessionRegistry doesn't expose an iterator,
-    // we use the window_ids accessor.
-    for (&window_id, win) in session.windows() {
-        windows.push(MuxWindowInfo {
-            window_id,
-            tab_count: win.tabs().len() as u32,
-            active_tab_id: win.active_tab(),
-        });
-    }
-    windows
-}
-
-/// Build the list of tabs in a window for a `ListTabs` response.
-pub fn build_tab_list(
-    session: &SessionRegistry,
-    pane_registry: &PaneRegistry,
-    panes: &HashMap<PaneId, Pane>,
-    window_id: WindowId,
-) -> Vec<MuxTabInfo> {
-    let Some(win) = session.get_window(window_id) else {
-        return Vec::new();
-    };
-
-    win.tabs()
-        .iter()
-        .filter_map(|&tab_id| {
-            let tab = session.get_tab(tab_id)?;
-            let active_pane_id = tab.active_pane();
-            let pane_count = pane_registry.panes_in_tab(tab_id).len() as u32;
-            let title = panes
-                .get(&active_pane_id)
-                .map(|p| p.effective_title().to_string())
-                .unwrap_or_default();
-            Some(MuxTabInfo {
-                tab_id,
-                active_pane_id,
-                pane_count,
-                title,
-                tree: tab.tree().clone(),
-                floating: tab.floating().clone(),
-                zoomed_pane: tab.zoomed_pane(),
-            })
-        })
-        .collect()
 }

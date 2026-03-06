@@ -112,6 +112,14 @@ impl SessionRegistry {
         &self.windows
     }
 
+    /// Find which tab contains a given pane.
+    pub fn tab_for_pane(&self, pane_id: PaneId) -> Option<TabId> {
+        self.tabs
+            .values()
+            .find(|t| t.all_panes().contains(&pane_id))
+            .map(Tab::id)
+    }
+
     /// True when this pane is the only pane across all tabs and windows.
     pub fn is_last_pane(&self, pane_id: PaneId) -> bool {
         if self.tabs.len() != 1 {

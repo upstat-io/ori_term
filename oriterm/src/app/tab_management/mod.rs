@@ -11,17 +11,18 @@ use std::path::PathBuf;
 use winit::window::WindowId;
 
 use oriterm_mux::domain::SpawnConfig;
-use oriterm_mux::{TabId, WindowId as MuxWindowId};
+
+use crate::session::{TabId, WindowId as SessionWindowId};
 
 use super::App;
 
 impl App {
-    /// Create a new tab in the given mux window.
+    /// Create a new tab in the given window.
     ///
-    /// Inherits CWD from the active pane in the current tab. Applies the
-    /// color palette and clears the width lock. Tab bar sync happens via
-    /// the `WindowTabsChanged` notification from the mux.
-    pub(super) fn new_tab_in_window(&mut self, window_id: MuxWindowId) {
+    /// Inherits CWD from the active pane in the current tab. Spawns a
+    /// pane via the mux, then creates a local tab and registers it in
+    /// the session.
+    pub(super) fn new_tab_in_window(&mut self, window_id: SessionWindowId) {
         let cwd = self
             .active_pane_id()
             .and_then(|id| self.mux.as_ref()?.pane_cwd(id))
@@ -46,17 +47,28 @@ impl App {
             crate::app::config_reload::build_palette_from_config(&self.config.colors, theme);
 
         let Some(mux) = &mut self.mux else { return };
-        match mux.create_tab(window_id, &config, theme) {
-            Ok((_tab_id, pane_id)) => {
-                mux.set_pane_theme(pane_id, theme, palette);
-                log::info!("new tab with pane {pane_id:?} in window {window_id:?}");
+        let pane_id = match mux.spawn_pane(&config, theme) {
+            Ok(pid) => {
+                mux.set_pane_theme(pid, theme, palette);
+                pid
             }
             Err(e) => {
                 log::error!("new tab failed: {e}");
                 return;
             }
+        };
+
+        // Local tab creation.
+        let tab_id = self.session.alloc_tab_id();
+        let tab = crate::session::Tab::new(tab_id, pane_id);
+        self.session.add_tab(tab);
+        if let Some(win) = self.session.get_window_mut(window_id) {
+            win.add_tab(tab_id);
         }
+        log::info!("new tab {tab_id:?} with pane {pane_id:?} in window {window_id:?}");
+
         self.release_tab_width_lock();
+        self.sync_tab_bar_from_mux();
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.dirty = true;
         }
@@ -70,22 +82,34 @@ impl App {
     /// Otherwise pane cleanup happens via `PaneClosed` notifications in
     /// `pump_mux_events`.
     pub(super) fn close_tab(&mut self, tab_id: TabId) {
-        // Capture slide animation data before the mutable borrow of mux.
+        // Capture slide animation data before mutations.
         let slide_info = self.capture_close_slide_info(tab_id);
 
-        let Some(mux) = &mut self.mux else { return };
+        let is_last = self.session.tab_count() <= 1;
+        let owner_window = self.session.window_for_tab(tab_id);
 
-        // Check before closing: if the session has only one tab total,
-        // closing it will leave zero windows. Must exit *before* dropping
-        // Pane structs (ConPTY safety on Windows).
-        let is_last = mux.session().tab_count() <= 1;
+        // Collect pane IDs from local session before removing the tab.
+        let pane_ids: Vec<oriterm_mux::PaneId> = self
+            .session
+            .get_tab(tab_id)
+            .map(crate::session::Tab::all_panes)
+            .unwrap_or_default();
 
-        // Track which window owns this tab so we can detect empty windows.
-        let owner_window = mux.session().window_for_tab(tab_id);
+        // Close each pane through the mux (unregisters from pane registry,
+        // emits PaneClosed for cleanup in pump_mux_events).
+        if let Some(mux) = &mut self.mux {
+            for &pid in &pane_ids {
+                mux.close_pane(pid);
+            }
+        }
 
-        // Pane cleanup is deferred to `PaneClosed` notifications in
-        // `pump_mux_events` — the returned IDs are intentionally unused here.
-        let _pane_ids = mux.close_tab(tab_id);
+        // Remove tab from local session.
+        self.session.remove_tab(tab_id);
+        if let Some(wid) = owner_window {
+            if let Some(win) = self.session.get_window_mut(wid) {
+                win.remove_tab(tab_id);
+            }
+        }
 
         if is_last {
             log::info!("last tab closed, shutting down");
@@ -96,22 +120,15 @@ impl App {
         // close it. This handles torn-off windows and multi-window setups.
         if let Some(win_id) = owner_window {
             let window_empty = self
-                .mux
-                .as_ref()
-                .and_then(|m| m.session().get_window(win_id))
+                .session
+                .get_window(win_id)
                 .is_some_and(|w| w.tabs().is_empty());
             if window_empty {
-                self.close_empty_mux_window(win_id);
+                self.close_empty_session_window(win_id);
                 return;
             }
         }
 
-        // Width lock is NOT released here. It persists for Chrome-style
-        // rapid-close targeting (close button stays under cursor). The lock
-        // is released when the cursor leaves the tab bar, a new tab is
-        // created, or a drag finishes/cancels.
-
-        // Sync tab bar immediately so slide animation has correct tab count.
         self.sync_tab_bar_from_mux();
 
         // Start slide animation for displaced tabs (skip if last tab).
@@ -138,11 +155,10 @@ impl App {
     /// index and delegates to `close_tab`.
     pub(super) fn close_tab_at_index(&mut self, index: usize) {
         let tab_id = {
-            let Some(mux) = self.mux.as_ref() else { return };
             let Some(win_id) = self.active_window else {
                 return;
             };
-            let Some(win) = mux.session().get_window(win_id) else {
+            let Some(win) = self.session.get_window(win_id) else {
                 return;
             };
             match win.tabs().get(index).copied() {
@@ -163,11 +179,26 @@ impl App {
 
     /// Cycle to the next or previous tab in the active window.
     pub(super) fn cycle_tab(&mut self, delta: isize) {
-        let Some(mux) = &mut self.mux else { return };
         let Some(win_id) = self.active_window else {
             return;
         };
-        if mux.cycle_active_tab(win_id, delta).is_none() {
+        let cycled = {
+            let Some(win) = self.session.get_window_mut(win_id) else {
+                return;
+            };
+            let count = win.tabs().len();
+            if count == 0 {
+                return;
+            }
+            let current = win.active_tab_idx();
+            let new_idx = (current as isize + delta).rem_euclid(count as isize) as usize;
+            if new_idx == current {
+                return;
+            }
+            win.set_active_tab_idx(new_idx);
+            true
+        };
+        if !cycled {
             return;
         }
 
@@ -189,12 +220,17 @@ impl App {
 
     /// Switch to a specific tab by its ID.
     pub(super) fn switch_to_tab(&mut self, tab_id: TabId) {
-        let Some(mux) = &mut self.mux else { return };
         let Some(win_id) = self.active_window else {
             return;
         };
-        if !mux.switch_active_tab(win_id, tab_id) {
-            return;
+        {
+            let Some(win) = self.session.get_window_mut(win_id) else {
+                return;
+            };
+            let Some(idx) = win.tabs().iter().position(|&id| id == tab_id) else {
+                return;
+            };
+            win.set_active_tab_idx(idx);
         }
 
         if let Some(id) = self.active_pane_id() {
@@ -214,13 +250,11 @@ impl App {
 
     /// Switch to a tab by its index in the active window.
     pub(super) fn switch_to_tab_index(&mut self, index: usize) {
-        let Some(mux) = &mut self.mux else { return };
         let Some(win_id) = self.active_window else {
             return;
         };
-
         let tab_id = {
-            let Some(win) = mux.session().get_window(win_id) else {
+            let Some(win) = self.session.get_window(win_id) else {
                 return;
             };
             match win.tabs().get(index).copied() {
@@ -228,7 +262,6 @@ impl App {
                 None => return,
             }
         };
-
         self.switch_to_tab(tab_id);
     }
 
@@ -238,9 +271,8 @@ impl App {
     ///
     /// Returns `None` if the tab or window context cannot be resolved.
     fn capture_close_slide_info(&self, tab_id: TabId) -> Option<(usize, f32)> {
-        let mux = self.mux.as_ref()?;
         let win_id = self.active_window?;
-        let win = mux.session().get_window(win_id)?;
+        let win = self.session.get_window(win_id)?;
         let idx = win.tabs().iter().position(|&id| id == tab_id)?;
         let tab_width = self.focused_ctx()?.tab_bar.layout().tab_width;
         Some((idx, tab_width))
@@ -288,9 +320,8 @@ impl App {
 
     /// The active tab ID for the active window.
     fn active_tab_id(&self) -> Option<TabId> {
-        let mux = self.mux.as_ref()?;
         let win_id = self.active_window?;
-        mux.active_tab_id(win_id)
+        self.session.get_window(win_id)?.active_tab()
     }
 
     /// Current grid dimensions (rows, cols) from the grid widget.
@@ -312,11 +343,11 @@ impl App {
         let Some(win_id) = self.active_window else {
             return;
         };
-        let Some(win) = mux.session().get_window(win_id) else {
+        let Some(win) = self.session.get_window(win_id) else {
             return;
         };
 
-        let (entries, active_idx) = build_tab_entries(mux.as_ref(), win);
+        let (entries, active_idx) = build_tab_entries(mux.as_ref(), &self.session, win);
 
         if let Some(ctx) = self.focused_ctx_mut() {
             ctx.tab_bar.set_tabs(entries);
@@ -331,20 +362,20 @@ impl App {
     /// destination windows need their tab bars updated.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(super) fn sync_tab_bar_for_window(&mut self, winit_id: WindowId) {
-        let mux_wid = {
+        let session_wid = {
             let Some(ctx) = self.windows.get(&winit_id) else {
                 return;
             };
-            ctx.window.mux_window_id()
+            ctx.window.session_window_id()
         };
         let Some(mux) = self.mux.as_ref() else {
             return;
         };
-        let Some(win) = mux.session().get_window(mux_wid) else {
+        let Some(win) = self.session.get_window(session_wid) else {
             return;
         };
 
-        let (entries, active_idx) = build_tab_entries(mux.as_ref(), win);
+        let (entries, active_idx) = build_tab_entries(mux.as_ref(), &self.session, win);
 
         if let Some(ctx) = self.windows.get_mut(&winit_id) {
             ctx.tab_bar.set_tabs(entries);
@@ -353,21 +384,22 @@ impl App {
     }
 }
 
-/// Build tab bar entries from a mux window's tab list.
+/// Build tab bar entries from a session window's tab list.
 ///
 /// Returns `(entries, active_tab_index)`. Shared by both
 /// `sync_tab_bar_from_mux` and `sync_tab_bar_for_window`.
 fn build_tab_entries(
     mux: &dyn oriterm_mux::backend::MuxBackend,
-    win: &oriterm_mux::session::MuxWindow,
+    session: &crate::session::SessionRegistry,
+    win: &crate::session::Window,
 ) -> (Vec<oriterm_ui::widgets::tab_bar::TabEntry>, usize) {
     let active_idx = win.active_tab_idx();
     let entries = win
         .tabs()
         .iter()
         .map(|&tab_id| {
-            let tab = mux.session().get_tab(tab_id);
-            let pane_id = tab.map(oriterm_mux::session::MuxTab::active_pane);
+            let tab = session.get_tab(tab_id);
+            let pane_id = tab.map(crate::session::Tab::active_pane);
             let snapshot = pane_id.and_then(|pid| mux.pane_snapshot(pid));
             let mut title = snapshot.map(|s| s.title.clone()).unwrap_or_default();
             let icon = snapshot

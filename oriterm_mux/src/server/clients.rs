@@ -9,7 +9,7 @@ use std::time::Instant;
 use mio::{Interest, Token};
 
 use crate::id::ClientId;
-use crate::{DecodedFrame, MuxPdu, WindowId};
+use crate::{DecodedFrame, MuxPdu};
 
 use super::connection::ClientConnection;
 use super::frame_io::ReadStatus;
@@ -197,19 +197,6 @@ impl MuxServer {
             }
         }
 
-        // Update window→client reverse index on ClaimWindow.
-        if let Some(wid) = result.claimed_window {
-            self.window_to_client.insert(wid, client_id);
-        }
-
-        // Update window→client reverse index on CloseWindow.
-        if let Some(wid) = result.closed_window {
-            self.window_to_client.remove(&wid);
-            if let Some(c) = self.connections.get_mut(&client_id) {
-                c.remove_window_id(wid);
-            }
-        }
-
         if let Some(resp_pdu) = result.response {
             let is_shutdown = matches!(resp_pdu, MuxPdu::ShutdownAck);
             let Some(conn) = self.connections.get_mut(&client_id) else {
@@ -251,8 +238,8 @@ impl MuxServer {
 
     /// Disconnect a client, cleaning up all associated state.
     ///
-    /// Closes any window the client owned (the GUI process is gone, so the
-    /// window's panes are orphaned). This allows `should_exit()` to fire
+    /// Closes any panes the client owned (the client process is gone, so
+    /// its panes are orphaned). This allows `should_exit()` to fire
     /// when the last client disconnects.
     pub(super) fn disconnect_client(&mut self, client_id: ClientId) {
         let Some(mut conn) = self.connections.remove(&client_id) else {
@@ -265,34 +252,22 @@ impl MuxServer {
         // Remove token mapping.
         self.token_to_client.remove(&conn.token());
 
-        // Close all windows this client owned (GUI is gone → panes orphaned).
-        // Also close any unclaimed windows this client created.
-        let mut windows_to_close: Vec<WindowId> = Vec::new();
-        for &wid in conn.window_ids() {
-            windows_to_close.push(wid);
-        }
-        // Add any windows created by this client that were never claimed.
-        for &wid in conn.created_windows() {
-            if !conn.window_ids().contains(&wid) && !windows_to_close.contains(&wid) {
-                windows_to_close.push(wid);
-            }
-        }
-        for wid in &windows_to_close {
-            self.window_to_client.remove(wid);
-            let closed_panes = self.mux.close_window(*wid);
-            for &pid in &closed_panes {
-                // Drop pane on a background thread — PTY cleanup can block.
-                let pane = self.panes.remove(&pid);
-                if let Some(p) = pane {
-                    std::thread::spawn(move || drop(p));
+        // Subscription-based cleanup: for each pane the disconnecting client
+        // was subscribed to, check if any other client is still subscribed.
+        // If not, close the pane (it has no remaining consumers).
+        let subscribed: Vec<_> = conn.subscribed_panes().iter().copied().collect();
+        for pid in &subscribed {
+            let other_subscribers = self
+                .subscriptions
+                .get(pid)
+                .is_some_and(|subs| subs.iter().any(|&c| c != client_id));
+            if !other_subscribers {
+                self.mux.close_pane(*pid);
+                if let Some(pane) = self.panes.remove(pid) {
+                    std::thread::spawn(move || drop(pane));
                 }
-                self.cleanup_pane_state(pid);
-            }
-            if !closed_panes.is_empty() {
-                log::info!(
-                    "closed {wid} owned by {client_id}, {} panes removed",
-                    closed_panes.len()
-                );
+                self.cleanup_pane_state(*pid);
+                log::debug!("closed orphaned {pid} (last subscriber {client_id} disconnected)");
             }
         }
 

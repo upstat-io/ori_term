@@ -51,14 +51,13 @@ fn wrap_large_delta() {
     assert_eq!(wrap_index(0, -7, 3), 2);
 }
 
-// -- MuxWindow tab management tests --
+// -- Window tab management tests --
 
-use oriterm_mux::session::MuxWindow;
-use oriterm_mux::{TabId, WindowId};
+use crate::session::{TabId, Window, WindowId};
 
 /// Create a window with N tabs for testing.
-fn window_with_tabs(n: usize) -> MuxWindow {
-    let mut win = MuxWindow::new(WindowId::from_raw(1));
+fn window_with_tabs(n: usize) -> Window {
+    let mut win = Window::new(WindowId::from_raw(1));
     for i in 0..n {
         win.add_tab(TabId::from_raw(100 + i as u64));
     }

@@ -6,8 +6,6 @@ use std::sync::Arc;
 use crate::pane::Pane;
 use crate::{InProcessMux, MuxPdu, PaneId};
 
-use crate::WindowId;
-
 use super::super::snapshot::SnapshotCache;
 
 /// Side effects returned from [`super::dispatch_request`].
@@ -22,10 +20,6 @@ pub(in crate::server) struct DispatchResult {
     pub sub_changed: bool,
     /// Pane that was unsubscribed (for `pending_push` cleanup).
     pub unsubscribed_pane: Option<PaneId>,
-    /// Window that was successfully claimed by the client.
-    pub claimed_window: Option<WindowId>,
-    /// Window that was successfully closed.
-    pub closed_window: Option<WindowId>,
 }
 
 /// Shared context for request dispatch.

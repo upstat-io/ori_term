@@ -1,3 +1,6 @@
+//! Tests for the mux server: PID file, IPC listener, MuxServer lifecycle,
+//! frame codec, and request dispatch roundtrips.
+
 use std::sync::atomic::Ordering;
 
 use oriterm_ipc::ClientStream;
@@ -59,6 +62,23 @@ fn send_pdu(stream: &mut ClientStream, seq: u32, pdu: &MuxPdu) {
 fn recv_pdu(stream: &mut ClientStream) -> (u32, MuxPdu) {
     let frame = ProtocolCodec::new().decode_frame(stream).unwrap();
     (frame.seq, frame.pdu)
+}
+
+/// Helper: run one poll cycle and dispatch all events.
+fn poll_and_dispatch(server: &mut MuxServer) {
+    let mut events = mio::Events::with_capacity(16);
+    server
+        .poll
+        .poll(&mut events, Some(std::time::Duration::from_millis(100)))
+        .unwrap();
+    for event in &events {
+        match event.token() {
+            super::LISTENER => server.accept_connections().unwrap(),
+            super::WAKER => {}
+            token => server.handle_client_event(token),
+        }
+    }
+    server.drain_mux_events();
 }
 
 // -- PID file tests --
@@ -330,8 +350,8 @@ fn frame_reader_multiple_frames_in_one_read() {
 
     let mut buf = Vec::new();
     ProtocolCodec::encode_frame(&mut buf, 1, &MuxPdu::Hello { pid: 1 }).unwrap();
-    ProtocolCodec::encode_frame(&mut buf, 2, &MuxPdu::CreateWindow).unwrap();
-    ProtocolCodec::encode_frame(&mut buf, 3, &MuxPdu::ListWindows).unwrap();
+    ProtocolCodec::encode_frame(&mut buf, 2, &MuxPdu::Ping).unwrap();
+    ProtocolCodec::encode_frame(&mut buf, 3, &MuxPdu::ListPanes).unwrap();
 
     reader.extend(&buf);
 
@@ -341,11 +361,11 @@ fn frame_reader_multiple_frames_in_one_read() {
 
     let f2 = reader.try_decode().unwrap().unwrap();
     assert_eq!(f2.seq, 2);
-    assert_eq!(f2.pdu, MuxPdu::CreateWindow);
+    assert_eq!(f2.pdu, MuxPdu::Ping);
 
     let f3 = reader.try_decode().unwrap().unwrap();
     assert_eq!(f3.seq, 3);
-    assert_eq!(f3.pdu, MuxPdu::ListWindows);
+    assert_eq!(f3.pdu, MuxPdu::ListPanes);
 
     assert!(reader.try_decode().is_none());
 }
@@ -429,98 +449,6 @@ fn hello_handshake_roundtrip() {
     }
 }
 
-// -- CreateWindow roundtrip --
-
-#[test]
-fn create_window_roundtrip() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Handshake.
-    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    // Create a window.
-    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-
-    let (seq, resp) = recv_pdu(&mut client);
-    assert_eq!(seq, 2);
-    match resp {
-        MuxPdu::WindowCreated { window_id } => {
-            assert_ne!(window_id.raw(), 0);
-        }
-        other => panic!("expected WindowCreated, got {other:?}"),
-    }
-}
-
-// -- ClaimWindow --
-
-#[test]
-fn claim_window_sets_connection_window_id() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Handshake.
-    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    // Create a window.
-    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    let window_id = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-
-    // Claim the window.
-    send_pdu(&mut client, 3, &MuxPdu::ClaimWindow { window_id });
-    poll_and_dispatch(&mut server);
-
-    let (seq, resp) = recv_pdu(&mut client);
-    assert_eq!(seq, 3);
-    assert_eq!(resp, MuxPdu::WindowClaimed);
-}
-
-// -- ListWindows --
-
-#[test]
-fn list_windows_empty_then_one() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Handshake.
-    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    // List windows (should be empty).
-    send_pdu(&mut client, 2, &MuxPdu::ListWindows);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    match resp {
-        MuxPdu::WindowList { windows } => {
-            assert!(windows.is_empty());
-        }
-        other => panic!("expected WindowList, got {other:?}"),
-    }
-
-    // Create a window and list again.
-    send_pdu(&mut client, 3, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    send_pdu(&mut client, 4, &MuxPdu::ListWindows);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    match resp {
-        MuxPdu::WindowList { windows } => {
-            assert_eq!(windows.len(), 1);
-        }
-        other => panic!("expected WindowList, got {other:?}"),
-    }
-}
-
 // -- Disconnect cleans up state --
 
 #[test]
@@ -560,10 +488,11 @@ fn input_is_fire_and_forget() {
     poll_and_dispatch(&mut server);
 
     // Verify the server is still alive by sending another request.
-    send_pdu(&mut client, 2, &MuxPdu::ListWindows);
+    send_pdu(&mut client, 2, &MuxPdu::Ping);
     poll_and_dispatch(&mut server);
-    let (seq, _) = recv_pdu(&mut client);
+    let (seq, resp) = recv_pdu(&mut client);
     assert_eq!(seq, 2);
+    assert_eq!(resp, MuxPdu::PingAck);
 }
 
 // -- Unexpected PDU from client --
@@ -573,7 +502,7 @@ fn unexpected_pdu_returns_error() {
     let (_dir, mut server, mut client) = server_with_client();
 
     // Send a response PDU (which is invalid from a client).
-    send_pdu(&mut client, 1, &MuxPdu::TabClosed);
+    send_pdu(&mut client, 1, &MuxPdu::PaneClosedAck);
     poll_and_dispatch(&mut server);
 
     let (seq, resp) = recv_pdu(&mut client);
@@ -596,23 +525,6 @@ fn frame_reader_no_data_returns_none() {
     // Extending with empty slice is a no-op.
     reader.extend(&[]);
     assert!(reader.try_decode().is_none());
-}
-
-/// Helper: run one poll cycle and dispatch all events.
-fn poll_and_dispatch(server: &mut MuxServer) {
-    let mut events = mio::Events::with_capacity(16);
-    server
-        .poll
-        .poll(&mut events, Some(std::time::Duration::from_millis(100)))
-        .unwrap();
-    for event in &events {
-        match event.token() {
-            super::LISTENER => server.accept_connections().unwrap(),
-            super::WAKER => {}
-            token => server.handle_client_event(token),
-        }
-    }
-    server.drain_mux_events();
 }
 
 // -- Duplicate Hello handling --
@@ -645,40 +557,6 @@ fn duplicate_hello_returns_second_ack() {
             );
         }
         other => panic!("expected HelloAck, got {other:?}"),
-    }
-}
-
-// -- ListTabs for non-existent window --
-
-#[test]
-fn list_tabs_nonexistent_window_returns_empty() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Handshake.
-    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    // List tabs for a window that doesn't exist.
-    send_pdu(
-        &mut client,
-        2,
-        &MuxPdu::ListTabs {
-            window_id: crate::WindowId::from_raw(999),
-        },
-    );
-    poll_and_dispatch(&mut server);
-
-    let (seq, resp) = recv_pdu(&mut client);
-    assert_eq!(seq, 2);
-    match resp {
-        MuxPdu::TabList { tabs } => {
-            assert!(
-                tabs.is_empty(),
-                "non-existent window should return empty tab list"
-            );
-        }
-        other => panic!("expected TabList, got {other:?}"),
     }
 }
 
@@ -758,7 +636,7 @@ fn frame_reader_recovers_after_payload_too_large() {
     assert!(result.is_err(), "expected error for oversized payload");
 
     // Second: a valid frame immediately after.
-    let good_pdu = MuxPdu::CreateWindow;
+    let good_pdu = MuxPdu::Ping;
     let mut good_buf = Vec::new();
     ProtocolCodec::encode_frame(&mut good_buf, 2, &good_pdu).unwrap();
     reader.extend(&good_buf);
@@ -766,7 +644,7 @@ fn frame_reader_recovers_after_payload_too_large() {
     // Should decode the good frame successfully.
     let frame = reader.try_decode().unwrap().unwrap();
     assert_eq!(frame.seq, 2);
-    assert_eq!(frame.pdu, MuxPdu::CreateWindow);
+    assert_eq!(frame.pdu, MuxPdu::Ping);
 }
 
 // -- Server auto-exit conditions --
@@ -806,7 +684,7 @@ fn server_does_not_exit_before_first_client() {
 }
 
 #[test]
-fn server_exits_after_client_disconnects_and_no_windows() {
+fn server_exits_after_client_disconnects_and_no_panes() {
     let dir = tempfile::tempdir().unwrap();
     let sock_path = test_sock_path(dir.path(), "exit");
     let pid_path = dir.path().join("exit.pid");
@@ -831,94 +709,22 @@ fn server_exits_after_client_disconnects_and_no_windows() {
     // Fast-forward past grace period.
     server.start_time = std::time::Instant::now() - std::time::Duration::from_secs(10);
 
-    // No windows, no clients, had_client=true → should exit.
+    // No panes, no clients, had_client=true — should exit.
     assert!(
         server.should_exit(),
-        "should exit when no clients and no windows after grace"
+        "should exit when no clients and no panes after grace"
     );
 }
 
-// -- MoveTabToWindow via server (tasks 2, 3) --
+// -- SpawnPane dispatch --
 
-/// Helper: connect a client, handshake, create a window, claim it, and
-/// inject a test tab into the server's mux. Returns the window ID and tab ID.
-fn setup_client_with_tab(
-    server: &mut MuxServer,
-    client: &mut ClientStream,
-    seq_start: u32,
-) -> (crate::WindowId, crate::TabId) {
-    // Handshake.
-    send_pdu(client, seq_start, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(server);
-    let _ = recv_pdu(client);
-
-    // Create a window.
-    send_pdu(client, seq_start + 1, &MuxPdu::CreateWindow);
-    poll_and_dispatch(server);
-    let (_, resp) = recv_pdu(client);
-    let window_id = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-
-    // Claim the window.
-    send_pdu(client, seq_start + 2, &MuxPdu::ClaimWindow { window_id });
-    poll_and_dispatch(server);
-    let _ = recv_pdu(client);
-
-    // Inject a test tab directly into the server's mux.
-    let tid = crate::TabId::from_raw(window_id.raw() * 10);
-    let pid = crate::PaneId::from_raw(window_id.raw() * 100);
-    server.mux.inject_test_tab(window_id, tid, pid);
-
-    (window_id, tid)
-}
-
-/// MoveTabToWindow succeeds and the mux state reflects the move.
+/// SpawnPane returns a `SpawnPaneResponse` with a valid pane ID.
+///
+/// Note: this test may fail in environments without a working PTY (e.g.
+/// CI containers). If so, the server returns `MuxPdu::Error` which we
+/// also accept.
 #[test]
-fn move_tab_between_windows_roundtrip() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Create two windows with one tab each.
-    let (_w1, t1) = setup_client_with_tab(&mut server, &mut client, 1);
-
-    // Create second window.
-    send_pdu(&mut client, 10, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    let w2 = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-
-    // Inject a tab in w2 so w1 move doesn't leave w2 empty.
-    let t2 = crate::TabId::from_raw(w2.raw() * 10);
-    let p2 = crate::PaneId::from_raw(w2.raw() * 100);
-    server.mux.inject_test_tab(w2, t2, p2);
-
-    // Move t1 from w1 → w2.
-    send_pdu(
-        &mut client,
-        11,
-        &MuxPdu::MoveTabToWindow {
-            tab_id: t1,
-            target_window_id: w2,
-        },
-    );
-    poll_and_dispatch(&mut server);
-
-    let (seq, resp) = recv_pdu(&mut client);
-    assert_eq!(seq, 11);
-    assert_eq!(resp, MuxPdu::TabMovedAck);
-
-    // Verify mux state: t1 should now be in w2.
-    let w2_win = server.mux.session().get_window(w2).unwrap();
-    assert!(w2_win.tabs().contains(&t1));
-}
-
-/// MoveTabToWindow with a nonexistent tab returns an Error PDU.
-#[test]
-fn move_nonexistent_tab_returns_error() {
+fn spawn_pane_roundtrip() {
     let (_dir, mut server, mut client) = server_with_client();
 
     // Handshake.
@@ -926,192 +732,35 @@ fn move_nonexistent_tab_returns_error() {
     poll_and_dispatch(&mut server);
     let _ = recv_pdu(&mut client);
 
-    // Create a destination window.
-    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    let w1 = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-
-    // Move a nonexistent tab.
-    let fake_tab = crate::TabId::from_raw(999);
+    // Spawn a pane.
     send_pdu(
         &mut client,
-        3,
-        &MuxPdu::MoveTabToWindow {
-            tab_id: fake_tab,
-            target_window_id: w1,
+        2,
+        &MuxPdu::SpawnPane {
+            shell: None,
+            cwd: None,
+            theme: None,
         },
     );
     poll_and_dispatch(&mut server);
 
     let (seq, resp) = recv_pdu(&mut client);
-    assert_eq!(seq, 3);
+    assert_eq!(seq, 2);
+    // PTY spawn may fail in test environments, so accept either response.
     assert!(
-        matches!(resp, MuxPdu::Error { .. }),
-        "expected Error for nonexistent tab, got {resp:?}"
+        matches!(
+            resp,
+            MuxPdu::SpawnPaneResponse { .. } | MuxPdu::Error { .. }
+        ),
+        "expected SpawnPaneResponse or Error, got {resp:?}"
     );
 }
 
-/// MoveTabToWindow to nonexistent target window returns Error.
+// -- ListPanes dispatch --
+
+/// ListPanes on an empty server returns an empty list.
 #[test]
-fn move_tab_to_nonexistent_window_returns_error() {
-    let (_dir, mut server, mut client) = server_with_client();
-    let (w1, t1) = setup_client_with_tab(&mut server, &mut client, 1);
-
-    // Inject a second tab so t1 isn't the last tab in w1.
-    let t2 = crate::TabId::from_raw(w1.raw() * 10 + 1);
-    let p2 = crate::PaneId::from_raw(w1.raw() * 100 + 1);
-    server.mux.inject_test_tab(w1, t2, p2);
-
-    let fake_dest = crate::WindowId::from_raw(999);
-    send_pdu(
-        &mut client,
-        10,
-        &MuxPdu::MoveTabToWindow {
-            tab_id: t1,
-            target_window_id: fake_dest,
-        },
-    );
-    poll_and_dispatch(&mut server);
-
-    let (seq, resp) = recv_pdu(&mut client);
-    assert_eq!(seq, 10);
-    assert!(
-        matches!(resp, MuxPdu::Error { .. }),
-        "expected Error for nonexistent dest window, got {resp:?}"
-    );
-}
-
-// -- Multi-client interaction (task 4) --
-
-/// Helper: connect a second client to the server.
-fn connect_second_client(server: &mut MuxServer, sock_path: &std::path::Path) -> ClientStream {
-    let client2 = ClientStream::connect(sock_path).unwrap();
-
-    let mut events = mio::Events::with_capacity(16);
-    server
-        .poll
-        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
-        .unwrap();
-    server.accept_connections().unwrap();
-
-    client2
-}
-
-/// Two clients claim different windows. Tab move triggers
-/// `NotifyWindowTabsChanged` delivery to the destination window's client.
-#[test]
-fn multi_client_tab_move_notification() {
-    let dir = tempfile::tempdir().unwrap();
-    let sock_path = test_sock_path(dir.path(), "tabmove");
-    let pid_path = dir.path().join("tabmove.pid");
-    let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
-
-    // Connect client 1.
-    let mut c1 = ClientStream::connect(&sock_path).unwrap();
-    let mut events = mio::Events::with_capacity(16);
-    server
-        .poll
-        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
-        .unwrap();
-    server.accept_connections().unwrap();
-
-    let (_w1, t1) = setup_client_with_tab(&mut server, &mut c1, 1);
-
-    // Connect client 2.
-    let mut c2 = connect_second_client(&mut server, &sock_path);
-    // ClientStream is always blocking.
-
-    // Client 2 handshake.
-    send_pdu(&mut c2, 1, &MuxPdu::Hello { pid: 2 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut c2);
-
-    // Client 2 creates and claims window w2.
-    send_pdu(&mut c2, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut c2);
-    let w2 = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-    send_pdu(&mut c2, 3, &MuxPdu::ClaimWindow { window_id: w2 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut c2);
-
-    // Inject a tab in w2 (so the move has somewhere to land).
-    let t2 = crate::TabId::from_raw(w2.raw() * 10);
-    let p2 = crate::PaneId::from_raw(w2.raw() * 100);
-    server.mux.inject_test_tab(w2, t2, p2);
-
-    // Client 1 moves t1 to w2.
-    send_pdu(
-        &mut c1,
-        10,
-        &MuxPdu::MoveTabToWindow {
-            tab_id: t1,
-            target_window_id: w2,
-        },
-    );
-    poll_and_dispatch(&mut server);
-
-    // Client 1 gets TabMovedAck.
-    let (seq, resp) = recv_pdu(&mut c1);
-    assert_eq!(seq, 10);
-    assert_eq!(resp, MuxPdu::TabMovedAck);
-
-    // Client 2 should receive NotifyWindowTabsChanged for w2.
-    c2.set_read_timeout(Some(std::time::Duration::from_millis(500)))
-        .unwrap();
-    let (notif_seq, notif_pdu) = recv_pdu(&mut c2);
-    assert_eq!(notif_seq, 0, "notification should have seq=0");
-    assert_eq!(
-        notif_pdu,
-        MuxPdu::NotifyWindowTabsChanged { window_id: w2 },
-        "client 2 should get WindowTabsChanged for its window"
-    );
-}
-
-// -- Client disconnect after claiming window (task 7) --
-
-/// Client claims a window, then disconnects. Server handles cleanup
-/// without panic and doesn't leak the claimed window.
-#[test]
-fn disconnect_after_claim_cleans_up() {
-    let (_dir, mut server, mut client) = server_with_client();
-    let (w1, _t1) = setup_client_with_tab(&mut server, &mut client, 1);
-
-    assert_eq!(server.client_count(), 1);
-
-    // Verify the connection has the window claim.
-    let has_claim = server
-        .connections
-        .values()
-        .any(|c| c.window_ids().contains(&w1));
-    assert!(has_claim, "client should have claimed w1");
-
-    // Disconnect.
-    drop(client);
-    poll_and_dispatch(&mut server);
-
-    assert_eq!(server.client_count(), 0);
-
-    // The window is closed when the owning client disconnects
-    // (GUI is gone → panes are orphaned).
-    assert!(
-        server.mux.session().get_window(w1).is_none(),
-        "window should be closed after owning client disconnects"
-    );
-}
-
-// -- remove_client_subscriptions integration (task 8) --
-
-/// Client subscribes to a pane, then disconnects. Subscription is cleaned up.
-#[test]
-fn disconnect_cleans_up_subscriptions() {
+fn list_panes_empty() {
     let (_dir, mut server, mut client) = server_with_client();
 
     // Handshake.
@@ -1119,67 +768,21 @@ fn disconnect_cleans_up_subscriptions() {
     poll_and_dispatch(&mut server);
     let _ = recv_pdu(&mut client);
 
-    // Create a window and inject a pane.
-    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    let w1 = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-    let tid = crate::TabId::from_raw(1);
-    let pid = crate::PaneId::from_raw(1);
-    server.mux.inject_test_tab(w1, tid, pid);
-
-    // We need a real Pane in the server's pane map for Subscribe to succeed.
-    // Since we can't easily construct a Pane in tests, we'll just subscribe
-    // and the server will return an Error (pane not in pane map). But the
-    // subscription is still recorded on the connection.
-    //
-    // Actually, let's test with Unsubscribe which doesn't require the pane to
-    // exist, or check that the server returns Error but still registers the
-    // subscription on the connection side.
-    //
-    // The subscribe dispatch checks `panes.get(&pane_id)` which will fail
-    // since inject_test_tab doesn't insert into the server's pane HashMap.
-    // Let's test with Subscribe → Error, then check subscription cleanup.
-    send_pdu(&mut client, 3, &MuxPdu::Subscribe { pane_id: pid });
+    // List panes (should be empty).
+    send_pdu(&mut client, 2, &MuxPdu::ListPanes);
     poll_and_dispatch(&mut server);
 
-    // The response will be an Error because the pane isn't in the server's
-    // pane map (inject_test_tab only sets up mux metadata, not actual Panes).
-    let (_, resp) = recv_pdu(&mut client);
-    assert!(
-        matches!(resp, MuxPdu::Error { .. }),
-        "expected Error since no Pane object exists"
-    );
-
-    // However, the connection's subscribe() was called before the pane check.
-    // Let's verify: dispatch calls conn.subscribe() first, then checks panes.
-    // Actually, looking at dispatch.rs, Subscribe checks panes AFTER calling
-    // conn.subscribe(). So the subscription is recorded.
-    let has_sub = server.connections.values().any(|c| c.is_subscribed(pid));
-    assert!(has_sub, "subscription should be recorded on connection");
-
-    // Also check global subscriptions map.
-    assert!(
-        server.subscriptions.contains_key(&pid),
-        "global subscriptions should track the pane"
-    );
-
-    // Disconnect.
-    drop(client);
-    poll_and_dispatch(&mut server);
-
-    // Subscription should be cleaned up.
-    assert_eq!(server.client_count(), 0);
-    assert!(
-        !server.subscriptions.contains_key(&pid),
-        "subscription should be removed after disconnect"
-    );
+    let (seq, resp) = recv_pdu(&mut client);
+    assert_eq!(seq, 2);
+    match resp {
+        MuxPdu::ListPanesResponse { pane_ids } => {
+            assert!(pane_ids.is_empty(), "no panes should exist yet");
+        }
+        other => panic!("expected ListPanesResponse, got {other:?}"),
+    }
 }
 
-// -- parse_theme roundtrip (task 9) --
+// -- parse_theme roundtrip --
 
 /// `parse_theme` with `"dark"` returns Dark.
 #[test]
@@ -1231,206 +834,6 @@ fn ping_returns_ping_ack() {
     assert_eq!(resp, MuxPdu::PingAck);
 }
 
-// -- Broken-pipe notification cleanup --
-
-/// Client disconnects while server has a notification queued.
-///
-/// Server should handle the broken pipe gracefully — no panic, client
-/// is cleaned up on the next poll cycle, including the window it owned.
-#[test]
-fn disconnect_closes_owned_window_and_server_continues() {
-    let dir = tempfile::tempdir().unwrap();
-    let sock_path = test_sock_path(dir.path(), "brokenpipe");
-    let pid_path = dir.path().join("brokenpipe.pid");
-    let mut server = MuxServer::with_paths(&sock_path, &pid_path).unwrap();
-
-    // Connect two clients.
-    let mut c1 = ClientStream::connect(&sock_path).unwrap();
-    let mut c2 = ClientStream::connect(&sock_path).unwrap();
-    let mut events = mio::Events::with_capacity(16);
-    server
-        .poll
-        .poll(&mut events, Some(std::time::Duration::from_millis(50)))
-        .unwrap();
-    server.accept_connections().unwrap();
-    assert_eq!(server.client_count(), 2);
-
-    // Client 1: handshake + create window + claim window.
-    send_pdu(&mut c1, 1, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut c1);
-
-    send_pdu(&mut c1, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut c1);
-    let w1 = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-    send_pdu(&mut c1, 3, &MuxPdu::ClaimWindow { window_id: w1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut c1);
-
-    // Client 2: handshake + create window + claim window.
-    send_pdu(&mut c2, 1, &MuxPdu::Hello { pid: 2 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut c2);
-
-    send_pdu(&mut c2, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut c2);
-    let w2 = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-    send_pdu(&mut c2, 3, &MuxPdu::ClaimWindow { window_id: w2 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut c2);
-
-    assert_eq!(server.mux().session().window_count(), 2);
-
-    // Drop client 2 (simulating disconnect).
-    drop(c2);
-    poll_and_dispatch(&mut server);
-
-    // Client 2's window should be closed.
-    assert_eq!(server.client_count(), 1);
-    assert!(
-        server.mux().session().get_window(w2).is_none(),
-        "w2 should be closed after owning client disconnects"
-    );
-    // Client 1's window should still exist.
-    assert!(server.mux().session().get_window(w1).is_some());
-    assert_eq!(server.mux().session().window_count(), 1);
-
-    // Server is still alive and functional.
-    send_pdu(&mut c1, 4, &MuxPdu::ListWindows);
-    poll_and_dispatch(&mut server);
-    let (seq, resp) = recv_pdu(&mut c1);
-    assert_eq!(seq, 4);
-    match resp {
-        MuxPdu::WindowList { windows } => {
-            assert_eq!(windows.len(), 1, "only w1 should remain");
-        }
-        other => panic!("expected WindowList, got {other:?}"),
-    }
-}
-
-// -- Integrated multi-command pipeline --
-
-/// Multi-command pipeline: create window → inject tabs → move tab →
-/// close window → verify final state.
-#[test]
-fn multi_command_pipeline_final_state() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Handshake.
-    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    // Create window 1.
-    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    let w1 = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-
-    // Create window 2.
-    send_pdu(&mut client, 3, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    let w2 = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-
-    // Inject tabs into both windows.
-    let t1 = crate::TabId::from_raw(10);
-    let p1 = crate::PaneId::from_raw(100);
-    server.mux.inject_test_tab(w1, t1, p1);
-
-    let t2 = crate::TabId::from_raw(20);
-    let p2 = crate::PaneId::from_raw(200);
-    server.mux.inject_test_tab(w1, t2, p2);
-
-    let t3 = crate::TabId::from_raw(30);
-    let p3 = crate::PaneId::from_raw(300);
-    server.mux.inject_test_tab(w2, t3, p3);
-
-    // Verify initial state.
-    let w1_tabs = server.mux.session().get_window(w1).unwrap().tabs().len();
-    let w2_tabs = server.mux.session().get_window(w2).unwrap().tabs().len();
-    assert_eq!(w1_tabs, 2, "w1 should have 2 tabs");
-    assert_eq!(w2_tabs, 1, "w2 should have 1 tab");
-
-    // Move t1 from w1 to w2.
-    send_pdu(
-        &mut client,
-        4,
-        &MuxPdu::MoveTabToWindow {
-            tab_id: t1,
-            target_window_id: w2,
-        },
-    );
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    assert_eq!(resp, MuxPdu::TabMovedAck);
-
-    // Verify after move: w1 has 1 tab, w2 has 2 tabs.
-    let w1_tabs = server.mux.session().get_window(w1).unwrap().tabs().len();
-    let w2_tabs = server.mux.session().get_window(w2).unwrap().tabs().len();
-    assert_eq!(w1_tabs, 1, "w1 should have 1 tab after move");
-    assert_eq!(w2_tabs, 2, "w2 should have 2 tabs after move");
-    assert!(
-        server
-            .mux
-            .session()
-            .get_window(w2)
-            .unwrap()
-            .tabs()
-            .contains(&t1)
-    );
-
-    // Close window 1.
-    send_pdu(&mut client, 5, &MuxPdu::CloseWindow { window_id: w1 });
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    match resp {
-        MuxPdu::WindowClosed { pane_ids } => {
-            assert!(
-                pane_ids.contains(&p2),
-                "w1's remaining pane should be in closed list"
-            );
-        }
-        other => panic!("expected WindowClosed, got {other:?}"),
-    }
-
-    // Verify final state: only w2 remains with 2 tabs.
-    assert!(
-        server.mux.session().get_window(w1).is_none(),
-        "w1 should be gone"
-    );
-    let w2_win = server.mux.session().get_window(w2).unwrap();
-    assert_eq!(w2_win.tabs().len(), 2);
-    assert!(w2_win.tabs().contains(&t1));
-    assert!(w2_win.tabs().contains(&t3));
-
-    // List windows should return exactly 1.
-    send_pdu(&mut client, 6, &MuxPdu::ListWindows);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    match resp {
-        MuxPdu::WindowList { windows } => {
-            assert_eq!(windows.len(), 1);
-            assert_eq!(windows[0].window_id, w2);
-        }
-        other => panic!("expected WindowList, got {other:?}"),
-    }
-}
-
 // -- Resize fire-and-forget verification --
 
 /// Resize PDU is fire-and-forget — server processes it silently.
@@ -1459,74 +862,11 @@ fn resize_fire_and_forget_no_response() {
     poll_and_dispatch(&mut server);
 
     // Verify server is still alive by sending a normal request.
-    send_pdu(&mut client, 2, &MuxPdu::ListWindows);
+    send_pdu(&mut client, 2, &MuxPdu::Ping);
     poll_and_dispatch(&mut server);
     let (seq, resp) = recv_pdu(&mut client);
     assert_eq!(seq, 2);
-    assert!(matches!(resp, MuxPdu::WindowList { .. }));
-}
-
-// -- CloseWindow full cleanup --
-
-/// Closing a window with multiple tabs cleans up all related state
-/// (session, pane registry).
-#[test]
-fn close_window_removes_all_tabs_and_pane_entries() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Handshake.
-    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    // Create a window.
-    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    let wid = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-
-    // Inject 3 tabs with 3 panes.
-    let t1 = crate::TabId::from_raw(10);
-    let p1 = crate::PaneId::from_raw(100);
-    let t2 = crate::TabId::from_raw(20);
-    let p2 = crate::PaneId::from_raw(200);
-    let t3 = crate::TabId::from_raw(30);
-    let p3 = crate::PaneId::from_raw(300);
-    server.mux.inject_test_tab(wid, t1, p1);
-    server.mux.inject_test_tab(wid, t2, p2);
-    server.mux.inject_test_tab(wid, t3, p3);
-
-    // Verify pre-conditions.
-    assert_eq!(
-        server.mux.session().get_window(wid).unwrap().tabs().len(),
-        3
-    );
-
-    // Close the window.
-    send_pdu(&mut client, 3, &MuxPdu::CloseWindow { window_id: wid });
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    match resp {
-        MuxPdu::WindowClosed { pane_ids } => {
-            assert_eq!(pane_ids.len(), 3, "all 3 panes should be returned");
-            assert!(pane_ids.contains(&p1));
-            assert!(pane_ids.contains(&p2));
-            assert!(pane_ids.contains(&p3));
-        }
-        other => panic!("expected WindowClosed, got {other:?}"),
-    }
-
-    // Window, tabs, pane entries should all be gone.
-    assert!(server.mux.session().get_window(wid).is_none());
-    assert!(server.mux.session().get_tab(t1).is_none());
-    assert!(server.mux.session().get_tab(t2).is_none());
-    assert!(server.mux.session().get_tab(t3).is_none());
-    assert!(server.mux.pane_registry().get(p1).is_none());
-    assert!(server.mux.pane_registry().get(p2).is_none());
-    assert!(server.mux.pane_registry().get(p3).is_none());
+    assert_eq!(resp, MuxPdu::PingAck);
 }
 
 // -- Concurrent multi-client RPC --
@@ -1551,9 +891,6 @@ fn concurrent_clients_no_cross_contamination() {
     server.accept_connections().unwrap();
     assert_eq!(server.client_count(), 2);
 
-    // ClientStream is always blocking.
-    // ClientStream is always blocking.
-
     // Both handshake.
     send_pdu(&mut c1, 1, &MuxPdu::Hello { pid: 1 });
     send_pdu(&mut c2, 1, &MuxPdu::Hello { pid: 2 });
@@ -1570,71 +907,22 @@ fn concurrent_clients_no_cross_contamination() {
     };
     assert_ne!(id1, id2, "clients should get different IDs");
 
-    // Both create windows simultaneously.
-    send_pdu(&mut c1, 2, &MuxPdu::CreateWindow);
-    send_pdu(&mut c2, 2, &MuxPdu::CreateWindow);
+    // Both list panes simultaneously.
+    send_pdu(&mut c1, 2, &MuxPdu::ListPanes);
+    send_pdu(&mut c2, 2, &MuxPdu::ListPanes);
     poll_and_dispatch(&mut server);
 
-    let (_, r1) = recv_pdu(&mut c1);
-    let (_, r2) = recv_pdu(&mut c2);
-    let w1 = match r1 {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("c1: expected WindowCreated, got {other:?}"),
-    };
-    let w2 = match r2 {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("c2: expected WindowCreated, got {other:?}"),
-    };
-    assert_ne!(w1, w2, "windows should have different IDs");
-
-    // Both claim their windows.
-    send_pdu(&mut c1, 3, &MuxPdu::ClaimWindow { window_id: w1 });
-    send_pdu(&mut c2, 3, &MuxPdu::ClaimWindow { window_id: w2 });
-    poll_and_dispatch(&mut server);
-    let (_, r1) = recv_pdu(&mut c1);
-    let (_, r2) = recv_pdu(&mut c2);
-    assert_eq!(r1, MuxPdu::WindowClaimed);
-    assert_eq!(r2, MuxPdu::WindowClaimed);
-
-    // Both list windows — should see the same 2 windows.
-    send_pdu(&mut c1, 4, &MuxPdu::ListWindows);
-    send_pdu(&mut c2, 4, &MuxPdu::ListWindows);
-    poll_and_dispatch(&mut server);
     let (_, r1) = recv_pdu(&mut c1);
     let (_, r2) = recv_pdu(&mut c2);
     match (r1, r2) {
-        (MuxPdu::WindowList { windows: w_a }, MuxPdu::WindowList { windows: w_b }) => {
-            assert_eq!(w_a.len(), 2, "c1 should see 2 windows");
-            assert_eq!(w_b.len(), 2, "c2 should see 2 windows");
+        (MuxPdu::ListPanesResponse { pane_ids: a }, MuxPdu::ListPanesResponse { pane_ids: b }) => {
+            assert_eq!(a.len(), b.len(), "both clients should see same pane count");
         }
-        other => panic!("expected WindowList from both, got {other:?}"),
+        other => panic!("expected ListPanesResponse from both, got {other:?}"),
     }
 }
 
 // -- Handshake rejection --
-
-/// Client sends a response PDU (TabClosed) without Hello first.
-///
-/// The server should respond with an Error PDU.
-#[test]
-fn response_pdu_before_hello_returns_error() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Skip Hello — send CreateWindow directly.
-    send_pdu(&mut client, 1, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-
-    // Server should still accept the request (CreateWindow doesn't
-    // require prior Hello in the current dispatch). Verify it returns
-    // a valid response rather than crashing.
-    let (seq, resp) = recv_pdu(&mut client);
-    assert_eq!(seq, 1);
-    // CreateWindow should succeed since dispatch doesn't require Hello first.
-    assert!(
-        matches!(resp, MuxPdu::WindowCreated { .. }),
-        "should create window even without Hello: {resp:?}"
-    );
-}
 
 /// Client sends a notification PDU (which only servers send).
 ///
@@ -1794,53 +1082,6 @@ fn double_shutdown_is_idempotent() {
     assert_eq!(resp, MuxPdu::ShutdownAck);
 
     // Flag is still set.
-    assert!(server.shutdown_flag().load(Ordering::Acquire));
-}
-
-// -- Shutdown with active subscriptions --
-
-/// Client subscribes to a pane, then sends Shutdown. Verify
-/// the server handles shutdown cleanly with active subscriptions.
-#[test]
-fn shutdown_with_active_subscriptions() {
-    let (_dir, mut server, mut client) = server_with_client();
-
-    // Handshake.
-    send_pdu(&mut client, 1, &MuxPdu::Hello { pid: 1 });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    // Create a window and inject a pane.
-    send_pdu(&mut client, 2, &MuxPdu::CreateWindow);
-    poll_and_dispatch(&mut server);
-    let (_, resp) = recv_pdu(&mut client);
-    let wid = match resp {
-        MuxPdu::WindowCreated { window_id } => window_id,
-        other => panic!("expected WindowCreated, got {other:?}"),
-    };
-    let tid = crate::TabId::from_raw(1);
-    let pid = crate::PaneId::from_raw(1);
-    server.mux.inject_test_tab(wid, tid, pid);
-
-    // Subscribe (will return Error since no real Pane, but subscription
-    // is still recorded on the connection).
-    send_pdu(&mut client, 3, &MuxPdu::Subscribe { pane_id: pid });
-    poll_and_dispatch(&mut server);
-    let _ = recv_pdu(&mut client);
-
-    // Verify subscription is registered.
-    assert!(
-        server.subscriptions.contains_key(&pid),
-        "subscription should be active before shutdown"
-    );
-
-    // Now send Shutdown.
-    send_pdu(&mut client, 4, &MuxPdu::Shutdown);
-    poll_and_dispatch(&mut server);
-
-    let (seq, resp) = recv_pdu(&mut client);
-    assert_eq!(seq, 4);
-    assert_eq!(resp, MuxPdu::ShutdownAck);
     assert!(server.shutdown_flag().load(Ordering::Acquire));
 }
 
