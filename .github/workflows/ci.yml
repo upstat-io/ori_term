@@ -91,7 +91,7 @@ jobs:
   test-windows:
     name: Test (Windows)
     runs-on: windows-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

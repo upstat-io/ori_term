@@ -75,6 +75,29 @@ impl TestContext {
             .expect("snapshot should be available")
             .clone()
     }
+
+    /// Poll until a snapshot predicate is satisfied, returning an owned copy.
+    fn wait_for(&mut self, what: &str, predicate: impl Fn(&PaneSnapshot) -> bool) -> PaneSnapshot {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let pid = self.pane_id;
+        loop {
+            self.b().poll_events();
+            let mut notifs = Vec::new();
+            self.b().drain_notifications(&mut notifs);
+
+            if let Some(snap) = self.b().refresh_pane_snapshot(pid) {
+                if predicate(snap) {
+                    return snap.clone();
+                }
+            }
+
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for condition: {what}"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +129,7 @@ impl TestDaemon {
             }
         });
 
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + Duration::from_secs(30);
         while !socket_path.exists() {
             if Instant::now() > deadline {
                 panic!("daemon socket did not appear within 5 seconds");
@@ -241,7 +264,7 @@ macro_rules! muxbackend_contract_tests {
             let mut ctx = $factory();
             let pid = ctx.pane_id;
             ctx.b().send_input(pid, b"echo CONTRACT_OUTPUT\n");
-            let snap = ctx.wait_for_text("CONTRACT_OUTPUT", Duration::from_secs(15));
+            let snap = ctx.wait_for_text("CONTRACT_OUTPUT", Duration::from_secs(30));
             assert!(snapshot_contains(&snap, "CONTRACT_OUTPUT"));
         }
 
@@ -253,7 +276,7 @@ macro_rules! muxbackend_contract_tests {
 
             // Poll until the resize is reflected in the snapshot.
             // CI runners can be slow so a fixed sleep is unreliable.
-            let deadline = Instant::now() + Duration::from_secs(15);
+            let deadline = Instant::now() + Duration::from_secs(30);
             loop {
                 ctx.b().poll_events();
                 let mut n = Vec::new();
@@ -307,21 +330,15 @@ macro_rules! muxbackend_contract_tests {
                 );
                 thread::sleep(Duration::from_millis(50));
             }
-            // Wait for the shell prompt after the fence to settle, then
-            // drain all pending events so no late-arriving output resets
+            // Drain all pending events so no late-arriving output resets
             // the scroll position after we scroll up.
-            thread::sleep(Duration::from_millis(500));
             ctx.b().poll_events();
             let mut n = Vec::new();
             ctx.b().drain_notifications(&mut n);
 
             // Scroll up.
             ctx.b().scroll_display(pid, 10);
-            thread::sleep(Duration::from_millis(300));
-            ctx.b().poll_events();
-            n.clear();
-            ctx.b().drain_notifications(&mut n);
-            let snap = ctx.snapshot();
+            let snap = ctx.wait_for("display_offset == 10", |s| s.display_offset == 10);
             assert_eq!(
                 snap.display_offset, 10,
                 "display_offset after scroll_display(10)"
@@ -329,11 +346,7 @@ macro_rules! muxbackend_contract_tests {
 
             // Scroll to bottom.
             ctx.b().scroll_to_bottom(pid);
-            thread::sleep(Duration::from_millis(300));
-            ctx.b().poll_events();
-            n.clear();
-            ctx.b().drain_notifications(&mut n);
-            let snap = ctx.snapshot();
+            let snap = ctx.wait_for("display_offset == 0", |s| s.display_offset == 0);
             assert_eq!(
                 snap.display_offset, 0,
                 "display_offset after scroll_to_bottom"
@@ -351,7 +364,7 @@ macro_rules! muxbackend_contract_tests {
             ctx.b().send_input(pid, b"printf '\\033[?2004h'\n");
 
             // Poll until the mode bit is set (avoids flaky fixed timeouts).
-            let deadline = Instant::now() + Duration::from_secs(15);
+            let deadline = Instant::now() + Duration::from_secs(30);
             loop {
                 ctx.b().poll_events();
                 let mut n = Vec::new();
@@ -374,8 +387,9 @@ macro_rules! muxbackend_contract_tests {
             let pid = ctx.pane_id;
             ctx.b()
                 .set_cursor_shape(pid, oriterm_core::CursorShape::Bar);
-            thread::sleep(Duration::from_millis(200));
-            let snap = ctx.snapshot();
+            let snap = ctx.wait_for("cursor shape Bar", |s| {
+                s.cursor.shape == WireCursorShape::Bar
+            });
             assert_eq!(
                 snap.cursor.shape,
                 WireCursorShape::Bar,
@@ -395,7 +409,7 @@ macro_rules! muxbackend_contract_tests {
 
             // Generate output → dirty.
             ctx.b().send_input(pid, b"echo DIRTY\n");
-            let deadline = Instant::now() + Duration::from_secs(15);
+            let deadline = Instant::now() + Duration::from_secs(30);
             loop {
                 ctx.b().poll_events();
                 let mut n = Vec::new();
@@ -420,25 +434,22 @@ macro_rules! muxbackend_contract_tests {
             let mut ctx = $factory();
             let pid = ctx.pane_id;
             ctx.b().send_input(pid, b"echo NEEDLE\n");
-            ctx.wait_for_text("NEEDLE", Duration::from_secs(15));
+            ctx.wait_for_text("NEEDLE", Duration::from_secs(30));
 
             // Open search.
             ctx.b().open_search(pid);
-            thread::sleep(Duration::from_millis(200));
-            let snap = ctx.snapshot();
+            let snap = ctx.wait_for("search_active", |s| s.search_active);
             assert!(snap.search_active, "search should be active");
 
             // Set query.
             ctx.b().search_set_query(pid, "NEEDLE".to_string());
-            thread::sleep(Duration::from_millis(200));
-            let snap = ctx.snapshot();
+            let snap = ctx.wait_for("search matches", |s| !s.search_matches.is_empty());
             assert_eq!(snap.search_query, "NEEDLE");
             assert!(!snap.search_matches.is_empty(), "should find NEEDLE");
 
             // Close search.
             ctx.b().close_search(pid);
-            thread::sleep(Duration::from_millis(200));
-            let snap = ctx.snapshot();
+            let snap = ctx.wait_for("search inactive", |s| !s.search_active);
             assert!(!snap.search_active, "search should be inactive");
             assert!(snap.search_matches.is_empty(), "matches should be cleared");
         }
@@ -583,7 +594,7 @@ macro_rules! muxbackend_contract_tests {
             // Wait until the output row (containing CXTR_MARKER but not
             // "echo") appears. We need both the command echo and the
             // output line to be present.
-            let deadline = Instant::now() + Duration::from_secs(15);
+            let deadline = Instant::now() + Duration::from_secs(30);
             let (snap, target_row, row_text) = loop {
                 ctx.b().poll_events();
                 let mut n = Vec::new();
