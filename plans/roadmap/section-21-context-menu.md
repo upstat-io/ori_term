@@ -3,20 +3,20 @@ section: 21
 title: Context Menu & Window Controls
 status: in-progress
 tier: 4
-goal: GPU-rendered context menus, config reload broadcasting, settings UI, window controls
+goal: GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list
 sections:
   - id: "21.1"
     title: Context Menu
     status: complete
   - id: "21.2"
     title: Config Reload Broadcasting
-    status: not-started
+    status: complete
   - id: "21.3"
     title: Settings UI
     status: not-started
   - id: "21.4"
     title: Window Controls
-    status: not-started
+    status: complete
   - id: "21.5"
     title: Taskbar Jump List & Dock Menu
     status: not-started
@@ -27,10 +27,10 @@ sections:
 
 # Section 21: Context Menu & Window Controls
 
-**Status:** 📋 Planned
-**Goal:** GPU-rendered context menus, config reload broadcasting, settings UI, window controls. This is the final feature parity section — completing it means the rebuild matches the old prototype's full capability.
+**Status:** In Progress (3 of 6 sub-sections complete)
+**Goal:** GPU-rendered context menus, config reload broadcasting, settings UI, window controls, taskbar jump list.
 
-**Crate:** `oriterm` (binary only — no core changes)
+**Crates:** `oriterm` (binary), `oriterm_ui` (widget library)
 
 **Reference:** `_old/src/context_menu.rs`, `_old/src/gpu/render_overlay.rs`, `_old/src/app/config_reload.rs`, `_old/src/app/settings_ui.rs`, `_old/src/gpu/render_settings.rs`, `_old/src/gpu/render_tab_bar.rs`, `_old/src/tab_bar.rs`
 
@@ -74,11 +74,11 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
      - [x] Separator
      - [x] Color scheme selector: list all built-in schemes with `Check` entries (active scheme has checkmark)
 - [x] Layout calculation:
-  - [x] Measure max label width using UI font collection
-  - [x] If any `Check` entry exists: add checkmark icon width + gap
-  - [x] `width = max_label_width + 2 * ITEM_PADDING_X + MENU_EXTRA_WIDTH`, clamped to `MENU_MIN_WIDTH`
-  - [x] `height = 2 * MENU_PADDING_Y + sum(entry_height for each entry)`
-  - [x] Entry heights: `ITEM_HEIGHT` for Item/Check, `SEPARATOR_HEIGHT` for Separator
+  - [x] Measure max label width using `TextMeasurer` (backed by `UiFontMeasurer`)
+  - [x] If any `Check` entry exists: left margin includes checkmark width + gap
+  - [x] `width = (left_margin + max_label_w + extra_width).max(min_width)`
+  - [x] `height = padding_y * 2 + sum(entry_height for each entry)`
+  - [x] Entry heights: `item_height` for Item/Check, `separator_height` for Separator
 - [x] Hit testing:
   - [x] `entry_at_y(y: f32) -> Option<usize>` (overlay handles bounds check, widget does Y mapping)
   - [x] Iterate entries, accumulate Y offset
@@ -96,93 +96,225 @@ GPU-rendered context menus (not OS native) for consistent cross-platform styling
     - [x] **Check**: checkmark icon (if checked) + label indented past icon
     - [x] **Separator**: horizontal line with left/right margins
     - [x] Hover highlight: rounded rectangle with inset, lighter background
-- [x] Menu style constants (in `MenuStyle` struct, derived from `UiTheme`):
+- [x] Menu style constants (in `MenuStyle` struct, derived via `MenuStyle::from_theme(&UiTheme)`):
+  - [x] `item_height: f32` — height per clickable item
   - [x] `padding_y: f32` — vertical padding inside menu
   - [x] `padding_x: f32` — horizontal padding for labels
-  - [x] `hover_inset: f32` doubles as separator margin (separator drawn between hover insets)
-  - [x] `separator_height: f32` — separator entry height
-  - [x] `item_height: f32` — height per clickable item
   - [x] `min_width: f32` — minimum menu width
-  - [x] `extra_width: f32` — extra padding for checkmark column
+  - [x] `extra_width: f32` — extra padding beyond widest label
+  - [x] `separator_height: f32` — separator entry height
   - [x] `corner_radius: f32` — corner radius for menu shape
-  - [x] `hover_inset: f32` — inset of hover highlight from menu edges
+  - [x] `hover_inset: f32` — inset of hover highlight from menu edges (also doubles as separator margin)
   - [x] `hover_radius: f32` — corner radius for hover highlight
+  - [x] `checkmark_size: f32` — check mark area width/height
+  - [x] `checkmark_gap: f32` — gap between check mark and label text
+  - [x] Color fields: `bg`, `fg`, `hover_bg`, `separator_color`, `border_color`, `check_color`, `shadow_color`
+  - [x] `border_width: f32`, `font_size: f32`
+- [x] Action dispatch chain (complete flow from click to effect):
+  1. [x] User clicks menu item → `MenuWidget::handle_mouse` emits `WidgetAction::Selected { id, index }`
+  2. [x] Overlay system delivers event → `handle_overlay_result()` in `overlay_dispatch.rs`
+  3. [x] `dispatch_context_action(index)` resolves index via `ContextMenuState::resolve()`
+  4. [x] Dismisses menu overlay, then matches on `ContextAction` variant to execute
+  5. [x] Each action delegates to existing `App` methods (`copy_selection`, `paste_from_clipboard`, `close_tab_at_index`, etc.)
+- [x] Edge case: Copy with no selection — handled at build time: `build_grid_context_menu(has_selection)` omits the Copy entry entirely when `has_selection` is false (tested in `grid_context_menu_without_selection`)
+- [x] Edge case: CloseTab from grid context menu uses placeholder index 0 — the dispatch in `overlay_dispatch.rs` calls `close_tab_at_index(0)` but this works because the grid context menu always applies to the active tab
+- [x] Keyboard navigation within open menu:
+  - [x] Arrow Down/Up: navigate between clickable items (skips separators, wraps around)
+  - [x] Enter/Space: activate hovered item (emit `Selected`)
+  - [x] Escape: dismiss overlay (emit `DismissOverlay`)
+  - [x] Requires focus — `is_focusable()` returns `true`, unfocused menu ignores keys
+
+**Tests (21.1):**
+- [x] `oriterm/src/app/context_menu/tests.rs`: dropdown menu builder (entries, actions, empty schemes, out-of-bounds resolve)
+- [x] `oriterm/src/app/context_menu/tests.rs`: tab context menu builder (entries, actions with tab index)
+- [x] `oriterm/src/app/context_menu/tests.rs`: grid context menu builder (with/without selection, action coverage)
+- [x] `oriterm_ui/src/widgets/menu/tests.rs`: layout (min width, height, empty menu, wide labels, check entries)
+- [x] `oriterm_ui/src/widgets/menu/tests.rs`: mouse interaction (click emits selected, separator not clickable, hover tracking, hover leave)
+- [x] `oriterm_ui/src/widgets/menu/tests.rs`: keyboard navigation (arrow down/up, enter, escape, space, wrapping, consecutive separators)
+- [x] `oriterm_ui/src/widgets/menu/tests.rs`: edge cases (single item, not focused ignores keys, right-click ignored, out-of-bounds Y)
 
 ---
 
 ## 21.2 Config Reload Broadcasting
 
-When the config file changes (detected by file watcher), changes must be applied to ALL tabs and ALL windows consistently. Some changes (font) require expensive atlas rebuilds and grid reflow.
+When the config file changes (detected by `ConfigMonitor` file watcher in `oriterm/src/config/monitor/mod.rs`), changes are applied to ALL panes and ALL windows consistently. Some changes (font) require expensive atlas rebuilds and grid reflow.
 
 **File:** `oriterm/src/app/config_reload.rs`
 
 **Reference:** `_old/src/app/config_reload.rs`
 
-- [ ] `apply_config_reload(&mut self)`:
-  - [ ] Load new config from disk via `Config::try_load()` — if parse fails, log error and return (keep current config)
-  - [ ] **Color scheme changes**: if `new.colors.scheme != old.colors.scheme`:
-    - [ ] Resolve scheme from built-in list: `palette::find_scheme(&name)`
-    - [ ] Apply to ALL tabs: `tab.apply_color_config(scheme, &colors, bold_is_bright)`
-    - [ ] Mark all grids dirty
-  - [ ] **Font changes**: if any of `size`, `family`, `features`, `fallback`, `weight`, `tab_bar_font_weight`, `tab_bar_font_family` changed:
-    - [ ] Rebuild main font collection at `new_size * scale_factor`
-    - [ ] Rebuild UI font collection at `new_size * scale_factor * UI_FONT_SCALE`
-    - [ ] Rebuild glyph atlas (expensive — clears all cached glyphs)
-    - [ ] **Resize ALL tabs in ALL windows** — cell dimensions changed, grids need reflow:
-      - [ ] For each window (skipping settings window):
-        - [ ] For each tab: `tab.clear_selection()`, `tab.resize(new_cols, new_rows, ...)`
-    - [ ] Log: `"config reload: font size={}, cell={}x{}, tab_bar_weight={}"`
-  - [ ] **Cursor style changes**: if `new.terminal.cursor_style != old.terminal.cursor_style`:
-    - [ ] Parse new cursor shape
-    - [ ] Apply to ALL tabs: `tab.set_cursor_shape(new_cursor)`
-  - [ ] **Keybinding changes**:
-    - [ ] Rebuild binding table: `self.bindings = keybindings::merge_bindings(&new.keybind)`
-  - [ ] **Opacity changes**: mark all windows for redraw (compositor effect may need update)
-  - [ ] Store new config: `self.config = new_config`
-  - [ ] Mark `tab_bar_dirty = true`, all grids dirty
-  - [ ] Request redraw on all windows
-- [ ] `Config::save()` — persist config changes to disk:
-  - [ ] Write current config to TOML file at `config_path()`
-  - [ ] Used by dropdown menu scheme selection (and future settings UI) to persist user choices
-  - [ ] Handle write errors gracefully (log warning, don't crash)
+- [x] `apply_config_reload(&mut self)`:
+  - [x] Load new config from disk via `Config::try_load()` — if parse fails, log warning and return (keep current config)
+  - [x] **Color scheme changes** (`apply_color_changes`): if `new.colors != old.colors`:
+    - [x] Resolve theme via `new.colors.resolve_theme()`
+    - [x] Build palette via `build_palette_from_config()` which calls `scheme::resolve_scheme()` (not `palette::find_scheme`)
+    - [x] Apply to ALL panes via `mux.set_pane_theme(pane_id, theme, palette)`
+  - [x] **Font changes** (`apply_font_changes`): if any of `size`, `family`, `features`, `fallback`, `weight`, `hinting`, `subpixel_mode`, `variations`, `codepoint_map` changed:
+    - [x] Load new `FontSet`, prepend user fallbacks
+    - [x] For each window: build `FontCollection` at window-specific DPI, call `renderer.replace_font_collection()`
+    - [x] Sync grid layout for all windows via `self.sync_grid_layout()` (handles cell dimension changes, terminal resize, PTY resize)
+    - [x] Log: `"config reload: font size={:.1}, cell={}x{}"`
+  - [x] **Cursor style changes** (`apply_cursor_changes`): if `new.terminal.cursor_style != old.terminal.cursor_style`:
+    - [x] Parse new cursor shape via `new.terminal.cursor_style.to_shape()`
+    - [x] Apply to ALL panes via `mux.set_cursor_shape(pane_id, shape)`
+  - [x] **Cursor blink interval changes**: if `new.terminal.cursor_blink_interval_ms` changed:
+    - [x] Update `self.cursor_blink.set_interval()`
+  - [x] **Keybinding changes** (`apply_keybinding_changes`):
+    - [x] Rebuild binding table: `self.bindings = keybindings::merge_bindings(&new.keybind)`
+  - [x] **Window changes** (`apply_window_changes`): if opacity or blur changed:
+    - [x] Apply to ALL windows via `ctx.window.set_transparency(opacity, blur)`
+  - [x] **Behavior changes** (`apply_behavior_changes`): if `bold_is_bright` changed:
+    - [x] Mark all panes dirty via `mux.mark_all_dirty(pane_id)`
+  - [x] **Image changes** (`apply_image_changes`): if image protocol config changed:
+    - [x] CPU-side: `mux.set_image_config()` for all panes
+    - [x] GPU-side: `renderer.set_image_gpu_memory_limit()` for all windows
+  - [x] **Bell changes**: if `new.bell != old.bell`, log info (bell config is read from `self.config` at usage sites, so storing the new config is sufficient — no active broadcasting needed)
+  - [x] Store new config: `self.config = new_config`
+  - [x] Update UI theme if changed, apply to all tab bars
+  - [x] Invalidate pane render caches, mark all windows dirty
+- [x] Config fields intentionally not hot-reloaded (require restart):
+  - `process_model` — daemon vs. embedded is determined at startup, cannot change at runtime
+  - `terminal.shell` — only affects new pane creation (existing panes keep their shell)
+  - `terminal.scrollback` — existing panes retain their scrollback size; changing only affects new panes (resizing an active scrollback ring buffer mid-session is destructive and complex)
+  - `window.columns`, `window.rows` — initial window size only; current window size is user-controlled
+  - `window.decorations` — frameless vs. native titlebar cannot be toggled at runtime on Windows (requires window recreation)
+  - `window.resize_increments` — initial window hint only
+  - `pane.divider_px`, `pane.min_cells`, `pane.dim_inactive`, `pane.inactive_opacity`, `pane.divider_color`, `pane.focus_border_color` — read from `self.config` at render/resize sites, so storing the new config is sufficient. No explicit broadcast step, but all panes pick up changes on next render.
+- [x] File watcher mechanism (`ConfigMonitor` in `oriterm/src/config/monitor/mod.rs`):
+  - [x] Uses `notify` crate (`recommended_watcher`) to watch the config directory
+  - [x] Also watches `themes/` subdirectory for `.toml` scheme files
+  - [x] 200ms debounce: drains rapid-fire events from editors (write-tmp, rename, etc.)
+  - [x] Fires `on_change` callback → sends `TermEvent::ConfigReload` via `EventLoopProxy`
+  - [x] Event loop dispatches to `App::apply_config_reload()` in the `user_event` handler
+  - [x] RAII cleanup: dropping `ConfigMonitor` signals shutdown, drops watcher, joins thread
+- [x] `Config::save()` — persist config changes to disk:
+  - [x] Write current config to TOML file at `config_path()` (in `oriterm/src/config/io.rs`)
+  - [x] Used by dropdown menu scheme selection (and future settings UI) to persist user choices
+  - [x] Handle write errors gracefully (log warning, don't crash)
+  - [x] Note: `Config::save()` is currently `#[allow(dead_code, reason = "...")]` — it will be used when settings UI (21.3) lands and when scheme selection persists
 
 ---
 
 ## 21.3 Settings UI
 
-Separate frameless settings window (not an overlay). Displays color scheme selector with live preview. GPU-rendered for consistent styling.
+Separate frameless settings window (not an overlay). Displays color scheme selector. GPU-rendered for consistent styling.
 
-**File:** `oriterm/src/app/settings_ui.rs`, `oriterm/src/gpu/render_settings.rs`
+**Files (new):**
+- `oriterm/src/app/settings_ui/mod.rs` — `SettingsState` struct, lifecycle (`open`, `close`, `is_settings`), constants
+- `oriterm/src/app/settings_ui/rendering.rs` — `render_settings_frame()` (pure computation: builds draw primitives, no state mutation)
+- `oriterm/src/app/settings_ui/mouse.rs` — `handle_settings_mouse()`, `update_settings_hover()`
+- `oriterm/src/app/settings_ui/scheme.rs` — `apply_scheme_to_all_panes()`
+- `oriterm/src/app/settings_ui/tests.rs` — sibling test file
 
 **Reference:** `_old/src/app/settings_ui.rs`, `_old/src/gpu/render_settings.rs`
 
-- [ ] `settings_window: Option<WindowId>` on App — None if settings not open
-- [ ] Settings window lifecycle:
-  - [ ] `open_settings_window(event_loop)` — create separate small window (~300×350px), init GPU surface
-  - [ ] `close_settings_window()` — remove from windows map, set `settings_window = None`
-  - [ ] Only Escape key works in settings window (all other input consumed)
-- [ ] Settings window content:
-  - [ ] Title bar: "Theme" label + close button (top-right corner, 30×30px)
-  - [ ] Color scheme list: rows of ~40px height each:
-    - [ ] Color swatch: 16×16px square showing scheme's background color
-    - [ ] Scheme name: text label 40px from left
-    - [ ] Active indicator: checkmark icon if this is the current scheme
-    - [ ] Hover highlight: rounded rect across full row width
-- [ ] Mouse handling:
-  - [ ] Top-right 30×30px: close button
-  - [ ] Top 50px: title area (no interaction)
+### App state changes
+
+- [ ] Add `settings_state: Option<SettingsState>` field on `App` — `None` if settings not open
+- [ ] `SettingsState` struct (in `settings_ui/mod.rs`):
+  - [ ] `winit_id: winit::window::WindowId` — the OS window ID
+  - [ ] `window: TermWindow` — the settings OS window (surface, size, scale factor)
+  - [ ] `renderer: WindowRenderer` — per-window GPU renderer (fonts, atlases, instance buffers)
+  - [ ] `hovered_row: Option<usize>` — currently hovered scheme row index
+  - [ ] `dirty: bool` — redraw needed
+- [ ] The settings window is NOT stored in `App.windows` — it has no `WindowContext`, no `TabBarWidget`, no `TerminalGridWidget`, no overlay system, no pane cache. It is a separate lightweight window with its own state struct.
+- [ ] Event routing: the `window_event` handler checks `self.is_settings_window(window_id)` before dispatching to the normal terminal path.
+
+### Settings window lifecycle
+
+- [ ] `open_settings_window(event_loop)`:
+  - [ ] If already open (`settings_state.is_some()`), focus the existing window and return (prevents duplicates — mirrors old prototype behavior)
+  - [ ] Create a small frameless, non-resizable OS window (~300x350px) via winit: `Window::default_attributes().with_decorations(false).with_resizable(false).with_inner_size(PhysicalSize::new(300, 350))`
+  - [ ] Create `TermWindow` via `TermWindow::new()` using the shared `GpuState`
+  - [ ] Create `WindowRenderer` via `create_window_renderer()` (reuses shared `GpuPipelines`)
+  - [ ] Build `SettingsState` and store as `self.settings_state = Some(state)`
+  - [ ] Clear-render initial frame (dark background) before making visible to prevent white flash
+  - [ ] `window.set_visible(true)`
+- [ ] `close_settings_window()`:
+  - [ ] Drop `SettingsState` (releases GPU surface, renderer), set `settings_state = None`
+  - [ ] Transfer focus back to the most recent terminal window
+- [ ] `is_settings_window(window_id) -> bool` — check if `settings_state` is `Some` with matching winit ID
+
+### Wiring from ContextAction::Settings
+
+- [ ] In `oriterm/src/app/keyboard_input/overlay_dispatch.rs`, the `ContextAction::Settings` arm currently logs `"settings action not yet implemented"`. Replace with:
+  - [ ] Send `TermEvent::OpenSettings` through the event proxy (settings window creation requires `ActiveEventLoop` which is only available in the `user_event` handler, not during overlay dispatch)
+  - [ ] Add `TermEvent::OpenSettings` variant to `TermEvent` enum in `oriterm/src/event.rs`
+  - [ ] Handle in the `user_event` match arm: call `self.open_settings_window(event_loop)`
+
+### Event routing for settings window
+
+- [ ] Add `handle_settings_window_event(&mut self, window_id, event) -> bool` method (in `settings_ui/mod.rs` or a dedicated `settings_ui/event_routing.rs` if needed):
+  - [ ] `WindowEvent::CloseRequested` → call `close_settings_window()`, return true
+  - [ ] `WindowEvent::KeyboardInput` → only Escape (dismiss) is handled; all other keys consumed, return true
+  - [ ] `WindowEvent::CursorMoved` → call `update_settings_hover()`, return true
+  - [ ] `WindowEvent::MouseInput` (Left, Pressed) → dispatch to `handle_settings_mouse()`, return true
+  - [ ] `WindowEvent::RedrawRequested` → call `render_settings_frame()`, return true
+  - [ ] `WindowEvent::Resized`, `WindowEvent::ScaleFactorChanged` → handle surface resize on `SettingsState.renderer`, return true
+  - [ ] All other events → return true (consume without action — settings window has no terminal)
+- [ ] In `event_loop.rs` `window_event`, add early guard before the existing match:
+  ```rust
+  if self.is_settings_window(window_id) {
+      self.handle_settings_window_event(window_id, event);
+      return;
+  }
+  ```
+
+### Settings window content
+
+- [ ] Title bar: "Theme" label + close button (top-right corner, 30x30px)
+- [ ] Color scheme list: rows of ~40px height each:
+  - [ ] Color swatch: 16x16px square showing scheme's background color (with 1px border)
+  - [ ] Scheme name: text label 40px from left
+  - [ ] Active indicator: checkmark icon if this is the current scheme
+  - [ ] Hover highlight: rounded rect across full row width (4px inset from edges)
+
+### Mouse handling (in `settings_ui/mouse.rs`)
+
+- [ ] `handle_settings_mouse(&mut self, x: f32, y: f32)`:
+  - [ ] Top-right 30x30px: close button → `close_settings_window()`
+  - [ ] Top 50px: title area (no interaction — could support window drag via `drag_window()`)
   - [ ] Below: scheme rows. `row_idx = (y - 50) / 40`
-  - [ ] Click on row: `apply_scheme_to_all_tabs(scheme)`
-- [ ] Scheme application:
-  - [ ] Update `self.active_scheme`
-  - [ ] Apply to ALL tabs: `tab.apply_color_config(scheme, &config.colors, bold_is_bright)`
-  - [ ] Persist to config file: `self.config.colors.scheme = scheme.name; self.config.save()`
-  - [ ] Request redraw on all windows
-- [ ] GPU rendering:
-  - [ ] Full-window background (dark, derived from palette)
-  - [ ] 1px border on all edges
-  - [ ] Per-row rendering with color derivation from palette
-  - [ ] This is a stretch goal — can be deferred past initial feature parity
+  - [ ] Bounds check: `row_idx < scheme_count`
+  - [ ] Click on row: `apply_scheme_to_all_panes(scheme)`
+- [ ] `update_settings_hover(&mut self, x: f32, y: f32)`:
+  - [ ] Compute hovered row index from cursor position
+  - [ ] Update `settings_state.hovered_row`, mark dirty if changed
+
+### Scheme application (in `settings_ui/scheme.rs`)
+
+- [ ] `apply_scheme_to_all_panes(&mut self, scheme_name: &str)`:
+  - [ ] Update `self.config.colors.scheme = scheme_name.to_owned()`
+  - [ ] Build palette via `build_palette_from_config()` with resolved theme
+  - [ ] Apply to ALL panes: `mux.set_pane_theme(pane_id, theme, palette)` for each pane
+  - [ ] Persist to config file: `self.config.save()`
+  - [ ] Note: `Config::save()` must have `#[allow(dead_code, reason = "...")]` removed when this lands
+  - [ ] Mark all terminal windows dirty + settings window dirty
+
+### GPU rendering (in `settings_ui/rendering.rs`)
+
+- [ ] `render_settings_frame(&mut self)` — reads `SettingsState` + `config` immutably to build instance buffers, then submits the frame:
+  - [ ] Full-window background (dark, derived from palette — uses `palette.background()` with darkening)
+  - [ ] 1px border on all edges (using palette-derived border color)
+  - [ ] Title text "Theme" rendered at (16, centered-in-50px-title) using `UiFontMeasurer` (backed by `WindowRenderer::active_ui_collection()`)
+  - [ ] Close button icon (vector X) in top-right corner
+  - [ ] Per-row rendering: swatch + name + optional checkmark, with hover highlight for `hovered_row`
+  - [ ] Color derivation from palette: `darken(bg, 0.20)` for window bg, `lighten(bg, 0.15)` for hover, etc. (matches old prototype in `render_settings.rs`)
+  - [ ] Uses `SettingsState.renderer`'s draw pipeline (same shaders as terminal windows)
+- [ ] **Rendering discipline**: This function borrows state immutably to compute draw primitives. No mutation of `config`, `hovered_row`, scheme selection, or any other state. All state changes happen in event handlers (`handle_settings_mouse`, `update_settings_hover`).
+
+### Stretch goal note
+
+This sub-section (21.3) is a stretch goal. The dropdown menu already provides scheme selection with the same functionality. The settings window adds a more polished UX but can be deferred past initial feature parity without blocking 21.6.
+
+**Tests (21.3):** `oriterm/src/app/settings_ui/tests.rs`
+- [ ] `is_settings_window` returns `false` when `settings_state` is `None`
+- [ ] `close_settings_window` when no settings window is open is a no-op (no crash)
+- [ ] `handle_settings_mouse` bounds checking: click below last scheme row is a no-op
+- [ ] `handle_settings_mouse` close button region hit-test (top-right 30x30px)
+- [ ] `update_settings_hover` row index calculation from Y coordinate
+- [ ] Scheme row index computation edge cases: y < title height returns None, y at exact row boundary
+- [ ] Note: `open_settings_window` and `render_settings_frame` require GPU/winit and cannot be unit tested. Cover via integration tests or manual verification.
 
 ---
 
@@ -190,34 +322,38 @@ Separate frameless settings window (not an overlay). Displays color scheme selec
 
 Custom window controls for the frameless window, integrated into the tab bar. Platform-specific rendering (rectangular on Windows, circular on macOS/Linux).
 
-**File:** `oriterm/src/chrome/tab_bar.rs` (integrated with tab bar rendering)
+**File:** `oriterm_ui/src/widgets/window_chrome/` (control button widgets), `oriterm_ui/src/widgets/tab_bar/widget/controls_draw.rs` (tab bar integration), `oriterm_ui/src/platform_windows/` (Aero Snap subclass)
 
 **Reference:** `_old/src/gpu/render_tab_bar.rs`, `_old/src/tab_bar.rs`
 
-- [ ] Three buttons in top-right corner of tab bar:
-  - [ ] Minimize (─): `window.set_minimized(true)`
-  - [ ] Maximize (□ / ⧉): toggle `window.set_maximized()` — icon changes based on `is_maximized`
-  - [ ] Close (×): close window
-- [ ] Platform-specific rendering:
-  - [ ] **Windows**: Three rectangular buttons, each `CONTROL_BUTTON_WIDTH` (58px) wide:
-    - [ ] Minimize: horizontal line icon
-    - [ ] Maximize: single square icon (when not maximized) or two overlapping squares with erase-out (when maximized/restored)
-    - [ ] Close: X icon (two diagonal small rectangles)
-    - [ ] Close button hover: red background (`CONTROL_CLOSE_HOVER_BG`) with white icon (`CONTROL_CLOSE_HOVER_FG`)
-    - [ ] Other buttons hover: subtle background change (`control_hover_bg`)
-  - [ ] **Linux/macOS**: Three circular buttons:
-    - [ ] Diameter: 24px
-    - [ ] Spacing: 8px between buttons
-    - [ ] Margins: 12px from edges
-    - [ ] Colored circles with icons on hover
-- [ ] Window dragging:
-  - [ ] Double-click on `DragArea` (empty tab bar space): toggle maximize
-  - [ ] Click + drag on `DragArea`: `window.drag_window()` — OS handles movement
-  - [ ] Aero Snap on Windows: handled by OS via `drag_window()` when custom WndProc subclass is installed
-- [ ] Aero Snap subclass (Windows-specific):
-  - [ ] Custom `WndProc` that handles `WM_NCHITTEST` — returns `HTCAPTION` for drag areas, `HTCLIENT` for interactive areas
-  - [ ] Also handles `WM_DPICHANGED` — stores new DPI for `handle_resize()` to read
-  - [ ] Required because frameless windows don't get Snap behavior by default
+- [x] Three buttons in top-right corner of tab bar:
+  - [x] Minimize (─): emits `WidgetAction::WindowMinimize`
+  - [x] Maximize (□ / ⧉): emits `WidgetAction::WindowMaximize` — icon changes based on `is_maximized`
+  - [x] Close (×): emits `WidgetAction::WindowClose`
+- [x] Platform-specific rendering (geometric drawing — no font glyphs needed):
+  - [x] **Windows**: Three rectangular buttons, each `CONTROL_BUTTON_WIDTH` (46px) wide:
+    - [x] Minimize: horizontal line icon
+    - [x] Maximize: single square icon (when not maximized) or two overlapping squares with erase-out (when maximized/restored)
+    - [x] Close: X icon (two diagonal lines)
+    - [x] Close button hover: red background with white icon
+    - [x] Other buttons hover: subtle background change
+    - [x] Animated hover transitions (100ms `AnimatedValue`, `EaseOut`)
+  - [x] **Linux/macOS**: Circular buttons with themed colors
+- [x] Window dragging:
+  - [x] Double-click on `DragArea` (empty tab bar space): toggle maximize
+  - [x] Click + drag on `DragArea`: `window.drag_window()` — OS handles movement
+  - [x] Aero Snap on Windows: handled by OS via `drag_window()` when custom WndProc subclass is installed
+- [x] Aero Snap subclass (Windows-specific, `oriterm_ui/src/platform_windows/`):
+  - [x] `enable_snap()` installs `SetWindowSubclass` handler with per-window `SnapData`
+  - [x] Custom `WndProc` that handles `WM_NCHITTEST` — returns `HTCAPTION` for drag areas, `HTCLIENT` for interactive areas
+  - [x] Also handles `WM_DPICHANGED` — stores new DPI via `AtomicU32`, queried via `get_current_dpi()`
+  - [x] `set_client_rects()` updates interactive regions on tab bar layout changes
+  - [x] OS drag session support for tab tear-off: `begin_os_drag()`, `WM_MOVING` correction, merge detection
+  - [x] Modal loop timer (60 FPS `SetTimer`) for rendering during `DragWindow`/`ResizeWindow`
+- [x] Keyboard accessibility:
+  - [x] `Alt+F4` / `Cmd+Q`: handled by the OS for frameless windows on Windows (winit passes `WM_CLOSE` through). The custom `WndProc` subclass does NOT intercept `WM_SYSCOMMAND`/`SC_CLOSE`, so `Alt+F4` works natively. On macOS, `Cmd+Q` is handled by the AppKit menu system.
+  - [x] `Win+Up` (maximize), `Win+Down` (restore/minimize), `Win+Left`/`Win+Right` (snap): all handled by the OS via the Aero Snap subclass. The custom `WndProc` returns `HTCAPTION` for drag areas, which enables the OS's built-in `Win+Arrow` behavior. The `WM_SIZE` / `Resized` event handler picks up the resulting size change.
+  - [x] Fullscreen toggle: handled via `Action::ToggleFullscreen` keybinding (F11 by default), dispatched through `execute_action` → `ctx.window.set_fullscreen(!is_fs)`.
 
 ---
 
@@ -225,29 +361,51 @@ Custom window controls for the frameless window, integrated into the tab bar. Pl
 
 OS-level quick-action menus that appear when the user right-clicks the app icon in the Windows taskbar or macOS dock. These provide fast access to common actions (new tab, new window, profiles) without first focusing the app window.
 
-**File:** `oriterm/src/platform/jump_list.rs` (new — Windows), `oriterm/src/platform/dock_menu.rs` (new — macOS)
+**Files (new):**
+- `oriterm/src/platform/jump_list/mod.rs` — Jump List construction and update (Windows-only, `#[cfg(target_os = "windows")]` at module declaration in `platform/mod.rs`)
+- `oriterm/src/platform/jump_list/tests.rs` — sibling test file
 
 **Reference:** Windows Terminal `Jumplist.cpp` (COM-based, profile entries), WezTerm `app.rs` (`applicationDockMenu` — "New Window"), Ghostty `AppDelegate.swift` (dock menu — "New Window" + "New Tab")
+
+**Scope:** Windows Jump List only. macOS Dock Menu and Linux Desktop Actions are deferred to a future section (requires multi-platform build/test infrastructure that does not yet exist).
 
 ### Windows — Jump List
 
 Win32 COM API: `ICustomDestinationList` + `IShellLinkW`. Items appear in the taskbar right-click menu and Start menu pin.
 
+**WARNING — `unsafe` code required:**
+- [ ] COM FFI calls (`CoCreateInstance`, `ICustomDestinationList` vtable calls, `IShellLinkW` methods, `SetCurrentProcessExplicitAppUserModelID`) are inherently `unsafe`. The `jump_list` module must use `#![allow(unsafe_code, reason = "COM FFI for Jump List construction")]` at the module level. This follows the same pattern as `oriterm_ui/src/platform_windows/` which already allows unsafe for Win32 subclassing.
+- [ ] Minimize the unsafe surface: wrap each COM call in a safe helper function that handles `HRESULT` → `Result` conversion. Keep the unsafe blocks as small as possible.
+
+**COM initialization prerequisites:**
+- [ ] `CoInitializeEx(COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)` must be called on the thread that creates Jump List COM objects. The winit event loop thread on Windows already calls `OleInitialize` (which implies `CoInitializeEx(COINIT_APARTMENTTHREADED)`), so Jump List construction on the main thread is safe without an explicit `CoInitialize` call.
+- [ ] If Jump List construction is moved to a background thread (e.g., for async profile discovery), that thread MUST call `CoInitializeEx` before any COM calls and `CoUninitialize` on exit. Use an RAII guard: `struct ComGuard; impl Drop for ComGuard { fn drop(&mut self) { CoUninitialize(); } }`.
+- [ ] All COM interface pointers (`ICustomDestinationList`, `IShellLinkW`, `IObjectCollection`, `IPropertyStore`) must be released (dropped) before `CoUninitialize`. Rust's drop order handles this naturally if the guard is declared first.
+- [ ] `SetCurrentProcessExplicitAppUserModelID(L"Ori.Terminal")` should be called early in `main()` (before window creation) to ensure consistent taskbar grouping and Jump List association. Without this, Windows infers the model ID from the executable path, which breaks if the binary is renamed or moved.
+
+### Architecture: data model vs. COM submission
+
+- [ ] `JumpListTask` struct (pure data, no COM dependency):
+  - [ ] `label: String` — display name in the jump list
+  - [ ] `arguments: String` — command-line arguments (e.g., `--new-tab`)
+  - [ ] `description: String` — tooltip text
+- [ ] `build_jump_list_tasks() -> Vec<JumpListTask>` — pure function that builds the task list from config. This is unit-testable without COM.
+- [ ] `submit_jump_list(tasks: &[JumpListTask]) -> Result<()>` — COM submission wrapper. Creates `ICustomDestinationList`, constructs `IShellLinkW` per task, commits. This is an integration test only (requires Windows COM runtime).
+
 - [ ] Jump list initialization on app startup:
-  - [ ] Create `ICustomDestinationList` instance (`CLSID_DestinationList`)
-  - [ ] `BeginList()` → get max slots, removed objects
-  - [ ] Build task collection via `IObjectCollection`
-  - [ ] `CommitList()` to publish
+  - [ ] Build tasks via `build_jump_list_tasks()`
+  - [ ] Submit via `submit_jump_list()`
+  - [ ] Log result (success or COM error)
 - [ ] Built-in tasks (always present):
   - [ ] **New Tab** — launches `ori_term.exe --new-tab` (or reuses running instance via IPC when Section 34 lands)
   - [ ] **New Window** — launches `ori_term.exe --new-window`
 - [ ] Profile quick-launch entries (when profile system exists):
-  - [ ] One `IShellLinkW` per configured profile
+  - [ ] One `JumpListTask` per configured profile
   - [ ] Display name: profile name (e.g., "PowerShell", "Ubuntu")
   - [ ] Arguments: `--profile {profile_name}`
   - [ ] Icon: profile icon path if configured, otherwise app icon
   - [ ] Grouped under custom "Profiles" category
-- [ ] `IShellLinkW` construction per item:
+- [ ] `IShellLinkW` construction per item (inside `submit_jump_list`):
   - [ ] `SetPath()` → path to `ori_term.exe`
   - [ ] `SetArguments()` → command-line args for the action
   - [ ] `SetDescription()` → tooltip text
@@ -258,81 +416,64 @@ Win32 COM API: `ICustomDestinationList` + `IShellLinkW`. Items appear in the tas
   - [ ] On profile add/remove/rename (when profile system exists)
   - [ ] On config reload (if profile list changed)
 - [ ] Error handling: Jump list APIs may fail (Explorer not running, COM init failure) — log and continue, never crash
+- [ ] **Dependency:** Jump List entries launch `ori_term.exe --new-tab` / `--new-window`. This requires command-line argument parsing in `main()` to be implemented (not yet present). Without it, the launched process would open a default window regardless of arguments. This is a prerequisite or must be co-implemented.
 
-### macOS — Dock Menu
+### macOS — Dock Menu (DEFERRED)
 
-Cocoa API: implement `applicationDockMenu(_:)` on `NSApplicationDelegate`, return `NSMenu`.
+Deferred to a future section. Requires macOS build/test infrastructure.
 
-- [ ] Dock menu setup:
-  - [ ] Implement `applicationDockMenu:` delegate method (via objc2 / cocoa crate)
-  - [ ] Return cached `NSMenu` instance (rebuilt when menu items change)
-- [ ] Menu items:
-  - [ ] **New Window** — `NSMenuItem` with action selector → spawns new window
-  - [ ] **New Tab** — `NSMenuItem` with action selector → adds tab to frontmost window
-  - [ ] Separator
-  - [ ] Profile entries (when profile system exists): one item per profile
-- [ ] Update triggers:
-  - [ ] Rebuild menu on profile change
-  - [ ] Menu is queried lazily by AppKit (no push needed — just update the cached `NSMenu`)
+### Linux — Desktop Actions (DEFERRED)
 
-### Linux — Desktop Actions (Static)
+Deferred to a future section. The `.desktop` file is an install-time packaging artifact, not runtime code.
 
-`.desktop` file actions — defined at install time, not dynamically updated.
-
-- [ ] `.desktop` file entries:
-  ```ini
-  [Desktop Action new-window]
-  Name=New Window
-  Exec=ori_term --new-window
-
-  [Desktop Action new-tab]
-  Name=New Tab
-  Exec=ori_term --new-tab
-  ```
-- [ ] Reference in main `[Desktop Entry]` section: `Actions=new-window;new-tab;`
-- [ ] No runtime API needed — desktop environments read `.desktop` file at install/login
-- [ ] Dynamic quicklists (Ubuntu Unity `com.canonical.unity.launcher`) — stretch goal, low priority
-
-**Tests:**
-- [ ] Windows: Jump list builds without COM errors (mock `ICustomDestinationList` or integration test)
-- [ ] Windows: correct number of `IShellLinkW` items created for N profiles + 2 built-in tasks
-- [ ] macOS: `NSMenu` returned by dock menu contains expected items
-- [ ] Linux: `.desktop` file validates with `desktop-file-validate`
-- [ ] All platforms: graceful degradation when API unavailable (log warning, no crash)
+**Tests:** `oriterm/src/platform/jump_list/tests.rs`
+- [ ] `build_jump_list_tasks` returns 2 built-in tasks ("New Tab", "New Window") with correct arguments
+- [ ] `build_jump_list_tasks` with N profiles returns N + 2 tasks
+- [ ] `JumpListTask` fields are correctly populated (label, arguments, description)
+- [ ] Note: `submit_jump_list` requires Windows COM runtime and cannot be unit tested. Cover via manual verification on Windows or a `#[cfg(target_os = "windows")] #[ignore]` integration test.
 
 ---
 
 ## 21.6 Section Completion
 
-This is the **final feature parity checkpoint**. Completing this section means the rebuild matches the old prototype's full capability.
+Verification that all sub-sections (21.1-21.5) are complete and integrated.
+
+### Sync Points — New Types and Registrations
+
+When implementing 21.3 (Settings UI), the following locations must be updated together:
+
+- [ ] `oriterm/src/event.rs`: add `TermEvent::OpenSettings` variant
+- [ ] `oriterm/src/app/event_loop.rs`: add `TermEvent::OpenSettings` match arm in `user_event` handler
+- [ ] `oriterm/src/app/event_loop.rs`: add early guard in `window_event` for settings window (before existing match)
+- [ ] `oriterm/src/app/event_loop.rs`: in `about_to_wait`, check `settings_state.dirty` alongside terminal window dirty flags
+- [ ] `oriterm/src/app/keyboard_input/overlay_dispatch.rs`: replace `ContextAction::Settings` stub with `TermEvent::OpenSettings` send
+- [ ] `oriterm/src/app/mod.rs`: add `settings_state: Option<settings_ui::SettingsState>` field to `App` struct
+- [ ] `oriterm/src/app/mod.rs`: add `mod settings_ui;` declaration
+- [ ] `oriterm/src/app/settings_ui/mod.rs`: `SettingsState` struct, `open_settings_window`, `close_settings_window`, `is_settings_window`, `handle_settings_window_event`
+- [ ] `oriterm/src/app/settings_ui/rendering.rs`: `render_settings_frame`
+- [ ] `oriterm/src/app/settings_ui/mouse.rs`: `handle_settings_mouse`, `update_settings_hover`
+- [ ] `oriterm/src/app/settings_ui/scheme.rs`: `apply_scheme_to_all_panes`
+- [ ] `oriterm/src/app/settings_ui/tests.rs`: sibling test file
+- [ ] `oriterm/src/app/constructors.rs`: initialize `settings_state: None` in both `App::new()` and `App::new_daemon()`
+- [ ] `oriterm/src/config/io.rs`: remove `#[allow(dead_code, reason = "...")]` from `Config::save()` once settings UI calls it
+
+### Feature Checklist
 
 - [ ] All 21.1–21.5 items complete
-- [ ] Context menu: 3 menu types, GPU-rendered, checkmark entries, shadow rendering
-- [ ] Config reload: broadcast to all tabs/windows, font atlas rebuild, grid reflow
-- [ ] Settings UI: separate window, color scheme selector, live preview, persist to config
-- [ ] Window controls: platform-specific rendering, Aero Snap, frameless drag
-- [ ] Jump List (Windows): "New Tab", "New Window", profile entries in taskbar right-click
-- [ ] Dock Menu (macOS): "New Window", "New Tab" in dock right-click
-- [ ] Desktop Actions (Linux): `.desktop` file with new-window/new-tab actions
-- [ ] Tab struct: clean ownership, lock-free mode cache, background thread cleanup
-- [ ] Tab management: create, close, duplicate, cycle, reorder, CWD inheritance
-- [ ] Tab bar layout: DPI-aware, width lock, platform-specific control zone
-- [ ] Tab bar rendering: separators with suppression, bell pulse, dragged tab overlay, animation offsets
-- [ ] Hit testing: correct priority order, close button inset, platform-specific controls
-- [ ] Drag: 10px threshold, center-based insertion, tear-off with directional thresholds, mouse offset preservation
-- [ ] OS drag + merge: WM_MOVING detection, seamless drag continuation, synthesized mouse-down, stale button-up suppression
-- [ ] Multi-window: shared GPU, flat tab storage, cross-window tab movement
-- [ ] Window lifecycle: no-flash startup, DPI-aware resize, ConPTY-safe cleanup, exit-before-drop
-- [ ] Coordinate systems: pixel → cell, tab bar layout, grid padding, side detection
-- [ ] Event routing: 7-layer keyboard dispatch, 7-layer mouse dispatch, search/menu interception
-- [ ] Render scheduling: about_to_wait coalescing, 8ms frame budget, cursor blink scheduling
-- [ ] Shell integration: 5 shell injection mechanisms, two-parser strategy, CWD tracking, prompt state machine, title priority
-- [ ] `cargo build -p oriterm --target x86_64-pc-windows-gnu --release` — clean build
-- [ ] `cargo clippy -p oriterm -p oriterm_core --target x86_64-pc-windows-gnu` — no warnings
-- [ ] `cargo test -p oriterm_core` — all tests pass
-- [ ] Deploy to Windows: full feature parity with old prototype
-- [ ] **Stress test**: multiple tabs, htop in one, vim in another, heavy output in third — no lockup, no starvation
-- [ ] **Drag stress test**: rapid drag reorder across multiple windows, tear-off and merge in quick succession — no crash, no orphaned tabs
-- [ ] **Close stress test**: rapidly close many tabs while hovering tab bar — close buttons don't shift unexpectedly (tab width lock works)
+- [x] Context menu: 3 menu types, GPU-rendered, checkmark entries, shadow rendering, keyboard navigation, full action dispatch chain
+- [x] Config reload: broadcast to all panes/windows, `FontCollection` rebuild, grid reflow, file watcher with 200ms debounce
+- [ ] Settings UI: separate window with `SettingsState` (not `WindowContext`), color scheme selector, persist to config
+- [ ] Settings UI: `TermEvent::OpenSettings` wiring, event routing guard, `about_to_wait` dirty integration
+- [x] Window controls: platform-specific rendering, Aero Snap, frameless drag, keyboard accessibility (Alt+F4, Win+Arrow)
+- [ ] Jump List (Windows): data model (`JumpListTask`) + COM submission, app user model ID, CLI arg parsing dependency
+- [ ] Dock Menu (macOS): DEFERRED — requires macOS build infrastructure
+- [ ] Desktop Actions (Linux): DEFERRED — install-time packaging artifact
+- [ ] `./build-all.sh` — clean build (cross-compile + host)
+- [ ] `./clippy-all.sh` — no warnings (workspace-wide, both targets)
+- [ ] `./test-all.sh` — all tests pass (workspace-wide)
+- [ ] **Context menu test**: right-click tab, grid, and dropdown button — each menu renders, keyboard-navigates, and dispatches actions correctly
+- [ ] **Config reload test**: edit config file while running — font, color scheme, cursor, keybinding, and opacity changes apply to all open panes/windows within 200ms
+- [ ] **Settings window test**: open settings, change scheme, verify all terminal windows update colors, close settings, reopen — no orphaned windows, no GPU resource leak
+- [ ] **Jump List test** (Windows): right-click taskbar icon — "New Tab" and "New Window" entries appear and launch correctly
 
-**Exit Criteria:** Feature parity with the old prototype. Clean architecture, clean threading, no god objects, no contention issues. Every intricacy from the old prototype is preserved: ConPTY deadlock avoidance, seamless drag-merge, mode cache, CWD inheritance, tab width lock, bell pulse animation, prompt state deferred marking, keyboard mode stack swap on alt screen. The terminal emulator is ready for daily use.
+**Exit Criteria:** All three menu contexts (tab, grid, dropdown) work with GPU rendering, keyboard navigation, and full action dispatch. Config reload broadcasts to all panes/windows with font rebuild and grid reflow. Settings UI opens as a separate window with color scheme selection that persists to config. Window controls (minimize, maximize, close) render platform-specifically with Aero Snap support. Jump List provides "New Tab" and "New Window" entries in the Windows taskbar. Clean build, zero clippy warnings, all tests pass.

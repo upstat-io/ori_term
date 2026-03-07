@@ -456,14 +456,14 @@ bash-preexec, oriterm.bash, oriterm.fish, oriterm.ps1, .zshenv
 ---
 
 ### Section 21: Context Menu & Window Controls
-**File:** `section-21-context-menu.md` | **Tier:** 4 | **Status:** Not Started
+**File:** `section-21-context-menu.md` | **Tier:** 4 | **Status:** In Progress
 
 ```
-context menu, MenuOverlay, MenuEntry, Item, Check, Separator
+context menu, MenuWidget, MenuEntry, Item, Check, Separator, ContextAction
 tab context menu, grid context menu, dropdown menu, color scheme selector
-GPU-rendered menu, shadow, rounded corners, hover highlight
-config reload, apply_config_reload, broadcast ALL tabs, font rebuild
-atlas rebuild, resize all tabs all windows, keybinding rebuild
+GPU-rendered menu, shadow, rounded corners, hover highlight, keyboard navigation
+config reload, apply_config_reload, broadcast ALL panes, FontCollection rebuild
+atlas rebuild, resize all panes all windows, keybinding rebuild
 settings UI, settings_window, color scheme list, checkmark
 window controls, minimize, maximize, close, platform-specific
 frameless, drag window, Aero Snap, double-click maximize
@@ -949,7 +949,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 18 | Multi-Window & Window Lifecycle | `section-18-multi-window.md` | 4 | Superseded → 32 |
 | 19 | Event Routing & Render Scheduling | `section-19-event-routing.md` | 4 | Not Started |
 | 20 | Shell Integration | `section-20-shell-integration.md` | 4 | Not Started |
-| 21 | Context Menu & Window Controls | `section-21-context-menu.md` | 4 | Not Started |
+| 21 | Context Menu & Window Controls | `section-21-context-menu.md` | 4 | In Progress |
 | 22 | Terminal Modes | `section-22-terminal-modes.md` | 5 | Mostly Complete |
 | 23 | Performance & Damage Tracking | `section-23-performance.md` | 5 | Not Started |
 | 38 | Terminal Protocol Extensions | `section-38-protocol-extensions.md` | 5 | Not Started |
