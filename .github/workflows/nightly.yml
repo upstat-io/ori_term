@@ -1,7 +1,9 @@
 name: Nightly
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
 
 concurrency:
@@ -18,10 +20,13 @@ permissions:
 jobs:
   build-linux:
     name: Build Linux (x86_64)
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Install system dependencies
         run: |
@@ -51,8 +56,40 @@ jobs:
           name: oriterm-nightly-linux-x86_64
           path: oriterm-nightly-*-linux-x86_64.tar.gz
 
+  build-macos:
+    name: Build macOS (aarch64)
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: nightly-macos
+      - name: Build
+        run: cargo build --release
+      - name: Strip binaries
+        run: |
+          strip target/release/oriterm
+          strip target/release/oriterm-mux
+      - name: Package
+        run: |
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          DATE=$(date -u +%Y%m%d)
+          tar -czvf oriterm-nightly-${DATE}-${SHORT_SHA}-macos-aarch64.tar.gz \
+            -C target/release oriterm oriterm-mux
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oriterm-nightly-macos-aarch64
+          path: oriterm-nightly-*-macos-aarch64.tar.gz
+
   build-windows:
     name: Build Windows (x86_64)
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: windows-2022
     timeout-minutes: 30
     # CI builds natively on Windows using MSVC (not the x86_64-pc-windows-gnu
@@ -60,6 +97,8 @@ jobs:
     # and avoids MinGW runtime dependencies.
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
@@ -84,12 +123,13 @@ jobs:
 
   release:
     name: Publish Nightly
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-python@v5
         with:

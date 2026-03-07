@@ -29,7 +29,7 @@ fn test_sock_path(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     #[cfg(windows)]
     {
         let _ = dir;
-        let n = TEST_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let n = TEST_PIPE_COUNTER.fetch_add(1, Ordering::Relaxed);
         let pid = std::process::id();
         std::path::PathBuf::from(format!(r"\\.\pipe\oriterm-test-{pid}-{n}-{name}"))
     }
@@ -210,7 +210,8 @@ fn ipc_listener_accept_would_block() {
     // No client connected — accept should return WouldBlock.
     let result = listener.accept();
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+    let err = result.err().expect("accept should fail with no client");
+    assert_eq!(err.kind(), std::io::ErrorKind::WouldBlock);
 }
 
 // -- MuxServer tests --

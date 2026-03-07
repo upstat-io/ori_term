@@ -1,6 +1,8 @@
 # ori_term
 
-GPU-accelerated terminal emulator in Rust (same category as Alacritty, WezTerm, Ghostty). Opens a native frameless window, renders a terminal grid via wgpu, runs shell processes through ConPTY/PTY. Cross-compiled from WSL targeting `x86_64-pc-windows-gnu`.
+GPU-accelerated terminal emulator in Rust (same category as Alacritty, WezTerm, Ghostty). Opens a native frameless window, renders a terminal grid via wgpu, runs shell processes through ConPTY/PTY.
+
+**Cross-platform: macOS, Windows, and Linux.** All code must compile and run correctly on all three platforms. Never write platform-specific code without corresponding implementations for the other two. Every `#[cfg(target_os = "...")]` block must have counterparts for all supported targets — no platform left behind. If a feature cannot be implemented on a platform, it must degrade gracefully with a compile-time `cfg` gate, not a runtime panic. CI builds and tests on all three. Local dev cross-compiles from WSL targeting `x86_64-pc-windows-gnu`.
 
 **Broken Window Policy**: Fix EVERY issue you encounter — no exceptions. Never say "this is pre-existing", "this is unrelated", or "outside the scope". If you see it, you own it. Leaving broken code because "it was already broken" is explicitly forbidden.
 

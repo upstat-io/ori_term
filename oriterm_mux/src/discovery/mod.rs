@@ -136,5 +136,5 @@ pub fn ensure_daemon() -> io::Result<PathBuf> {
     Ok(sock)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests;
