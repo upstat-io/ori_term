@@ -84,6 +84,43 @@ pub enum WireCursorShape {
     Hidden = 4,
 }
 
+impl WireCursorShape {
+    /// Convert from wire `u8` discriminant, defaulting to `Block` for unknown values.
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Underline,
+            2 => Self::Bar,
+            3 => Self::HollowBlock,
+            4 => Self::Hidden,
+            _ => Self::Block,
+        }
+    }
+}
+
+impl From<oriterm_core::CursorShape> for WireCursorShape {
+    fn from(shape: oriterm_core::CursorShape) -> Self {
+        match shape {
+            oriterm_core::CursorShape::Block => Self::Block,
+            oriterm_core::CursorShape::Underline => Self::Underline,
+            oriterm_core::CursorShape::Bar => Self::Bar,
+            oriterm_core::CursorShape::HollowBlock => Self::HollowBlock,
+            oriterm_core::CursorShape::Hidden => Self::Hidden,
+        }
+    }
+}
+
+impl From<WireCursorShape> for oriterm_core::CursorShape {
+    fn from(shape: WireCursorShape) -> Self {
+        match shape {
+            WireCursorShape::Block => Self::Block,
+            WireCursorShape::Underline => Self::Underline,
+            WireCursorShape::Bar => Self::Bar,
+            WireCursorShape::HollowBlock => Self::HollowBlock,
+            WireCursorShape::Hidden => Self::Hidden,
+        }
+    }
+}
+
 /// Cursor state on the wire.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireCursor {

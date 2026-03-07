@@ -15,7 +15,7 @@ use super::{
     PreemptionStrategy, Transform2D,
 };
 
-// --- Helpers ---
+// Helpers
 
 /// Asserts two points are approximately equal.
 fn assert_point_near(actual: Point, expected: Point, eps: f32) {
@@ -43,7 +43,7 @@ fn assert_transform_near(actual: Transform2D, expected: Transform2D, eps: f32) {
     }
 }
 
-// --- 43.1 Transform2D ---
+// 43.1 Transform2D
 
 // Identity
 
@@ -479,7 +479,7 @@ fn concat_two_scales() {
     assert_eq!(result, Transform2D::scale(8.0, 15.0));
 }
 
-// --- 43.2 Layer Primitives ---
+// 43.2 Layer Primitives
 
 // LayerId
 
@@ -646,7 +646,7 @@ fn layer_accessors() {
     assert!(layer.children().is_empty());
 }
 
-// --- 43.3 Layer Tree ---
+// 43.3 Layer Tree
 
 fn make_tree() -> LayerTree {
     LayerTree::new(Rect::new(0.0, 0.0, 1920.0, 1080.0))
@@ -942,7 +942,7 @@ fn tree_set_visible_updates_layer() {
     assert!(tree.get(layer).unwrap().needs_composite());
 }
 
-// --- 43.7 Layer Animator ---
+// 43.7 Layer Animator
 
 fn make_animator_tree() -> (LayerTree, LayerId) {
     let mut tree = make_tree();
@@ -1141,7 +1141,7 @@ fn target_transform_query() {
     assert_eq!(animator.target_transform(layer), Some(target));
 }
 
-// --- 43.9 Animation Groups ---
+// 43.9 Animation Groups
 
 #[test]
 fn apply_group_runs_all_transitions_in_parallel() {
@@ -1336,7 +1336,7 @@ fn builder_group_integrates_with_animator() {
     );
 }
 
-// --- Degenerate Transform Applied to Points/Rects ---
+// Degenerate Transform Applied to Points/Rects
 
 #[test]
 fn apply_zero_scale_transform_to_point() {
@@ -1363,7 +1363,7 @@ fn apply_near_zero_scale_produces_finite() {
     assert!(result.y.is_finite());
 }
 
-// --- Transform apply_rect on empty/zero-size rect ---
+// Transform apply_rect on empty/zero-size rect
 
 #[test]
 fn apply_rect_default_empty_rect() {
@@ -1379,7 +1379,7 @@ fn apply_rect_zero_width_height() {
     assert_eq!(result, Rect::new(100.0, 150.0, 0.0, 0.0));
 }
 
-// --- Transform concat self ---
+// Transform concat self
 
 #[test]
 fn concat_translate_self() {
@@ -1403,7 +1403,7 @@ fn concat_rotate_self_90() {
     assert_transform_near(result, Transform2D::rotate(PI), 1e-5);
 }
 
-// --- Enqueue Preemption Strategy ---
+// Enqueue Preemption Strategy
 
 #[test]
 fn enqueue_strategy_queues_second_animation() {
@@ -1441,7 +1441,7 @@ fn enqueue_strategy_queues_second_animation() {
     );
 }
 
-// --- LayerAnimator Delegate Callbacks ---
+// LayerAnimator Delegate Callbacks
 
 #[test]
 fn delegate_animation_ended_fires() {
@@ -1516,7 +1516,7 @@ fn delegate_animation_canceled_fires_on_preemption() {
     );
 }
 
-// --- Nested Opacity Accumulation Precision ---
+// Nested Opacity Accumulation Precision
 
 #[test]
 fn accumulated_opacity_deep_chain_10_layers() {
@@ -1548,7 +1548,7 @@ fn accumulated_opacity_deep_chain_10_layers() {
     assert!(acc > 0.0, "deep opacity chain should not underflow to zero");
 }
 
-// --- Layer Reparent Edge Cases ---
+// Layer Reparent Edge Cases
 
 #[test]
 fn reparent_to_self_does_not_panic() {
@@ -1576,7 +1576,7 @@ fn reparent_parent_under_child_does_not_panic() {
     assert!(tree.get(child).is_some());
 }
 
-// --- Stack Above/Below Edge Cases ---
+// Stack Above/Below Edge Cases
 
 #[test]
 fn stack_above_same_layer_does_not_panic() {
@@ -1615,7 +1615,7 @@ fn stack_below_nonexistent_sibling_is_noop() {
     assert!(tree.get(layer).is_some());
 }
 
-// --- LayerTree set_* on Nonexistent Layers ---
+// LayerTree set_* on Nonexistent Layers
 
 #[test]
 fn set_opacity_nonexistent_is_noop() {
@@ -1639,7 +1639,7 @@ fn schedule_paint_nonexistent_is_noop() {
     assert_eq!(tree.len(), 1);
 }
 
-// --- Zero-Duration Animation ---
+// Zero-Duration Animation
 
 #[test]
 fn zero_duration_animation_immediately_sets_value() {
@@ -1665,7 +1665,7 @@ fn zero_duration_animation_immediately_sets_value() {
     );
 }
 
-// --- Animation Group with Empty Animations ---
+// Animation Group with Empty Animations
 
 #[test]
 fn apply_group_empty_animations_is_noop() {
@@ -1684,7 +1684,7 @@ fn apply_group_empty_animations_is_noop() {
     assert!(!animator.is_any_animating());
 }
 
-// --- Large Tree Traversal ---
+// Large Tree Traversal
 
 #[test]
 fn large_flat_tree_traversal_visits_all() {

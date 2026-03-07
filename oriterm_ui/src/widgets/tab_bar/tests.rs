@@ -1,11 +1,15 @@
 //! Tests for tab bar layout, colors, and constants.
 
 use super::colors::TabBarColors;
-use super::constants::*;
+use super::constants::{
+    CLOSE_BUTTON_RIGHT_PAD, CLOSE_BUTTON_WIDTH, CONTROLS_ZONE_WIDTH, DRAG_START_THRESHOLD,
+    DROPDOWN_BUTTON_WIDTH, NEW_TAB_BUTTON_WIDTH, TAB_BAR_HEIGHT, TAB_LEFT_MARGIN, TAB_MAX_WIDTH,
+    TAB_MIN_WIDTH, TAB_PADDING, TEAR_OFF_THRESHOLD, TEAR_OFF_THRESHOLD_UP,
+};
 use super::layout::TabBarLayout;
 use crate::theme::UiTheme;
 
-// --- Layout computation ---
+// Layout computation
 
 #[test]
 fn single_tab_fills_available_space() {
@@ -72,7 +76,7 @@ fn window_width_preserved() {
     assert!((layout.window_width - 1500.0).abs() < f32::EPSILON);
 }
 
-// --- Helper methods ---
+// Helper methods
 
 #[test]
 fn tab_x_positions_are_sequential() {
@@ -125,7 +129,7 @@ fn max_text_width_not_negative() {
     assert!(layout.max_text_width() >= 0.0);
 }
 
-// --- Colors ---
+// Colors
 
 #[test]
 fn colors_from_dark_theme() {
@@ -173,7 +177,7 @@ fn bell_pulse_midpoint() {
     assert!((mid.r - expected_r).abs() < 0.01);
 }
 
-// --- Constants sanity checks ---
+// Constants sanity checks
 
 #[test]
 fn constants_are_positive() {
@@ -196,7 +200,7 @@ fn drag_thresholds_ordered() {
     assert!(TEAR_OFF_THRESHOLD_UP < TEAR_OFF_THRESHOLD);
 }
 
-// --- Hit testing ---
+// Hit testing
 
 #[test]
 fn hit_test_returns_correct_tab_index() {
@@ -243,7 +247,7 @@ fn hit_test_zero_tabs_returns_none() {
     assert_eq!(layout.tab_index_at(100.0), None);
 }
 
-// --- Zero/extreme window sizes ---
+// Zero/extreme window sizes
 
 #[test]
 fn zero_width_window_does_not_panic() {
@@ -255,7 +259,7 @@ fn zero_width_window_does_not_panic() {
     assert!(layout.controls_x().is_finite());
 }
 
-// --- tab_x out of bounds ---
+// tab_x out of bounds
 
 #[test]
 fn tab_x_past_end_equals_tabs_end() {
@@ -263,7 +267,7 @@ fn tab_x_past_end_equals_tabs_end() {
     assert!((layout.tab_x(layout.tab_count) - layout.tabs_end()).abs() < f32::EPSILON);
 }
 
-// --- Width lock edge cases ---
+// Width lock edge cases
 
 #[test]
 fn width_lock_below_min_passes_through() {
@@ -280,7 +284,7 @@ fn width_lock_above_max_passes_through() {
     assert!((layout.tab_width - huge).abs() < f32::EPSILON);
 }
 
-// --- Layout invariants ---
+// Layout invariants
 
 #[test]
 fn buttons_do_not_overlap_controls() {
@@ -306,7 +310,7 @@ fn tabs_end_within_controls_when_tabs_fit() {
     }
 }
 
-// --- max_text_width boundary ---
+// max_text_width boundary
 
 #[test]
 fn max_text_width_at_min_tab_width() {
@@ -317,7 +321,7 @@ fn max_text_width_at_min_tab_width() {
     assert!(layout.max_text_width() >= 0.0);
 }
 
-// --- Color alpha ---
+// Color alpha
 
 #[test]
 fn all_theme_colors_have_nonzero_alpha() {
@@ -337,7 +341,7 @@ fn all_theme_colors_have_nonzero_alpha() {
     );
 }
 
-// --- bell_pulse out of range ---
+// bell_pulse out of range
 
 #[test]
 fn bell_pulse_out_of_range_does_not_panic() {
@@ -350,7 +354,7 @@ fn bell_pulse_out_of_range_does_not_panic() {
     assert!(above.r.is_finite());
 }
 
-// --- Constants: inner padding fits within TAB_MIN_WIDTH ---
+// Constants: inner padding fits within TAB_MIN_WIDTH
 
 #[test]
 fn inner_padding_fits_within_min_tab_width() {
@@ -361,7 +365,7 @@ fn inner_padding_fits_within_min_tab_width() {
     );
 }
 
-// --- TabBarHit ---
+// TabBarHit
 
 use super::hit::{self, TabBarHit};
 
@@ -381,7 +385,7 @@ fn hit_is_tab_matches_body_and_close() {
     assert!(!TabBarHit::None.is_tab(0));
 }
 
-// --- TabBarWidget ---
+// TabBarWidget
 
 use std::time::{Duration, Instant};
 
@@ -468,7 +472,7 @@ fn widget_set_drag_visual() {
 fn ring_bell_starts_animation() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    w.ring_bell(0);
+    w.ring_bell(0, Instant::now());
     // Bell phase should be nonzero immediately after ringing.
     let phase = TabBarWidget::bell_phase_for_test(&TabEntry::new("A"), Instant::now());
     // A fresh TabEntry has no bell, so phase is 0.
@@ -517,7 +521,7 @@ fn bell_phase_zero_after_duration() {
     assert!((phase - 0.0).abs() < f32::EPSILON);
 }
 
-// --- AnimatedValue<Color> smoke test ---
+// AnimatedValue<Color> smoke test
 
 use crate::animation::{AnimatedValue, Easing};
 use crate::color::Color;
@@ -549,7 +553,7 @@ fn animated_value_color_interpolates() {
     assert!((c100.b - 1.0).abs() < 0.01);
 }
 
-// --- Hover progress animation tests ---
+// Hover progress animation tests
 
 #[test]
 fn hover_progress_starts_at_zero() {
@@ -620,7 +624,7 @@ fn hover_leave_starts_reverse_transition() {
     );
 }
 
-// --- Close button opacity tests ---
+// Close button opacity tests
 
 #[test]
 fn close_btn_opacity_zero_by_default() {
@@ -670,7 +674,7 @@ fn close_btn_opacity_fades_out_on_leave() {
     );
 }
 
-// --- Button repositioning during drag ---
+// Button repositioning during drag
 
 #[test]
 fn new_tab_button_x_no_drag() {
@@ -712,7 +716,7 @@ fn dropdown_button_x_follows_drag() {
     );
 }
 
-// --- hit_test function ---
+// hit_test function
 
 /// Helper: standard 4-tab layout on a 1200px window.
 fn layout_4_tabs() -> TabBarLayout {
@@ -945,7 +949,7 @@ fn hit_each_tab_close_button() {
     }
 }
 
-// --- Mutation order independence (High Priority) ---
+// Mutation order independence (High Priority)
 
 #[test]
 fn set_active_index_before_tabs_does_not_panic() {
@@ -990,7 +994,7 @@ fn interleaved_mutations_do_not_corrupt_layout() {
     assert!(w.layout().tab_width >= TAB_MIN_WIDTH);
 }
 
-// --- Out-of-bounds operations (Medium Priority) ---
+// Out-of-bounds operations (Medium Priority)
 
 #[test]
 fn set_active_index_out_of_bounds_does_not_panic() {
@@ -1004,7 +1008,7 @@ fn set_active_index_out_of_bounds_does_not_panic() {
 fn ring_bell_out_of_bounds_is_noop() {
     let mut w = TabBarWidget::new(1200.0);
     w.set_tabs(vec![TabEntry::new("A")]);
-    w.ring_bell(99);
+    w.ring_bell(99, Instant::now());
     // No panic — documented no-op.
 }
 
@@ -1016,7 +1020,7 @@ fn update_tab_title_out_of_bounds_is_noop() {
     assert_eq!(w.tab_count(), 1);
 }
 
-// --- Degenerate layout inputs (Low Priority) ---
+// Degenerate layout inputs (Low Priority)
 
 #[test]
 fn layout_with_nan_window_width_does_not_panic() {
@@ -1042,7 +1046,7 @@ fn layout_with_negative_window_width_clamps_to_min() {
     assert!((layout.tab_width - TAB_MIN_WIDTH).abs() < f32::EPSILON);
 }
 
-// --- Very long tab title (Low Priority) ---
+// Very long tab title (Low Priority)
 
 #[test]
 fn very_long_tab_title_does_not_panic() {
@@ -1053,7 +1057,7 @@ fn very_long_tab_title_does_not_panic() {
     assert!(w.layout().max_text_width() >= 0.0);
 }
 
-// --- Hit testing: single-tab close button ---
+// Hit testing: single-tab close button
 
 #[test]
 fn hit_close_button_on_single_tab() {
@@ -1067,7 +1071,7 @@ fn hit_close_button_on_single_tab() {
     );
 }
 
-// --- Hit testing: control buttons individually ---
+// Hit testing: control buttons individually
 
 #[test]
 fn hit_each_control_button_found_by_scan() {
@@ -1114,7 +1118,7 @@ fn hit_controls_y_edges() {
     assert_ne!(bottom, TabBarHit::None, "y near bottom should still hit");
 }
 
-// --- Zero tabs: non-button area is DragArea ---
+// Zero tabs: non-button area is DragArea
 
 #[test]
 fn zero_tabs_non_button_area_is_drag_area() {
@@ -1135,7 +1139,7 @@ fn zero_tabs_non_button_area_is_drag_area() {
     assert!(found_drag, "should find drag area with zero tabs");
 }
 
-// --- Rapid tab close: width lock prevents layout shift ---
+// Rapid tab close: width lock prevents layout shift
 
 #[test]
 fn width_lock_prevents_shift_on_tab_removal() {
@@ -1157,7 +1161,7 @@ fn width_lock_prevents_shift_on_tab_removal() {
     );
 }
 
-// --- Theme wiring (gap analysis) ---
+// Theme wiring (gap analysis)
 
 #[test]
 fn apply_theme_changes_colors() {
@@ -1206,7 +1210,7 @@ fn close_button_colors_theme_invariant() {
     assert_eq!(dark.close_pressed_bg, light.close_pressed_bg);
 }
 
-// --- interactive_rects (unified chrome) ---
+// interactive_rects (unified chrome)
 
 #[test]
 fn interactive_rects_count_equals_tab_count_plus_five() {
@@ -1326,7 +1330,7 @@ fn interactive_rects_with_left_inset_shifts_tabs_not_controls() {
     }
 }
 
-// --- set_maximized / set_active ---
+// set_maximized / set_active
 
 #[test]
 fn set_maximized_does_not_panic() {
@@ -1346,7 +1350,7 @@ fn set_active_false_does_not_panic() {
     // No panic — active state affects control button caption bg.
 }
 
-// --- left_inset layout ---
+// left_inset layout
 
 #[test]
 fn layout_with_left_inset_shifts_tabs_start() {
@@ -1377,7 +1381,7 @@ fn layout_with_left_inset_controls_stay_right() {
     );
 }
 
-// --- update_control_hover ---
+// update_control_hover
 
 use crate::geometry::Rect;
 use crate::input::EventResponse;
@@ -1424,7 +1428,7 @@ fn update_control_hover_enters_and_leaves() {
     w.clear_control_hover(&ctx);
 }
 
-// --- cursor_in_tab_bar range ---
+// cursor_in_tab_bar range
 
 #[test]
 fn hit_test_close_window_in_controls_zone() {
@@ -1445,7 +1449,7 @@ fn hit_test_close_window_in_controls_zone() {
     assert!(found, "CloseWindow should be hittable in controls zone");
 }
 
-// --- Tab lifecycle animation tests (Section 04) ---
+// Tab lifecycle animation tests (Section 04)
 
 #[test]
 fn width_multiplier_defaults_to_one() {
@@ -1525,7 +1529,7 @@ fn set_tabs_resets_closing_state() {
     assert!(!w.has_width_animation(Instant::now()));
 }
 
-// --- Layout with width multipliers ---
+// Layout with width multipliers
 
 #[test]
 fn layout_with_uniform_multipliers_matches_default() {

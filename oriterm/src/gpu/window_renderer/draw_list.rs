@@ -6,19 +6,21 @@ use crate::font::size_key;
 
 use super::helpers::{ensure_glyphs_cached, ui_text_raster_keys};
 
+/// Which draw list tier to write into.
+#[derive(Clone, Copy)]
+enum DrawListTier {
+    /// Chrome / UI tier (tab bar, window controls).
+    Chrome,
+    /// Overlay tier (dialogs, menus — renders on top of chrome text).
+    Overlay,
+}
+
 impl WindowRenderer {
     /// Append UI draw commands **with text** from a [`DrawList`].
     ///
-    /// This method:
-    /// 1. Rasterizes uncached UI text glyphs into atlases.
-    /// 2. Converts text commands with a real [`TextContext`] so glyph
-    ///    instances are emitted into the mono/subpixel/color writers.
-    /// 3. Processes `PushClip`/`PopClip` commands into [`ClipSegment`]s
-    ///    stored in `prepared.ui_clips`.
-    ///
-    /// Use this for overlays containing visible text (dialog title, message,
-    /// button labels). Call after [`prepare`](Self::prepare) and before
-    /// [`render_frame`](Self::render_frame).
+    /// Rasterizes uncached UI text glyphs, converts text commands into glyph
+    /// instances, and processes clip commands. Writes to the chrome tier
+    /// (draws 6–9).
     pub fn append_ui_draw_list_with_text(
         &mut self,
         draw_list: &oriterm_ui::draw::DrawList,
@@ -26,74 +28,36 @@ impl WindowRenderer {
         opacity: f32,
         gpu: &GpuState,
     ) {
-        let ui_fc = self
-            .ui_font_collection
-            .as_mut()
-            .unwrap_or(&mut self.font_collection);
-        let size_q6 = size_key(ui_fc.size_px());
-        let hinted = ui_fc.hinting_mode().hint_flag();
-
-        self.ui_raster_keys.clear();
-        ui_text_raster_keys(draw_list, size_q6, hinted, scale, &mut self.ui_raster_keys);
-        ensure_glyphs_cached(
-            self.ui_raster_keys.iter().copied(),
-            &mut self.atlas,
-            &mut self.subpixel_atlas,
-            &mut self.color_atlas,
-            &mut self.empty_keys,
-            ui_fc,
-            &gpu.queue,
-        );
-
-        let bridge = CombinedAtlasLookup {
-            mono: &self.atlas,
-            subpixel: &self.subpixel_atlas,
-            color: &self.color_atlas,
-        };
-
-        let vp = &self.prepared.viewport;
-        let vw = vp.width;
-        let vh = vp.height;
-
-        // Use UI-specific glyph writers so text renders AFTER UI rect
-        // backgrounds (draws 7–9) instead of behind them (draws 2–4).
-        // Per-text bg_hint is baked into each Text command by the layer stack.
-        let mut text_ctx = super::super::draw_list_convert::TextContext {
-            atlas: &bridge,
-            mono_writer: &mut self.prepared.ui_glyphs,
-            subpixel_writer: &mut self.prepared.ui_subpixel_glyphs,
-            color_writer: &mut self.prepared.ui_color_glyphs,
-            size_q6,
-            hinted,
-        };
-        let mut clip_ctx = super::super::draw_list_convert::ClipContext {
-            clips: &mut self.prepared.ui_clips,
-            stack: &mut self.clip_stack,
-            viewport_w: vw,
-            viewport_h: vh,
-        };
-        super::super::draw_list_convert::convert_draw_list(
-            draw_list,
-            &mut self.prepared.ui_rects,
-            Some(&mut text_ctx),
-            Some(&mut clip_ctx),
-            scale,
-            opacity,
-        );
+        self.append_draw_list_tier(draw_list, scale, opacity, gpu, DrawListTier::Chrome);
     }
 
     /// Append overlay draw commands **with text** into the overlay tier.
     ///
-    /// Identical to [`append_ui_draw_list_with_text`](Self::append_ui_draw_list_with_text)
-    /// but writes to the overlay buffers (draws 10–13) instead of the chrome
-    /// buffers (draws 6–9). This ensures overlay content renders ON TOP of
-    /// all chrome text (tab bar titles), not behind it.
+    /// Same as [`append_ui_draw_list_with_text`](Self::append_ui_draw_list_with_text)
+    /// but writes to the overlay buffers (draws 10–13) so overlay content
+    /// renders ON TOP of all chrome text.
     pub fn append_overlay_draw_list_with_text(
         &mut self,
         draw_list: &oriterm_ui::draw::DrawList,
         scale: f32,
         opacity: f32,
         gpu: &GpuState,
+    ) {
+        self.append_draw_list_tier(draw_list, scale, opacity, gpu, DrawListTier::Overlay);
+    }
+
+    /// Shared implementation for appending a draw list to a specific tier.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "tier parameter avoids duplicating the method"
+    )]
+    fn append_draw_list_tier(
+        &mut self,
+        draw_list: &oriterm_ui::draw::DrawList,
+        scale: f32,
+        opacity: f32,
+        gpu: &GpuState,
+        tier: DrawListTier,
     ) {
         let ui_fc = self
             .ui_font_collection
@@ -124,23 +88,40 @@ impl WindowRenderer {
         let vw = vp.width;
         let vh = vp.height;
 
+        let (rects, glyphs, subpixel, color, clips) = match tier {
+            DrawListTier::Chrome => (
+                &mut self.prepared.ui_rects,
+                &mut self.prepared.ui_glyphs,
+                &mut self.prepared.ui_subpixel_glyphs,
+                &mut self.prepared.ui_color_glyphs,
+                &mut self.prepared.ui_clips,
+            ),
+            DrawListTier::Overlay => (
+                &mut self.prepared.overlay_rects,
+                &mut self.prepared.overlay_glyphs,
+                &mut self.prepared.overlay_subpixel_glyphs,
+                &mut self.prepared.overlay_color_glyphs,
+                &mut self.prepared.overlay_clips,
+            ),
+        };
+
         let mut text_ctx = super::super::draw_list_convert::TextContext {
             atlas: &bridge,
-            mono_writer: &mut self.prepared.overlay_glyphs,
-            subpixel_writer: &mut self.prepared.overlay_subpixel_glyphs,
-            color_writer: &mut self.prepared.overlay_color_glyphs,
+            mono_writer: glyphs,
+            subpixel_writer: subpixel,
+            color_writer: color,
             size_q6,
             hinted,
         };
         let mut clip_ctx = super::super::draw_list_convert::ClipContext {
-            clips: &mut self.prepared.overlay_clips,
+            clips,
             stack: &mut self.clip_stack,
             viewport_w: vw,
             viewport_h: vh,
         };
         super::super::draw_list_convert::convert_draw_list(
             draw_list,
-            &mut self.prepared.overlay_rects,
+            rects,
             Some(&mut text_ctx),
             Some(&mut clip_ctx),
             scale,

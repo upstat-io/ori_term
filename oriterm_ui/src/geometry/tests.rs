@@ -6,7 +6,7 @@ type Point = super::Point<Logical>;
 type Size = super::Size<Logical>;
 type Rect = super::Rect<Logical>;
 
-// --- Point ---
+// Point
 // Ported from Chromium ui/gfx/geometry/point_f_unittest.cc
 
 #[test]
@@ -152,7 +152,7 @@ fn point_negative_coordinates() {
     assert_eq!(p.offset(5.0, 10.0), Point::default());
 }
 
-// --- Size ---
+// Size
 // Ported from Chromium ui/gfx/geometry/size_f_unittest.cc
 
 #[test]
@@ -304,7 +304,7 @@ fn size_set_width_height_normal() {
     assert!(!s.is_empty());
 }
 
-// --- Rect ---
+// Rect
 // Ported from Chromium ui/gfx/geometry/rect_unittest.cc and rect_f_unittest.cc
 
 #[test]
@@ -723,7 +723,7 @@ fn rect_union_symmetric() {
     assert_eq!(a.union(b), b.union(a));
 }
 
-// --- Insets ---
+// Insets
 // Ported from Chromium ui/gfx/geometry/insets_f_unittest.cc
 
 #[test]

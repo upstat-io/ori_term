@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use oriterm_core::Theme;
 
-use crate::id::{ClientId, DomainId, PaneId};
+use crate::id::{ClientId, PaneId};
 
 use super::msg_type::MsgType;
 use super::snapshot::{PaneSnapshot, WireSelection};
@@ -269,8 +269,6 @@ pub enum MuxPdu {
     SpawnPaneResponse {
         /// ID of the newly created pane.
         pane_id: PaneId,
-        /// Domain that owns the pane.
-        domain_id: DomainId,
     },
 
     /// Response to [`ListPanes`](Self::ListPanes).

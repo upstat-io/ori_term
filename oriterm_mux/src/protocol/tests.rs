@@ -7,7 +7,7 @@ use super::messages::MuxPdu;
 use super::msg_type::MsgType;
 use super::snapshot::{PaneSnapshot, WireCell, WireCursor, WireCursorShape, WireRgb};
 use super::{FrameHeader, HEADER_LEN, MAX_PAYLOAD};
-use crate::id::{ClientId, DomainId, PaneId};
+use crate::id::{ClientId, PaneId};
 
 // -- FrameHeader tests --
 
@@ -272,7 +272,6 @@ fn roundtrip_spawn_pane_response() {
         34,
         MuxPdu::SpawnPaneResponse {
             pane_id: PaneId::from_raw(9),
-            domain_id: DomainId::from_raw(0),
         },
     );
 }
@@ -692,7 +691,6 @@ fn multiple_frames_sequential() {
             2,
             MuxPdu::SpawnPaneResponse {
                 pane_id: PaneId::from_raw(1),
-                domain_id: DomainId::from_raw(0),
             },
         ),
         (3, MuxPdu::ListPanes),

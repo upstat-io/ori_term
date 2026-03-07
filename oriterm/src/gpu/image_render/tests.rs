@@ -38,7 +38,7 @@ fn ensure_uploaded_creates_texture_and_returns_bind_group() {
         &gpu.device,
         &gpu.queue,
         &pipelines.image_texture_layout,
-        ImageId(1),
+        ImageId::from_raw(1),
         &data,
         4,
         4,
@@ -46,7 +46,7 @@ fn ensure_uploaded_creates_texture_and_returns_bind_group() {
 
     assert_eq!(cache.texture_count(), 1);
     assert_eq!(cache.gpu_memory_used(), 4 * 4 * 4);
-    assert!(cache.get_bind_group(ImageId(1)).is_some());
+    assert!(cache.get_bind_group(ImageId::from_raw(1)).is_some());
 }
 
 #[test]
@@ -60,8 +60,24 @@ fn ensure_uploaded_deduplicates_same_id() {
     let data = fake_rgba(4, 4);
     let layout = &pipelines.image_texture_layout;
 
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, ImageId(1), &data, 4, 4);
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, ImageId(1), &data, 4, 4);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageId::from_raw(1),
+        &data,
+        4,
+        4,
+    );
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageId::from_raw(1),
+        &data,
+        4,
+        4,
+    );
 
     // Second call is a no-op — only one texture, counted once.
     assert_eq!(cache.texture_count(), 1);
@@ -81,11 +97,27 @@ fn evict_unused_removes_old_textures() {
 
     // Frame 1: upload image 1.
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, ImageId(1), &data, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageId::from_raw(1),
+        &data,
+        2,
+        2,
+    );
 
     // Frame 2: upload image 2, don't touch image 1.
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, ImageId(2), &data, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageId::from_raw(2),
+        &data,
+        2,
+        2,
+    );
 
     // Frame 3: advance without touching either.
     cache.begin_frame();
@@ -96,8 +128,8 @@ fn evict_unused_removes_old_textures() {
     cache.evict_unused(1);
 
     assert_eq!(cache.texture_count(), 1);
-    assert!(cache.get_bind_group(ImageId(1)).is_none());
-    assert!(cache.get_bind_group(ImageId(2)).is_some());
+    assert!(cache.get_bind_group(ImageId::from_raw(1)).is_none());
+    assert!(cache.get_bind_group(ImageId::from_raw(2)).is_some());
 }
 
 #[test]
@@ -111,13 +143,45 @@ fn evict_unused_keeps_recently_used() {
 
     // Frame 1: upload both images (last_frame = 1 for both).
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, ImageId(1), &data, 2, 2);
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, ImageId(2), &data, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageId::from_raw(1),
+        &data,
+        2,
+        2,
+    );
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageId::from_raw(2),
+        &data,
+        2,
+        2,
+    );
 
     // Frame 2: touch both images again (last_frame = 2 for both).
     cache.begin_frame();
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, ImageId(1), &data, 2, 2);
-    cache.ensure_uploaded(&gpu.device, &gpu.queue, layout, ImageId(2), &data, 2, 2);
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageId::from_raw(1),
+        &data,
+        2,
+        2,
+    );
+    cache.ensure_uploaded(
+        &gpu.device,
+        &gpu.queue,
+        layout,
+        ImageId::from_raw(2),
+        &data,
+        2,
+        2,
+    );
 
     // Evict with threshold=1 (cutoff = 2 - 1 = 1).
     // Both at last_frame=2, cutoff=1 → neither evicted (2 >= 1).
@@ -143,7 +207,7 @@ fn evict_over_limit_removes_lru() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId(1),
+        ImageId::from_raw(1),
         &fake_rgba(8, 8),
         8,
         8,
@@ -154,7 +218,7 @@ fn evict_over_limit_removes_lru() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId(2),
+        ImageId::from_raw(2),
         &fake_rgba(8, 8),
         8,
         8,
@@ -164,8 +228,8 @@ fn evict_over_limit_removes_lru() {
     cache.evict_over_limit();
 
     assert_eq!(cache.texture_count(), 1);
-    assert!(cache.get_bind_group(ImageId(1)).is_none());
-    assert!(cache.get_bind_group(ImageId(2)).is_some());
+    assert!(cache.get_bind_group(ImageId::from_raw(1)).is_none());
+    assert!(cache.get_bind_group(ImageId::from_raw(2)).is_some());
     assert!(cache.gpu_memory_used() <= 300);
 }
 
@@ -182,7 +246,7 @@ fn set_gpu_memory_limit_triggers_eviction() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId(1),
+        ImageId::from_raw(1),
         &fake_rgba(8, 8),
         8,
         8,
@@ -192,7 +256,7 @@ fn set_gpu_memory_limit_triggers_eviction() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId(2),
+        ImageId::from_raw(2),
         &fake_rgba(8, 8),
         8,
         8,
@@ -221,7 +285,7 @@ fn gpu_memory_tracks_uploads_and_removals() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId(1),
+        ImageId::from_raw(1),
         &fake_rgba(4, 4),
         4,
         4,
@@ -232,18 +296,18 @@ fn gpu_memory_tracks_uploads_and_removals() {
         &gpu.device,
         &gpu.queue,
         layout,
-        ImageId(2),
+        ImageId::from_raw(2),
         &fake_rgba(8, 8),
         8,
         8,
     );
     assert_eq!(cache.gpu_memory_used(), 64 + 256); // 320
 
-    cache.remove(ImageId(1));
+    cache.remove(ImageId::from_raw(1));
     assert_eq!(cache.gpu_memory_used(), 256);
     assert_eq!(cache.texture_count(), 1);
 
-    cache.remove(ImageId(2));
+    cache.remove(ImageId::from_raw(2));
     assert_eq!(cache.gpu_memory_used(), 0);
     assert_eq!(cache.texture_count(), 0);
 }
@@ -254,7 +318,7 @@ fn remove_nonexistent_is_noop() {
         return;
     };
     let mut cache = ImageTextureCache::new(&gpu.device);
-    cache.remove(ImageId(999));
+    cache.remove(ImageId::from_raw(999));
     assert_eq!(cache.gpu_memory_used(), 0);
     assert_eq!(cache.texture_count(), 0);
 }

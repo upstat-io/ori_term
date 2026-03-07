@@ -61,9 +61,8 @@ pub fn dispatch_request(
             match ctx.mux.spawn_standalone_pane(&config, theme, ctx.wakeup) {
                 Ok((pane_id, pane)) => {
                     ctx.panes.insert(pane_id, pane);
-                    let domain_id = ctx.mux.default_domain();
                     log::debug!("spawned {pane_id}");
-                    Some(MuxPdu::SpawnPaneResponse { pane_id, domain_id })
+                    Some(MuxPdu::SpawnPaneResponse { pane_id })
                 }
                 Err(e) => Some(MuxPdu::Error {
                     message: format!("spawn_pane failed: {e}"),
@@ -161,13 +160,8 @@ pub fn dispatch_request(
 
         MuxPdu::SetCursorShape { pane_id, shape } => {
             if let Some(pane) = ctx.panes.get(&pane_id) {
-                let core_shape = match shape {
-                    1 => CursorShape::Underline,
-                    2 => CursorShape::Bar,
-                    3 => CursorShape::HollowBlock,
-                    4 => CursorShape::Hidden,
-                    _ => CursorShape::Block,
-                };
+                let wire = crate::WireCursorShape::from_u8(shape);
+                let core_shape = CursorShape::from(wire);
                 pane.terminal().lock().set_cursor_shape(core_shape);
                 ctx.immediate_push.push(pane_id);
             }

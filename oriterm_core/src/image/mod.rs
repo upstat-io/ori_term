@@ -33,7 +33,19 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 /// IDs start at `2_147_483_647` (mid-range u32) for auto-assigned images
 /// to avoid collisions with client-assigned IDs that typically start at 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ImageId(pub u32);
+pub struct ImageId(pub(crate) u32);
+
+impl ImageId {
+    /// Construct an `ImageId` from a raw u32 value.
+    pub fn from_raw(val: u32) -> Self {
+        Self(val)
+    }
+
+    /// Get the underlying u32 value.
+    pub fn as_u32(self) -> u32 {
+        self.0
+    }
+}
 
 /// Source of image data (how it was transmitted).
 #[derive(Debug, Clone, PartialEq, Eq)]

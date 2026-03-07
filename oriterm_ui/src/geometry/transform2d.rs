@@ -52,7 +52,7 @@ impl Default for Transform2D {
 }
 
 impl Transform2D {
-    // --- Constructors ---
+    // Constructors
 
     /// Creates the identity transform (no-op).
     pub fn identity() -> Self {
@@ -83,7 +83,7 @@ impl Transform2D {
         }
     }
 
-    // --- Accessors ---
+    // Accessors
 
     /// Returns the raw `[a, b, c, d, tx, ty]` array for GPU uniform upload.
     pub fn to_mat3x2(self) -> [f32; 6] {
@@ -120,7 +120,7 @@ impl Transform2D {
         Self { matrix }
     }
 
-    // --- Predicates ---
+    // Predicates
 
     /// Returns `true` if this is the identity transform.
     ///
@@ -135,7 +135,7 @@ impl Transform2D {
         self.matrix == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
     }
 
-    // --- Composition ---
+    // Composition
 
     /// Composes two transforms via matrix multiplication: `self * other`.
     ///
@@ -189,7 +189,7 @@ impl Transform2D {
         }
     }
 
-    // --- Point/rect mapping ---
+    // Point/rect mapping
 
     /// Transforms a point.
     pub fn apply(self, point: Point) -> Point {
@@ -218,7 +218,7 @@ impl Transform2D {
         Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
     }
 
-    // --- Inversion ---
+    // Inversion
 
     /// Returns the inverse transform, or `None` if the matrix is degenerate.
     ///

@@ -71,7 +71,7 @@ fn sample_entries() -> Vec<MenuEntry> {
     ]
 }
 
-// --- Layout tests ---
+// Layout tests
 
 #[test]
 fn layout_min_width_enforced() {
@@ -153,7 +153,7 @@ fn layout_wide_label_exceeds_min_width() {
     }
 }
 
-// --- Mouse interaction tests ---
+// Mouse interaction tests
 
 #[test]
 fn click_emits_selected() {
@@ -224,7 +224,7 @@ fn hover_leave_clears() {
     assert_eq!(r.response, crate::input::EventResponse::RequestRedraw);
 }
 
-// --- Keyboard navigation tests ---
+// Keyboard navigation tests
 
 #[test]
 fn arrow_down_navigates() {
@@ -299,7 +299,7 @@ fn keyboard_wraps_around() {
     assert_eq!(menu.hovered(), Some(0));
 }
 
-// --- Check item tests ---
+// Check item tests
 
 #[test]
 fn check_entries_affect_layout() {
@@ -386,7 +386,7 @@ fn all_separators_menu_navigate_returns_false() {
     assert!(r.response.is_handled());
 }
 
-// --- Non-left mouse button tests ---
+// Non-left mouse button tests
 
 #[test]
 fn right_click_ignored() {
@@ -403,7 +403,7 @@ fn right_click_ignored() {
     assert_eq!(r, WidgetResponse::ignored());
 }
 
-// --- Out-of-bounds mouse Y tests ---
+// Out-of-bounds mouse Y tests
 
 #[test]
 fn mouse_y_above_padding_clears_hover() {
@@ -440,7 +440,7 @@ fn mouse_y_below_entries_clears_hover() {
     assert_eq!(menu.hovered(), None);
 }
 
-// --- Hybrid keyboard/mouse interaction ---
+// Hybrid keyboard/mouse interaction
 
 #[test]
 fn keyboard_then_mouse_hover_follows_mouse() {
@@ -459,7 +459,7 @@ fn keyboard_then_mouse_hover_follows_mouse() {
     assert_eq!(menu.hovered(), Some(1));
 }
 
-// --- Space key activation ---
+// Space key activation
 
 #[test]
 fn space_key_activates() {
@@ -477,7 +477,7 @@ fn space_key_activates() {
     );
 }
 
-// --- Check item click ---
+// Check item click
 
 #[test]
 fn click_check_item_emits_selected() {
@@ -512,7 +512,7 @@ fn click_check_item_emits_selected() {
     );
 }
 
-// --- Boundary: single item menu ---
+// Boundary: single item menu
 
 #[test]
 fn single_item_menu_works() {
@@ -540,7 +540,7 @@ fn single_item_menu_works() {
     );
 }
 
-// --- Consecutive separators ---
+// Consecutive separators
 
 #[test]
 fn consecutive_separators_skipped() {
@@ -562,7 +562,7 @@ fn consecutive_separators_skipped() {
     assert_eq!(menu.hovered(), Some(3));
 }
 
-// --- Fresh instance contract ---
+// Fresh instance contract
 
 #[test]
 fn new_menu_starts_with_no_hover() {

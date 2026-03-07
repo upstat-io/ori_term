@@ -79,7 +79,7 @@ impl App {
                 // Acquire width lock for stable close-button targeting
                 // during rapid close clicks.
                 if let Some(ctx) = self.focused_ctx() {
-                    let w = ctx.tab_bar.layout().tab_width;
+                    let w = ctx.tab_bar.layout().base_tab_width();
                     self.acquire_tab_width_lock(w);
                 }
                 self.close_tab_at_index(idx);
@@ -138,7 +138,7 @@ impl App {
                 oriterm_ui::geometry::Rect::new(
                     tx,
                     TAB_BAR_HEIGHT - TAB_TOP_MARGIN,
-                    layout.tab_width,
+                    layout.base_tab_width(),
                     TAB_TOP_MARGIN,
                 )
             })

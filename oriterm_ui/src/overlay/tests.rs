@@ -78,7 +78,7 @@ fn complete_animations(
     mgr.cleanup_dismissed(tree, animator);
 }
 
-// --- Placement tests (pure function) ---
+// Placement tests (pure function)
 
 #[test]
 fn placement_below_fits() {
@@ -217,7 +217,7 @@ fn placement_anchor_at_viewport_edge() {
     assert!(rect.y() + rect.height() <= viewport().bottom());
 }
 
-// --- OverlayId tests ---
+// OverlayId tests
 
 #[test]
 fn overlay_ids_are_unique() {
@@ -243,7 +243,7 @@ fn overlay_id_debug() {
     assert!(s.starts_with("OverlayId("));
 }
 
-// --- Manager lifecycle tests ---
+// Manager lifecycle tests
 
 #[test]
 fn manager_starts_empty() {
@@ -483,7 +483,7 @@ fn overlay_rect_unknown_id() {
     assert!(mgr.overlay_rect(fake_id).is_none());
 }
 
-// --- Mouse routing tests ---
+// Mouse routing tests
 
 #[test]
 fn mouse_pass_through_when_empty() {
@@ -684,7 +684,7 @@ fn mouse_topmost_overlay_wins() {
     }
 }
 
-// --- Key routing tests ---
+// Key routing tests
 
 #[test]
 fn key_pass_through_when_empty() {
@@ -839,7 +839,7 @@ fn non_modal_key_can_pass_through() {
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
-// --- Hover routing tests ---
+// Hover routing tests
 
 #[test]
 fn hover_pass_through_when_empty() {
@@ -1008,7 +1008,7 @@ fn hover_transition_sends_leave_to_old_overlay() {
     assert!(matches!(result, OverlayEventResult::PassThrough));
 }
 
-// --- Drawing tests ---
+// Drawing tests
 
 #[test]
 fn draw_empty_is_noop() {
@@ -1164,7 +1164,7 @@ fn draw_overlays_in_painter_order() {
     assert_eq!(glyph_counts, vec![2, 5]);
 }
 
-// --- Focus tests ---
+// Focus tests
 
 #[test]
 fn modal_focus_order_returns_focusable_ids() {
@@ -1215,7 +1215,7 @@ fn non_modal_overlay_returns_none_focus_order() {
     assert!(mgr.modal_focus_order().is_none());
 }
 
-// --- Viewport tests ---
+// Viewport tests
 
 #[test]
 fn set_viewport_updates() {
@@ -1225,7 +1225,7 @@ fn set_viewport_updates() {
     assert_eq!(mgr.viewport(), new_vp);
 }
 
-// --- Integration: button click through overlay ---
+// Integration: button click through overlay
 
 #[test]
 fn button_in_overlay_receives_click_action() {
@@ -1283,7 +1283,7 @@ fn button_in_overlay_receives_click_action() {
     }
 }
 
-// --- Edge cases from Chromium/WezTerm audit ---
+// Edge cases from Chromium/WezTerm audit
 
 #[test]
 fn stacked_modals_inner_dismiss_restores_outer() {
@@ -1953,7 +1953,7 @@ fn modal_focus_order_traverses_containers() {
     assert_eq!(ids.len(), 2);
 }
 
-// --- Compositor integration: fade lifecycle ---
+// Compositor integration: fade lifecycle
 
 #[test]
 fn dismiss_during_fade_in_starts_fade_out() {

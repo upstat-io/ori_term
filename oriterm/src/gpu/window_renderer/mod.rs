@@ -141,6 +141,8 @@ pub struct WindowRenderer {
     // Image rendering.
     image_texture_cache: ImageTextureCache,
     image_instance_buffer: Option<Buffer>,
+    /// Reusable scratch buffer for image quad instance data (avoids per-frame allocation).
+    image_instance_data: Vec<u8>,
 }
 
 impl WindowRenderer {
@@ -215,6 +217,7 @@ impl WindowRenderer {
             overlay_color_fg_buffer: None,
             image_texture_cache: ImageTextureCache::new(device),
             image_instance_buffer: None,
+            image_instance_data: Vec::new(),
         }
     }
 

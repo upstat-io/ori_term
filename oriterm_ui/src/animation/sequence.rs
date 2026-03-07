@@ -133,7 +133,7 @@ impl AnimationSequence {
         self.advance_to(idx + 1, now)
     }
 
-    // --- Private helpers ---
+    // Private helpers
 
     /// Moves to the given step index, firing callbacks along the way.
     fn advance_to(&mut self, next_idx: usize, now: Instant) -> Option<&AnimationGroup> {

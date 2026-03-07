@@ -1,8 +1,8 @@
 //! Tab lifecycle — create, close, duplicate, cycle, reorder.
 //!
-//! All operations go through the mux layer. The mux owns tab state
-//! (`MuxTab` with `SplitTree`); the App owns rendering state (tab bar
-//! layout, animation offsets) and the actual `Pane` structs.
+//! All operations go through the mux layer (flat pane server). The GUI
+//! session owns tab/window/layout state; the App owns rendering state
+//! (tab bar layout, animation offsets).
 
 mod move_ops;
 
@@ -281,7 +281,7 @@ impl App {
         let win_id = self.active_window?;
         let win = self.session.get_window(win_id)?;
         let idx = win.tabs().iter().position(|&id| id == tab_id)?;
-        let tab_width = self.focused_ctx()?.tab_bar.layout().tab_width;
+        let tab_width = self.focused_ctx()?.tab_bar.layout().base_tab_width();
         Some((idx, tab_width))
     }
 

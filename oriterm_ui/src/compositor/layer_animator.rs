@@ -103,7 +103,7 @@ pub struct LayerAnimator {
 }
 
 impl LayerAnimator {
-    // --- Constructors ---
+    // Constructors
 
     /// Creates a new animator with default preemption strategy.
     pub fn new() -> Self {
@@ -131,7 +131,7 @@ impl LayerAnimator {
         self
     }
 
-    // --- Animation starters ---
+    // Animation starters
 
     /// Starts an opacity animation on the given layer.
     pub fn animate_opacity(&mut self, id: LayerId, target: f32, params: &AnimationParams<'_>) {
@@ -159,7 +159,7 @@ impl LayerAnimator {
         self.start_transition(id, AnimatableProperty::Bounds, kind, params);
     }
 
-    // --- Group application ---
+    // Group application
 
     /// Starts all property animations in an [`AnimationGroup`] simultaneously.
     ///
@@ -221,7 +221,7 @@ impl LayerAnimator {
         }
     }
 
-    // --- Tick ---
+    // Tick
 
     /// Advances all animations and applies current values to the tree.
     ///
@@ -269,7 +269,7 @@ impl LayerAnimator {
         !self.transitions.is_empty() || !self.queue.is_empty()
     }
 
-    // --- Queries ---
+    // Queries
 
     /// Returns `true` if a specific property on a layer is animating.
     pub fn is_animating(&self, id: LayerId, property: AnimatableProperty) -> bool {
@@ -301,7 +301,7 @@ impl LayerAnimator {
             })
     }
 
-    // --- Cancellation ---
+    // Cancellation
 
     /// Cancels a specific property animation, keeping the current value.
     pub fn cancel(&mut self, id: LayerId, property: AnimatableProperty) {
@@ -325,7 +325,7 @@ impl LayerAnimator {
         self.queue.retain(|q| q.layer_id != id);
     }
 
-    // --- Private helpers ---
+    // Private helpers
 
     /// Starts or preempts a transition.
     fn start_transition(

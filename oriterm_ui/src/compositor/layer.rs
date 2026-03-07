@@ -83,7 +83,7 @@ pub struct Layer {
 }
 
 impl Layer {
-    // --- Constructors ---
+    // Constructors
 
     /// Creates a new layer with the given type and properties.
     pub fn new(id: LayerId, kind: LayerType, properties: LayerProperties) -> Self {
@@ -98,7 +98,7 @@ impl Layer {
         }
     }
 
-    // --- Accessors ---
+    // Accessors
 
     /// Returns this layer's unique identifier.
     pub fn id(&self) -> LayerId {
@@ -135,7 +135,7 @@ impl Layer {
         self.needs_composite
     }
 
-    // --- Predicates ---
+    // Predicates
 
     /// Returns `true` when the layer needs an intermediate texture.
     ///
@@ -146,7 +146,7 @@ impl Layer {
         self.properties.opacity < 1.0 || !self.properties.transform.is_identity()
     }
 
-    // --- Property mutation ---
+    // Property mutation
 
     /// Sets the layer's bounds, marking it for re-composite.
     pub fn set_bounds(&mut self, bounds: Rect) {

@@ -108,7 +108,7 @@ struct SnapData {
 /// Global map from HWND (as usize) to `SnapData` pointer.
 static SNAP_PTRS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
 
-// --- Public API -----------------------------------------------------------
+// Public API
 
 /// Installs snap support on a borderless window.
 ///
@@ -258,7 +258,7 @@ pub fn set_chrome_metrics(window: &Window, border_width: f32, caption_height: f3
     }
 }
 
-// --- Platform helpers ------------------------------------------------------
+// Platform helpers
 
 /// Returns the current screen cursor position via `GetCursorPos`.
 pub fn cursor_screen_pos() -> (i32, i32) {
@@ -333,7 +333,7 @@ pub fn set_transitions_enabled(window: &Window, enabled: bool) {
     }
 }
 
-// --- Private helpers -------------------------------------------------------
+// Private helpers
 
 fn snap_ptrs() -> &'static Mutex<HashMap<usize, usize>> {
     SNAP_PTRS.get_or_init(|| Mutex::new(HashMap::new()))

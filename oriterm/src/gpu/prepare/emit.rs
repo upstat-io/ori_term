@@ -236,3 +236,29 @@ pub(super) fn draw_url_hover_underline(
             .push_cursor(ScreenRect { x, y, w, h: t }, fg, 1.0);
     }
 }
+
+/// Emit image quads from `RenderableContent`, splitting by z-index.
+///
+/// Images with negative z-index go to `image_quads_below` (drawn before text),
+/// others go to `image_quads_above` (drawn after text).
+pub(super) fn emit_image_quads(input: &FrameInput, frame: &mut PreparedFrame, ox: f32, oy: f32) {
+    for img in &input.content.images {
+        let quad = super::super::prepared_frame::ImageQuad {
+            image_id: img.image_id,
+            x: ox + img.viewport_x,
+            y: oy + img.viewport_y,
+            w: img.display_width,
+            h: img.display_height,
+            uv_x: img.source_x,
+            uv_y: img.source_y,
+            uv_w: img.source_w,
+            uv_h: img.source_h,
+            opacity: img.opacity,
+        };
+        if img.z_index < 0 {
+            frame.image_quads_below.push(quad);
+        } else {
+            frame.image_quads_above.push(quad);
+        }
+    }
+}

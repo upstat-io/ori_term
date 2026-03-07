@@ -84,8 +84,17 @@ impl Config {
     /// and "parse error" so callers can keep the previous config on error.
     pub fn try_load() -> Result<Self, String> {
         let path = config_path();
-        let data = std::fs::read_to_string(&path)
-            .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        let data = match std::fs::read_to_string(&path) {
+            Ok(d) => d,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                log::info!(
+                    "config: file not found at {}, using defaults",
+                    path.display()
+                );
+                return Ok(Self::default());
+            }
+            Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
+        };
         toml::from_str(&data).map_err(|e| format!("parse error in {}: {e}", path.display()))
     }
 

@@ -218,7 +218,7 @@ fn key_arrow_down_scrolls() {
     assert_eq!(scroll.scroll_offset(), 20.0);
 }
 
-// --- Edge cases from Chromium/Ratatui audit ---
+// Edge cases from Chromium/Ratatui audit
 
 #[test]
 fn scroll_clip_rect_matches_viewport() {
@@ -496,7 +496,7 @@ fn arrow_up_scrolls_upward() {
     assert_eq!(scroll.scroll_offset(), 80.0); // 100 - 20
 }
 
-// --- Horizontal and both-direction tests (Chromium scroll view patterns) ---
+// Horizontal and both-direction tests (Chromium scroll view patterns)
 
 /// Creates a wide row of labels that overflows a narrow viewport.
 /// 20 labels * 8px * 10 chars = 1600px wide.

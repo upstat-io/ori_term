@@ -80,7 +80,9 @@ impl App {
             let (w, h) = ctx.window.size_px();
             let viewport = ViewportSize::new(w, h);
             let cell = renderer.cell_metrics();
-            let mux = self.mux.as_mut().expect("mux checked at pane_id");
+            let Some(mux) = self.mux.as_mut() else {
+                return;
+            };
 
             // Extract phase: refresh snapshot if needed.
             // Detect tab switch / tear-off: when the rendered pane changes,

@@ -208,6 +208,9 @@ impl App {
     }
 
     /// Detect and apply window transparency/blur changes.
+    ///
+    /// Iterates ALL windows — each must receive the updated transparency
+    /// settings, not just the focused one.
     fn apply_window_changes(&self, new: &Config) {
         let opacity_changed =
             (new.window.effective_opacity() - self.config.window.effective_opacity()).abs()
@@ -218,13 +221,12 @@ impl App {
             return;
         }
 
-        let Some(ctx) = self.focused_ctx() else {
-            return;
-        };
         let opacity = new.window.effective_opacity();
         let blur = new.window.blur && opacity < 1.0;
 
-        ctx.window.set_transparency(opacity, blur);
+        for ctx in self.windows.values() {
+            ctx.window.set_transparency(opacity, blur);
+        }
 
         log::info!("config reload: window opacity={opacity:.2}, blur={blur}",);
     }

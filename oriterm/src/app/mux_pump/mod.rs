@@ -5,7 +5,7 @@
 //! then handles resulting `MuxNotification`s (dirty, close, clipboard, etc.).
 
 use std::fmt::Write as _;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use oriterm_mux::PaneId;
 
@@ -79,7 +79,7 @@ impl App {
                 }
                 if let Some(idx) = self.tab_index_for_pane(id) {
                     if let Some(ctx) = self.focused_ctx_mut() {
-                        ctx.tab_bar.ring_bell(idx);
+                        ctx.tab_bar.ring_bell(idx, Instant::now());
                     }
                 }
                 self.mark_all_windows_dirty();
@@ -133,7 +133,7 @@ impl App {
         if behavior.notify_command_bell {
             if let Some(idx) = self.tab_index_for_pane(pane_id) {
                 if let Some(ctx) = self.focused_ctx_mut() {
-                    ctx.tab_bar.ring_bell(idx);
+                    ctx.tab_bar.ring_bell(idx, Instant::now());
                     ctx.dirty = true;
                 }
             }

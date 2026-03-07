@@ -232,7 +232,7 @@ fn rapid_toggle_maintains_consistency() {
     }
 }
 
-// --- Animation-specific tests ---
+// Animation-specific tests
 
 #[test]
 fn set_on_is_immediate_no_animation() {
@@ -278,7 +278,7 @@ fn with_on_builder_is_immediate() {
     assert_eq!(t.toggle_progress.get(now), 1.0);
 }
 
-// --- with_style builder test ---
+// with_style builder test
 
 #[test]
 fn with_style_applies_custom_style() {
@@ -317,7 +317,7 @@ fn with_style_applies_custom_style() {
     }
 }
 
-// --- Animation interpolation output verification (Chromium blend tests) ---
+// Animation interpolation output verification (Chromium blend tests)
 
 #[test]
 fn toggle_animation_interpolates_thumb_position() {

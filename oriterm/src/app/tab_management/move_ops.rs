@@ -213,7 +213,7 @@ impl App {
     pub(in crate::app) fn move_tab(&mut self, from: usize, to: usize) {
         let tab_width = self
             .focused_ctx()
-            .map_or(0.0, |ctx| ctx.tab_bar.layout().tab_width);
+            .map_or(0.0, |ctx| ctx.tab_bar.layout().base_tab_width());
 
         let Some(win_id) = self.active_window else {
             return;

@@ -157,7 +157,7 @@ impl TabBarWidget {
         }
     }
 
-    // --- Theme ---
+    // Theme
 
     /// Updates all theme-derived colors from a new [`UiTheme`].
     pub fn apply_theme(&mut self, theme: &UiTheme) {
@@ -170,7 +170,7 @@ impl TabBarWidget {
         }
     }
 
-    // --- State setters ---
+    // State setters
 
     /// Updates the tab list and recomputes layout.
     ///
@@ -262,7 +262,7 @@ impl TabBarWidget {
         self.drag_visual = drag;
     }
 
-    // --- Tab lifecycle animations ---
+    // Tab lifecycle animations
 
     /// Starts a tab open animation, expanding from zero to full width.
     ///
@@ -328,7 +328,7 @@ impl TabBarWidget {
         }
     }
 
-    // --- Accessors ---
+    // Accessors
 
     /// Current computed layout.
     pub fn layout(&self) -> &TabBarLayout {
@@ -361,15 +361,15 @@ impl TabBarWidget {
 
     /// Start a bell animation on the tab at `index`.
     ///
-    /// Records the current instant as the bell start time. No-op if
-    /// `index` is out of bounds.
-    pub fn ring_bell(&mut self, index: usize) {
+    /// Records `now` as the bell start time. No-op if `index` is out of
+    /// bounds.
+    pub fn ring_bell(&mut self, index: usize, now: Instant) {
         if let Some(entry) = self.tabs.get_mut(index) {
-            entry.bell_start = Some(Instant::now());
+            entry.bell_start = Some(now);
         }
     }
 
-    // --- Private helpers ---
+    // Private helpers
 
     /// Recomputes layout from current state.
     ///
@@ -420,7 +420,7 @@ impl TabBarWidget {
     }
 }
 
-// --- Free functions ---
+// Free functions
 
 /// Builds [`ControlButtonColors`] from a [`UiTheme`].
 fn control_colors_from_theme(theme: &UiTheme) -> ControlButtonColors {
@@ -444,7 +444,7 @@ fn create_controls(colors: ControlButtonColors, caption_bg: Color) -> [WindowCon
     [min_btn, max_btn, close_btn]
 }
 
-// --- Test helpers ---
+// Test helpers
 
 #[cfg(test)]
 impl TabBarWidget {

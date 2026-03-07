@@ -248,7 +248,7 @@ fn empty_label_layout() {
     }
 }
 
-// --- Hover animation tests ---
+// Hover animation tests
 
 #[test]
 fn hover_starts_animation() {
@@ -289,7 +289,7 @@ fn disable_clears_hover_animation() {
     assert_eq!(btn.hover_progress.get(now), 0.0);
 }
 
-// --- with_style builder test ---
+// with_style builder test
 
 #[test]
 fn with_style_applies_custom_style() {
@@ -333,7 +333,7 @@ fn with_style_applies_custom_style() {
     }
 }
 
-// --- Animation interpolation output verification (Chromium blend tests) ---
+// Animation interpolation output verification (Chromium blend tests)
 
 #[test]
 fn hover_animation_interpolates_bg_at_midpoint() {

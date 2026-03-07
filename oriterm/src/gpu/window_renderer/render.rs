@@ -174,26 +174,35 @@ impl WindowRenderer {
         }
 
         let stride = IMAGE_INSTANCE_STRIDE as usize;
-        let data_size = total * stride;
-        let mut data = Vec::with_capacity(data_size);
+        self.image_instance_data.clear();
+        self.image_instance_data.reserve(total * stride);
 
         for quad in below.iter().chain(above.iter()) {
-            data.extend_from_slice(&quad.x.to_le_bytes());
-            data.extend_from_slice(&quad.y.to_le_bytes());
-            data.extend_from_slice(&quad.w.to_le_bytes());
-            data.extend_from_slice(&quad.h.to_le_bytes());
-            data.extend_from_slice(&quad.uv_x.to_le_bytes());
-            data.extend_from_slice(&quad.uv_y.to_le_bytes());
-            data.extend_from_slice(&quad.uv_w.to_le_bytes());
-            data.extend_from_slice(&quad.uv_h.to_le_bytes());
-            data.extend_from_slice(&quad.opacity.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.x.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.y.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.w.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.h.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.uv_x.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.uv_y.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.uv_w.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.uv_h.to_le_bytes());
+            self.image_instance_data
+                .extend_from_slice(&quad.opacity.to_le_bytes());
         }
 
         upload_buffer(
             device,
             queue,
             &mut self.image_instance_buffer,
-            &data,
+            &self.image_instance_data,
             "image_instance_buffer",
         );
     }

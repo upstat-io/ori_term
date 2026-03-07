@@ -10,7 +10,7 @@ use crate::text::{ShapedGlyph, ShapedText};
 
 use super::{Border, DrawCommand, DrawList, RectStyle, Shadow};
 
-// --- RectStyle ---
+// RectStyle
 
 #[test]
 fn rect_style_default_is_invisible() {
@@ -59,7 +59,7 @@ fn rect_style_per_corner_radius() {
     assert_eq!(s.corner_radius, [1.0, 2.0, 3.0, 4.0]);
 }
 
-// --- DrawList ---
+// DrawList
 
 #[test]
 fn draw_list_new_is_empty() {
@@ -212,7 +212,7 @@ fn multiple_commands_preserve_order() {
     assert!(matches!(dl.commands()[2], DrawCommand::Rect { .. }));
 }
 
-// --- Layer stack ---
+// Layer stack
 
 #[test]
 fn layer_push_pop_balanced() {

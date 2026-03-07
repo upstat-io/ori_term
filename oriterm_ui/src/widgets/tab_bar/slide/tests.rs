@@ -269,7 +269,7 @@ fn close_slide_mid_animation_offset_decreasing() {
     }
 }
 
-// --- Gap analysis: high priority ---
+// Gap analysis: high priority
 
 #[test]
 fn zero_offset_slide_creates_identity_layers() {
@@ -399,7 +399,7 @@ fn close_first_tab_shifts_all_remaining() {
     }
 }
 
-// --- Gap analysis: medium priority ---
+// Gap analysis: medium priority
 
 #[test]
 fn cleanup_mid_animation_retains_active() {
@@ -513,7 +513,7 @@ fn reorder_adjacent_tabs_creates_single_layer() {
     );
 }
 
-// --- Gap analysis: low priority ---
+// Gap analysis: low priority
 
 #[test]
 fn large_tab_count_slide() {
@@ -539,7 +539,7 @@ fn large_tab_count_slide() {
     assert!(!state.has_active());
 }
 
-// --- Dynamic slide duration tests ---
+// Dynamic slide duration tests
 
 use super::slide_duration;
 

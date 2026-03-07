@@ -273,7 +273,7 @@ fn mouse_outside_children_is_ignored() {
     assert_eq!(resp, WidgetResponse::ignored());
 }
 
-// --- Edge cases from Chromium/Ratatui audit ---
+// Edge cases from Chromium/Ratatui audit
 
 #[test]
 fn deeply_nested_layout_correct() {

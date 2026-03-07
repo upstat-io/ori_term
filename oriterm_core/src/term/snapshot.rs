@@ -141,7 +141,7 @@ impl<T: EventListener> Term<T> {
 
         // Image placements visible in the viewport.
         Self::extract_images(
-            &self.image_cache,
+            self.image_cache(),
             out.stable_row_base,
             lines,
             self.cell_pixel_width,
@@ -153,7 +153,7 @@ impl<T: EventListener> Term<T> {
         // Propagate image dirty flag. When images changed, force a full
         // viewport repaint since image mutations don't set per-line grid
         // dirty flags. The dirty flag is cleared by `reset_damage()`.
-        out.images_dirty = self.image_cache.is_dirty();
+        out.images_dirty = self.image_cache().is_dirty();
         if out.images_dirty {
             out.all_dirty = true;
         }
@@ -166,7 +166,7 @@ impl<T: EventListener> Term<T> {
     /// repaint everything and drop the iterator (which clears remaining marks).
     /// Also clears the image cache dirty flag.
     pub fn damage(&mut self) -> TermDamage<'_> {
-        self.image_cache.take_dirty();
+        self.image_cache_mut().take_dirty();
         let grid = self.grid_mut();
         let cols = grid.cols();
         let all_dirty = grid.dirty().is_all_dirty();
@@ -180,7 +180,7 @@ impl<T: EventListener> Term<T> {
     /// image cache dirty flag.
     pub fn reset_damage(&mut self) {
         self.grid_mut().dirty_mut().drain().for_each(drop);
-        self.image_cache.take_dirty();
+        self.image_cache_mut().take_dirty();
     }
 
     /// Extract visible image placements and their pixel data.
@@ -217,7 +217,8 @@ impl<T: EventListener> Term<T> {
         let ch = f32::from(cell_h);
 
         // Collect unique image IDs for pixel data.
-        let mut seen_ids: Vec<crate::image::ImageId> = Vec::new();
+        let mut seen_ids: std::collections::HashSet<crate::image::ImageId> =
+            std::collections::HashSet::new();
 
         for p in &visible {
             // Signed offset: images starting above the viewport have negative Y,
@@ -276,9 +277,7 @@ impl<T: EventListener> Term<T> {
                 opacity: 1.0,
             });
 
-            if !seen_ids.contains(&p.image_id) {
-                seen_ids.push(p.image_id);
-            }
+            seen_ids.insert(p.image_id);
         }
 
         // Collect pixel data for referenced images.

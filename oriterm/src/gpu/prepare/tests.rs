@@ -3483,7 +3483,7 @@ fn prompt_markers_with_origin_offset() {
 
 fn placement(z: i32, x: f32, y: f32) -> oriterm_core::RenderablePlacement {
     oriterm_core::RenderablePlacement {
-        image_id: oriterm_core::image::ImageId(1),
+        image_id: oriterm_core::image::ImageId::from_raw(1),
         viewport_x: x,
         viewport_y: y,
         display_width: 32.0,

@@ -288,11 +288,5 @@ fn rgb_to_wire(rgb: Rgb) -> WireRgb {
 
 /// Map [`CursorShape`] enum to [`WireCursorShape`].
 fn cursor_shape_to_wire(shape: CursorShape) -> WireCursorShape {
-    match shape {
-        CursorShape::Block => WireCursorShape::Block,
-        CursorShape::Underline => WireCursorShape::Underline,
-        CursorShape::Bar => WireCursorShape::Bar,
-        CursorShape::HollowBlock => WireCursorShape::HollowBlock,
-        CursorShape::Hidden => WireCursorShape::Hidden,
-    }
+    WireCursorShape::from(shape)
 }

@@ -144,7 +144,7 @@ fn panel_delegates_key_to_child() {
     }
 }
 
-// --- Mouse and hover delegation (Chromium event dispatch patterns) ---
+// Mouse and hover delegation (Chromium event dispatch patterns)
 
 #[test]
 fn panel_delegates_mouse_to_child() {
@@ -238,7 +238,7 @@ fn panel_delegates_hover_to_child() {
     assert!(resp.response.is_handled());
 }
 
-// --- Builder method tests ---
+// Builder method tests
 
 #[test]
 fn panel_with_bg() {

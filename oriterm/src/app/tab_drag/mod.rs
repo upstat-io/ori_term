@@ -130,7 +130,7 @@ impl App {
                 return false;
             };
             let scale = ctx.window.scale_factor().factor() as f32;
-            let tw = ctx.tab_bar.layout().tab_width;
+            let tw = ctx.tab_bar.layout().base_tab_width();
 
             // Resolve the session TabId from the index.
             let Some(win_id) = self.active_window else {
@@ -201,7 +201,7 @@ impl App {
                 bar_y: drag.tab_bar_y,
                 bar_bottom: drag.tab_bar_bottom,
                 scale: ctx.window.scale_factor().factor() as f32,
-                tab_count: ctx.tab_bar.layout().tab_count,
+                tab_count: ctx.tab_bar.layout().tab_count(),
             }
         };
 
@@ -279,8 +279,8 @@ impl App {
                 return;
             };
             let layout = ctx.tab_bar.layout();
-            let tw = layout.tab_width;
-            let tc = layout.tab_count;
+            let tw = layout.base_tab_width();
+            let tc = layout.tab_count();
             // Max X: right edge of the tab zone minus one tab width.
             let max = (layout.tabs_end() - tw).max(0.0);
             (tw, tc, max)
@@ -339,7 +339,7 @@ impl App {
                 if drag.original_index != drag.current_index {
                     let tab_width = self
                         .focused_ctx()
-                        .map_or(0.0, |ctx| ctx.tab_bar.layout().tab_width);
+                        .map_or(0.0, |ctx| ctx.tab_bar.layout().base_tab_width());
                     self.start_tab_reorder_slide(
                         drag.original_index,
                         drag.current_index,

@@ -59,10 +59,7 @@ impl MuxBackend for MuxClient {
         };
 
         match self.rpc(pdu)? {
-            MuxPdu::SpawnPaneResponse {
-                pane_id,
-                domain_id: _,
-            } => {
+            MuxPdu::SpawnPaneResponse { pane_id } => {
                 // Subscribe to the new pane and cache its initial snapshot.
                 self.subscribe_pane(pane_id);
                 log::info!("daemon spawned pane {pane_id}");
@@ -127,13 +124,7 @@ impl MuxBackend for MuxClient {
     }
 
     fn set_cursor_shape(&mut self, pane_id: PaneId, shape: oriterm_core::CursorShape) {
-        let wire = match shape {
-            oriterm_core::CursorShape::Block => 0,
-            oriterm_core::CursorShape::Underline => 1,
-            oriterm_core::CursorShape::Bar => 2,
-            oriterm_core::CursorShape::HollowBlock => 3,
-            oriterm_core::CursorShape::Hidden => 4,
-        };
+        let wire = crate::WireCursorShape::from(shape) as u8;
         if let Some(transport) = &mut self.transport {
             transport.fire_and_forget(MuxPdu::SetCursorShape {
                 pane_id,
@@ -161,7 +152,9 @@ impl MuxBackend for MuxClient {
                 max_single: config.max_single as u64,
                 animation_enabled: config.animation_enabled,
             });
+            transport.invalidate_pushed_snapshot(pane_id);
         }
+        self.dirty_panes.insert(pane_id);
     }
 
     fn open_search(&mut self, pane_id: PaneId) {

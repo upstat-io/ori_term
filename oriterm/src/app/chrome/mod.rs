@@ -110,7 +110,7 @@ impl App {
                 (true, false) => {
                     let tab_width = self
                         .focused_ctx()
-                        .map_or(0.0, |ctx| ctx.tab_bar.layout().tab_width);
+                        .map_or(0.0, |ctx| ctx.tab_bar.layout().base_tab_width());
                     self.acquire_tab_width_lock(tab_width);
                 }
                 (false, true) => self.release_tab_width_lock(),
@@ -120,13 +120,15 @@ impl App {
 
         // Compute hit test result.
         let hit = if in_tab_bar {
-            let geom = self
-                .focused_ctx()
-                .map(|ctx| ctx.window.scale_factor().factor() as f32);
-            let layout = self.focused_ctx().map(|ctx| ctx.tab_bar.layout().clone());
+            let ctx_data = self.focused_ctx().map(|ctx| {
+                (
+                    ctx.window.scale_factor().factor() as f32,
+                    ctx.tab_bar.layout().clone(),
+                )
+            });
 
-            match (geom, layout) {
-                (Some(scale), Some(layout)) => {
+            match ctx_data {
+                Some((scale, layout)) => {
                     let x = position.x as f32 / scale;
                     let y = position.y as f32 / scale;
                     oriterm_ui::widgets::tab_bar::hit_test(x, y, &layout)

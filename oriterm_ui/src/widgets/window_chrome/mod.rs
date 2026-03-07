@@ -389,7 +389,7 @@ impl WindowChromeWidget {
     }
 }
 
-// --- Test helpers ---
+// Test helpers
 
 #[cfg(test)]
 impl WindowChromeWidget {

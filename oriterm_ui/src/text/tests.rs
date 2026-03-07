@@ -4,7 +4,7 @@ use crate::color::Color;
 
 use super::{FontWeight, ShapedGlyph, ShapedText, TextAlign, TextMetrics, TextOverflow, TextStyle};
 
-// --- TextStyle ---
+// TextStyle
 
 #[test]
 fn text_style_default() {
@@ -38,7 +38,7 @@ fn text_style_builder_chain() {
     assert_eq!(s.overflow, TextOverflow::Ellipsis);
 }
 
-// --- ShapedGlyph ---
+// ShapedGlyph
 
 #[test]
 fn shaped_glyph_construction() {
@@ -55,7 +55,7 @@ fn shaped_glyph_construction() {
     assert_eq!(g.x_advance, 7.5);
 }
 
-// --- ShapedText ---
+// ShapedText
 
 #[test]
 fn shaped_text_empty() {
@@ -93,7 +93,7 @@ fn shaped_text_with_glyphs() {
     assert_eq!(t.baseline, 14.0);
 }
 
-// --- TextMetrics ---
+// TextMetrics
 
 #[test]
 fn text_metrics_single_line() {
@@ -118,7 +118,7 @@ fn text_metrics_multi_line() {
     assert_eq!(m.height, 48.0);
 }
 
-// --- Enum defaults ---
+// Enum defaults
 
 #[test]
 fn font_weight_default_is_regular() {
@@ -135,7 +135,7 @@ fn text_overflow_default_is_clip() {
     assert_eq!(TextOverflow::default(), TextOverflow::Clip);
 }
 
-// --- Boundary value tests ---
+// Boundary value tests
 
 #[test]
 fn shaped_text_negative_baseline() {

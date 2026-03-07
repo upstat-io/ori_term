@@ -24,13 +24,13 @@ use super::constants::{
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabBarLayout {
     /// Base (uniform) width per tab in logical pixels.
-    pub tab_width: f32,
+    pub(crate) tab_width: f32,
     /// Number of tabs in the layout.
-    pub tab_count: usize,
+    pub(crate) tab_count: usize,
     /// Window width used for this layout computation.
-    pub window_width: f32,
+    pub(crate) window_width: f32,
     /// Extra left margin for platform chrome (macOS traffic lights).
-    pub left_inset: f32,
+    pub(crate) left_inset: f32,
     /// Pre-computed X position of each tab (cumulative sums with multipliers).
     tab_positions: Vec<f32>,
     /// Effective width of each tab (`tab_width * multiplier`).
@@ -105,6 +105,21 @@ impl TabBarLayout {
             tab_positions,
             per_tab_widths,
         }
+    }
+
+    /// Base (uniform) tab width in logical pixels.
+    pub fn base_tab_width(&self) -> f32 {
+        self.tab_width
+    }
+
+    /// Number of tabs in this layout.
+    pub fn tab_count(&self) -> usize {
+        self.tab_count
+    }
+
+    /// Window width used for this layout computation.
+    pub fn window_width(&self) -> f32 {
+        self.window_width
     }
 
     /// X coordinate of the right edge of the last tab.

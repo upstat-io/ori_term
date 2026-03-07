@@ -177,23 +177,5 @@ fn fill_frame(
     }
 
     // Emit image quads from RenderableContent, split by z-index.
-    for img in &input.content.images {
-        let quad = super::super::prepared_frame::ImageQuad {
-            image_id: img.image_id,
-            x: ox + img.viewport_x,
-            y: oy + img.viewport_y,
-            w: img.display_width,
-            h: img.display_height,
-            uv_x: img.source_x,
-            uv_y: img.source_y,
-            uv_w: img.source_w,
-            uv_h: img.source_h,
-            opacity: img.opacity,
-        };
-        if img.z_index < 0 {
-            frame.image_quads_below.push(quad);
-        } else {
-            frame.image_quads_above.push(quad);
-        }
-    }
+    super::emit::emit_image_quads(input, frame, ox, oy);
 }

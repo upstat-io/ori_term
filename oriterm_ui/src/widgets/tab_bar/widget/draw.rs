@@ -70,7 +70,7 @@ pub(super) struct TabStrip {
     pub(super) text_color: Color,
 }
 
-// --- Drawing helpers ---
+// Drawing helpers
 
 impl TabBarWidget {
     /// Draws a single tab (background, title text, close button).
@@ -81,19 +81,7 @@ impl TabBarWidget {
         let tab = &self.tabs[index];
         let x = self.layout.tab_x(index) + self.anim_offset(index);
         let tab_rect = Rect::new(x, strip.y, self.layout.tab_width_at(index), strip.h);
-
-        // Background color: active > bell pulse > animated hover blend.
-        let bg = if strip.active {
-            self.colors.active_bg
-        } else if strip.bell > 0.0 {
-            self.colors.bell_pulse(strip.bell)
-        } else {
-            let hover_t = self
-                .hover_progress
-                .get(index)
-                .map_or(0.0, |p| p.get(ctx.now));
-            Color::lerp(self.colors.inactive_bg, self.colors.tab_hover_bg, hover_t)
-        };
+        let bg = self.tab_background_color(index, strip, ctx.now);
 
         // Active tab gets rounded top corners.
         let style = if strip.active {
@@ -140,6 +128,20 @@ impl TabBarWidget {
 
         ctx.draw_list.pop_layer();
         ctx.draw_list.pop_clip();
+    }
+
+    /// Resolves the background color for a tab.
+    ///
+    /// Priority: active bg > bell pulse > animated hover blend over inactive bg.
+    fn tab_background_color(&self, index: usize, strip: &TabStrip, now: Instant) -> Color {
+        if strip.active {
+            self.colors.active_bg
+        } else if strip.bell > 0.0 {
+            self.colors.bell_pulse(strip.bell)
+        } else {
+            let hover_t = self.hover_progress.get(index).map_or(0.0, |p| p.get(now));
+            Color::lerp(self.colors.inactive_bg, self.colors.tab_hover_bg, hover_t)
+        }
     }
 
     /// Draws the icon (if any) and title text for a tab at the given X position.
@@ -228,6 +230,46 @@ impl TabBarWidget {
             ICON_STROKE_WIDTH,
             fg,
         );
+    }
+
+    /// Draws inactive tabs, active tab, and checks for running animations.
+    ///
+    /// Inactive tabs draw first (behind active). After all tabs, any running
+    /// hover/close/width/bell animations request continued redraws.
+    fn draw_all_tabs(&self, ctx: &mut DrawCtx<'_>, strip: &mut TabStrip) {
+        // Inactive tabs (drawn first, behind active tab).
+        for i in 0..self.tabs.len() {
+            if i == self.active_index || self.is_dragged(i) {
+                continue;
+            }
+            strip.active = false;
+            strip.bell = bell_phase(&self.tabs[i], ctx.now);
+            strip.text_color = self.colors.inactive_text;
+            self.draw_tab(ctx, i, strip);
+
+            if strip.bell > 0.0 {
+                ctx.animations_running.set(true);
+            }
+        }
+
+        // Active tab (drawn on top of inactive tabs).
+        if self.active_index < self.tabs.len() && !self.is_dragged(self.active_index) {
+            strip.active = true;
+            strip.bell = 0.0;
+            strip.text_color = self.colors.text_fg;
+            self.draw_tab(ctx, self.active_index, strip);
+        }
+
+        // Request continued redraws if any animation is running.
+        let hover_animating = self.hover_progress.iter().any(|p| p.is_animating(ctx.now));
+        let close_animating = self
+            .close_btn_opacity
+            .iter()
+            .any(|o| o.is_animating(ctx.now));
+        let width_animating = self.has_width_animation(ctx.now);
+        if hover_animating || close_animating || width_animating {
+            ctx.animations_running.set(true);
+        }
     }
 
     /// Draws separators between tabs with suppression rules.
@@ -321,7 +363,7 @@ impl TabBarWidget {
     }
 }
 
-// --- Free functions used by both drawing and tests ---
+// Free functions used by both drawing and tests
 
 /// Computes the bell animation phase for a tab.
 ///
@@ -366,7 +408,7 @@ pub(super) fn dropdown_button_x(widget: &TabBarWidget) -> f32 {
     }
 }
 
-// --- Widget impl ---
+// Widget impl
 
 impl Widget for TabBarWidget {
     fn id(&self) -> crate::widget_id::WidgetId {
@@ -389,7 +431,7 @@ impl Widget for TabBarWidget {
         let y0 = ctx.bounds.y();
         let w = ctx.bounds.width();
 
-        // 1. Tab bar background: full-width rectangle across top of window.
+        // 1. Tab bar background.
         let bar = Rect::new(0.0, y0, w, TAB_BAR_HEIGHT);
         ctx.draw_list
             .push_rect(bar, RectStyle::filled(self.colors.bar_bg));
@@ -402,50 +444,13 @@ impl Widget for TabBarWidget {
             text_color: self.colors.inactive_text,
         };
 
-        // 2. Inactive tabs (drawn first, behind active tab).
-        for i in 0..self.tabs.len() {
-            if i == self.active_index || self.is_dragged(i) {
-                continue;
-            }
-            strip.active = false;
-            strip.bell = bell_phase(&self.tabs[i], ctx.now);
-            strip.text_color = self.colors.inactive_text;
-            self.draw_tab(ctx, i, &strip);
+        // 2. Inactive tabs, 3. Active tab, 3.5. Animation checks.
+        self.draw_all_tabs(ctx, &mut strip);
 
-            if strip.bell > 0.0 {
-                ctx.animations_running.set(true);
-            }
-        }
-
-        // 3. Active tab (drawn on top of inactive tabs).
-        if self.active_index < self.tabs.len() && !self.is_dragged(self.active_index) {
-            strip.active = true;
-            strip.bell = 0.0;
-            strip.text_color = self.colors.text_fg;
-            self.draw_tab(ctx, self.active_index, &strip);
-        }
-
-        // 3.5. Request continued redraws if any animation is running.
-        let hover_animating = self.hover_progress.iter().any(|p| p.is_animating(ctx.now));
-        let close_animating = self
-            .close_btn_opacity
-            .iter()
-            .any(|o| o.is_animating(ctx.now));
-        let width_animating = self.has_width_animation(ctx.now);
-        if hover_animating || close_animating || width_animating {
-            ctx.animations_running.set(true);
-        }
-
-        // 4. Separators: 1px vertical lines between tabs.
+        // 4. Separators, 5. New tab, 6. Dropdown, 6.5. Window controls.
         self.draw_separators(ctx, &strip);
-
-        // 5. New tab "+" button: after the last tab.
         self.draw_new_tab_button(ctx, &strip);
-
-        // 6. Dropdown button: after "+" button.
         self.draw_dropdown_button(ctx, &strip);
-
-        // 6.5. Window control buttons (minimize, maximize, close).
         self.draw_window_controls(ctx);
 
         // 7. Dragged tab overlay (floats above everything).

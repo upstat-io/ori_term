@@ -282,15 +282,6 @@ fn to_screen_rect(rect: Rect) -> ScreenRect {
 
 /// Convert a text draw command into glyph instances.
 ///
-/// Iterates shaped glyphs, looks up each in the atlas by [`RasterKey`],
-/// and emits positioned glyph instances. Glyphs not found in the atlas are
-/// silently skipped (they should have been pre-cached by the caller).
-///
-/// Position computation follows the same pattern as the terminal
-/// [`GlyphEmitter`](super::prepare::GlyphEmitter): bearing offsets place the
-/// glyph bitmap relative to the text origin, and subpixel phase is absorbed.
-/// Convert a text draw command into glyph instances.
-///
 /// The text position is in logical pixels (from widget layout). Glyph
 /// advances, offsets, bearings, and bitmap dimensions are in physical pixels
 /// (from the font collection loaded at physical DPI). We scale the position

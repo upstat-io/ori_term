@@ -164,7 +164,7 @@ impl TabSlideState {
         }
     }
 
-    // --- Private helpers ---
+    // Private helpers
 
     /// Creates `Group` layers for each index in `range` with `translate(offset, 0)`,
     /// each animated to `identity()`.

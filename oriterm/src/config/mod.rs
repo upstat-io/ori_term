@@ -18,16 +18,16 @@ pub(crate) use io::WindowState;
 #[allow(unused_imports, reason = "used in state persistence (Section 15)")]
 pub(crate) use io::state_path;
 
-pub use color_config::{ColorConfig, ThemeOverride};
-pub use font_config::FontConfig;
+pub(crate) use color_config::{ColorConfig, ThemeOverride};
+pub(crate) use font_config::FontConfig;
 
 #[allow(unused_imports, reason = "used in color config application")]
-pub use color_config::AlphaBlending;
+pub(crate) use color_config::AlphaBlending;
 #[allow(
     unused_imports,
     reason = "used in font discovery and codepoint mapping"
 )]
-pub use font_config::{CodepointMapConfig, FallbackFontConfig};
+pub(crate) use font_config::{CodepointMapConfig, FallbackFontConfig};
 
 use oriterm_core::Rgb;
 use serde::{Deserialize, Serialize};
@@ -204,10 +204,10 @@ impl WindowConfig {
     }
 }
 
-pub use behavior::{BehaviorConfig, NotifyOnCommandFinish};
-pub use paste_warning::PasteWarning;
+pub(crate) use behavior::{BehaviorConfig, NotifyOnCommandFinish};
+pub(crate) use paste_warning::PasteWarning;
 
-pub use bell::BellConfig;
+pub(crate) use bell::BellConfig;
 
 /// Pane splitting and layout configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]

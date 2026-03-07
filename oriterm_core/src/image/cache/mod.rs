@@ -10,11 +10,11 @@ use crate::grid::StableRowIndex;
 
 use super::{AnimationState, ImageData, ImageError, ImageId, ImagePlacement, PlacementSizing};
 
-/// Default memory limit for decoded image data (320 MB, matching Ghostty).
-const DEFAULT_MEMORY_LIMIT: usize = 320 * 1_000_000;
+/// Default memory limit for decoded image data (320 MiB, matching Ghostty).
+const DEFAULT_MEMORY_LIMIT: usize = 320 * 1024 * 1024;
 
-/// Default maximum size for a single image (64 MB).
-const DEFAULT_MAX_SINGLE_IMAGE: usize = 64 * 1_000_000;
+/// Default maximum size for a single image (64 MiB).
+const DEFAULT_MAX_SINGLE_IMAGE: usize = 64 * 1024 * 1024;
 
 /// Starting ID for auto-assigned images (mid-range u32 to avoid
 /// collisions with client-assigned IDs that start at 1).
@@ -135,8 +135,9 @@ impl ImageCache {
         }
 
         // Evict until we have room (or can't evict more).
+        let placed = self.placed_id_set();
         while self.memory_used + size > self.memory_limit && !self.images.is_empty() {
-            if !self.evict_one() {
+            if !self.evict_one(&placed) {
                 return Err(ImageError::MemoryLimitExceeded);
             }
         }
@@ -162,9 +163,16 @@ impl ImageCache {
     pub fn remove_image(&mut self, id: ImageId) {
         if let Some(img) = self.images.remove(&id) {
             self.memory_used = self.memory_used.saturating_sub(img.data.len());
+
+            // Subtract animation frames 1..N (frame 0 is already subtracted
+            // above as `img.data`).
+            if let Some(frames) = self.animation_frames.remove(&id) {
+                let extra: usize = frames.iter().skip(1).map(|f| f.len()).sum();
+                self.memory_used = self.memory_used.saturating_sub(extra);
+            }
+
             self.placements.retain(|p| p.image_id != id);
             self.animations.remove(&id);
-            self.animation_frames.remove(&id);
             self.frame_starts.remove(&id);
             self.dirty = true;
         }
@@ -355,10 +363,13 @@ impl ImageCache {
     /// Evict least-recently-used images until under memory limit.
     ///
     /// Prefers images with zero placements first, then evicts placed
-    /// images by LRU order (Ghostty pattern).
+    /// images by LRU order (Ghostty pattern). Builds a placed-ID set
+    /// once to avoid O(n*m) per-eviction placement scans.
     fn evict_lru(&mut self) {
+        let placed = self.placed_id_set();
+
         while self.memory_used > self.memory_limit && !self.images.is_empty() {
-            if !self.evict_one() {
+            if !self.evict_one(&placed) {
                 break;
             }
         }
@@ -366,25 +377,20 @@ impl ImageCache {
 
     /// Evict the single least-recently-used image. Returns `true` if
     /// an image was evicted.
-    fn evict_one(&mut self) -> bool {
-        // Build candidates: (id, last_accessed, has_placements).
-        let mut candidates: Vec<(ImageId, u64, bool)> = self
+    ///
+    /// Uses a precomputed set of placed image IDs for O(n) candidate
+    /// selection (unplaced first, then oldest access counter).
+    fn evict_one(&mut self, placed: &std::collections::HashSet<ImageId>) -> bool {
+        let victim = self
             .images
             .iter()
-            .map(|(id, img)| {
-                let has_placements = self.placements.iter().any(|p| p.image_id == *id);
-                (*id, img.last_accessed, has_placements)
-            })
-            .collect();
+            .map(|(id, img)| (*id, img.last_accessed, placed.contains(id)))
+            .min_by(|a, b| {
+                a.2.cmp(&b.2) // false (no placements) < true
+                    .then(a.1.cmp(&b.1)) // oldest access first
+            });
 
-        // Sort: unused images first, then by LRU (lowest access counter).
-        candidates.sort_by(|a, b| {
-            a.2.cmp(&b.2) // false (no placements) < true (has placements)
-                .then(a.1.cmp(&b.1)) // oldest access first
-        });
-
-        if let Some((id, _, _)) = candidates.first() {
-            let id = *id;
+        if let Some((id, _, _)) = victim {
             self.remove_image(id);
             true
         } else {
@@ -392,12 +398,18 @@ impl ImageCache {
         }
     }
 
+    /// Build a `HashSet` of image IDs that have at least one placement.
+    fn placed_id_set(&self) -> std::collections::HashSet<ImageId> {
+        self.placements.iter().map(|p| p.image_id).collect()
+    }
+
     /// Remove images that have no remaining placements.
     pub fn remove_orphans(&mut self) {
+        let placed = self.placed_id_set();
         let orphans: Vec<ImageId> = self
             .images
             .keys()
-            .filter(|id| !self.placements.iter().any(|p| p.image_id == **id))
+            .filter(|id| !placed.contains(id))
             .copied()
             .collect();
 

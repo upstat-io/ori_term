@@ -162,9 +162,9 @@ impl App {
         let target_left = platform_windows::visible_frame_bounds(ctx.window.window())
             .map_or(0.0, |(l, _, _, _)| l as f64);
         let local_x = screen_x - target_left;
-        let tab_width = ctx.tab_bar.layout().tab_width as f64 * scale;
+        let tab_width = ctx.tab_bar.layout().base_tab_width() as f64 * scale;
         let left_margin = TAB_LEFT_MARGIN as f64 * scale;
-        let tab_count = ctx.tab_bar.layout().tab_count;
+        let tab_count = ctx.tab_bar.layout().tab_count();
         let raw = ((local_x - left_margin + tab_width / 2.0) / tab_width.max(1.0)).floor();
         raw.clamp(0.0, tab_count as f64) as usize
     }
@@ -226,7 +226,7 @@ impl App {
             ctx.tab_drag = Some(state);
             // Set drag visual.
             let layout = ctx.tab_bar.layout();
-            let max_x = (layout.tabs_end() - layout.tab_width).max(0.0);
+            let max_x = (layout.tabs_end() - layout.base_tab_width()).max(0.0);
             let visual_x = (logical_x - mouse_offset).clamp(0.0, max_x);
             ctx.tab_bar.set_drag_visual(Some((tab_index, visual_x)));
             ctx.dirty = true;
@@ -240,7 +240,7 @@ impl App {
         self.focused_window_id = Some(target_wid);
         if let Some(ctx) = self.windows.get(&target_wid) {
             self.active_window = Some(ctx.window.session_window_id());
-            let tw = ctx.tab_bar.layout().tab_width;
+            let tw = ctx.tab_bar.layout().base_tab_width();
             self.acquire_tab_width_lock(tw);
         }
     }

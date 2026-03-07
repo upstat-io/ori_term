@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use super::{AnimatedValue, Animation, Easing, Lerp};
 
-// --- Lerp f32 ---
+// Lerp f32
 
 #[test]
 fn lerp_f32_at_zero() {
@@ -32,7 +32,7 @@ fn lerp_f32_identity() {
     assert_eq!(f32::lerp(42.0, 42.0, 0.5), 42.0);
 }
 
-// --- Easing ---
+// Easing
 
 #[test]
 fn easing_linear_at_boundaries() {
@@ -143,7 +143,7 @@ fn easing_clamps_input() {
     assert_eq!(Easing::EaseOut.apply(2.0), 1.0);
 }
 
-// --- Animation ---
+// Animation
 
 #[test]
 fn animation_progress_at_start() {
@@ -218,7 +218,7 @@ fn animation_with_easing() {
     assert!(value < 50.0, "EaseIn midpoint should be < 50, got {value}");
 }
 
-// --- AnimatedValue ---
+// AnimatedValue
 
 #[test]
 fn animated_value_get_without_animation() {
@@ -343,7 +343,7 @@ fn animated_value_clone() {
     assert_eq!(cloned.get(Instant::now()), 42.0);
 }
 
-// --- Cubic bezier robustness (Chromium cubic_bezier_unittest.cc patterns) ---
+// Cubic bezier robustness (Chromium cubic_bezier_unittest.cc patterns)
 
 #[test]
 fn cubic_bezier_nan_control_points_produce_finite_output() {
@@ -507,7 +507,7 @@ fn cubic_bezier_one_one_one_one_is_linear() {
     }
 }
 
-// --- AnimatedValue edge cases ---
+// AnimatedValue edge cases
 
 #[test]
 fn animated_value_rapid_set_same_frame() {
@@ -580,7 +580,7 @@ fn animation_negative_range() {
     assert_eq!(anim.progress(now + Duration::from_millis(200)), 10.0);
 }
 
-// --- AnimationGroup ---
+// AnimationGroup
 
 #[test]
 fn group_has_correct_defaults() {
@@ -620,7 +620,7 @@ fn group_property_animation_per_property_overrides() {
     assert_eq!(anim.easing.unwrap(), Easing::EaseIn);
 }
 
-// --- AnimationBuilder ---
+// AnimationBuilder
 
 #[test]
 fn builder_produces_correct_group() {
@@ -696,7 +696,7 @@ fn builder_build_sequence_with_on_end() {
     assert!(seq.is_finished());
 }
 
-// --- AnimationSequence ---
+// AnimationSequence
 
 #[test]
 fn sequence_empty_is_immediately_finished() {
@@ -816,7 +816,7 @@ fn sequence_steps_execute_in_order() {
     assert!(seq.is_finished());
 }
 
-// --- Lerp geometry types ---
+// Lerp geometry types
 
 #[test]
 fn lerp_point_at_boundaries() {
@@ -872,7 +872,7 @@ fn lerp_rect_at_midpoint() {
     assert_eq!(mid, Rect::new(5.0, 10.0, 150.0, 75.0));
 }
 
-// --- AnimatedValue with EaseInOut easing ---
+// AnimatedValue with EaseInOut easing
 
 #[test]
 fn animated_value_ease_in_out_symmetric() {

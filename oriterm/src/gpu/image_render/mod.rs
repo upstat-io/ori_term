@@ -5,6 +5,7 @@
 //! viewport and evicted via LRU when GPU memory exceeds the limit.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use oriterm_core::image::ImageId;
 use wgpu::{
@@ -13,8 +14,8 @@ use wgpu::{
     TextureDimension, TextureFormat, TextureUsages, TextureView, TextureViewDescriptor,
 };
 
-/// Default GPU memory limit for image textures (512 MB).
-const DEFAULT_GPU_MEMORY_LIMIT: usize = 512 * 1_000_000;
+/// Default GPU memory limit for image textures (512 MiB).
+const DEFAULT_GPU_MEMORY_LIMIT: usize = 512 * 1024 * 1024;
 
 /// An uploaded image texture on the GPU.
 pub(crate) struct GpuImageTexture {
@@ -83,73 +84,71 @@ impl ImageTextureCache {
     ) -> &BindGroup {
         let frame = self.frame_counter;
 
-        // Touch existing entry.
-        if let Some(entry) = self.textures.get_mut(&id) {
-            entry.last_frame = frame;
-            return &self.textures[&id].bind_group;
+        match self.textures.entry(id) {
+            Entry::Occupied(e) => {
+                let entry = e.into_mut();
+                entry.last_frame = frame;
+                &entry.bind_group
+            }
+            Entry::Vacant(e) => {
+                let size = Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                };
+
+                let texture = device.create_texture(&TextureDescriptor {
+                    label: Some("image_texture"),
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: TextureFormat::Rgba8UnormSrgb,
+                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+
+                queue.write_texture(
+                    texture.as_image_copy(),
+                    data,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * width),
+                        rows_per_image: Some(height),
+                    },
+                    size,
+                );
+
+                let view = texture.create_view(&TextureViewDescriptor::default());
+
+                let bind_group = device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("image_bind_group"),
+                    layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                });
+
+                let size_bytes = (width as usize) * (height as usize) * 4;
+                self.gpu_memory_used += size_bytes;
+
+                let entry = e.insert(GpuImageTexture {
+                    _texture: texture,
+                    _view: view,
+                    bind_group,
+                    size_bytes,
+                    last_frame: frame,
+                });
+                &entry.bind_group
+            }
         }
-
-        // Upload new texture.
-        let size = Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-
-        let texture = device.create_texture(&TextureDescriptor {
-            label: Some("image_texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8UnormSrgb,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            texture.as_image_copy(),
-            data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
-
-        let view = texture.create_view(&TextureViewDescriptor::default());
-
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("image_bind_group"),
-            layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&view),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-
-        let size_bytes = (width as usize) * (height as usize) * 4;
-        self.gpu_memory_used += size_bytes;
-
-        self.textures.insert(
-            id,
-            GpuImageTexture {
-                _texture: texture,
-                _view: view,
-                bind_group,
-                size_bytes,
-                last_frame: frame,
-            },
-        );
-
-        &self.textures[&id].bind_group
     }
 
     /// Get the bind group for an already-uploaded image.

@@ -64,6 +64,11 @@ impl ImageCache {
 
         let id = self.store(data)?;
 
+        // Account for frames 1..N in memory tracking. Frame 0 is already
+        // counted by `store()` (it's the initial `data.data`).
+        let extra_frame_bytes: usize = frames.iter().skip(1).map(|f| f.len()).sum();
+        self.memory_used += extra_frame_bytes;
+
         let state = AnimationState::new(durations, loop_count);
         self.animations.insert(id, state);
         self.animation_frames.insert(id, frames);
@@ -179,6 +184,9 @@ impl ImageCache {
         match self.animations.entry(id) {
             Entry::Vacant(e) => {
                 // Promote static image to animated: frame 0 = existing data.
+                // Frame 0 (img_data) is already counted in memory_used from
+                // the original store(). Only count the new frame.
+                self.memory_used += frame_data.len();
                 let frames = vec![img_data, frame_data];
                 let durations = vec![gap, gap];
                 e.insert(AnimationState::new(durations, None));
@@ -199,6 +207,7 @@ impl ImageCache {
                     }
                 };
 
+                self.memory_used += composed.len();
                 anim_frames.push(composed);
 
                 let state = e.get_mut();

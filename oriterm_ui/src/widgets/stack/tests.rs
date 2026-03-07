@@ -153,7 +153,7 @@ fn stack_empty() {
     assert_eq!(node.rect.height(), 0.0);
 }
 
-// --- Edge cases from Chromium/Ratatui audit ---
+// Edge cases from Chromium/Ratatui audit
 
 #[test]
 fn stack_draws_in_painter_order() {

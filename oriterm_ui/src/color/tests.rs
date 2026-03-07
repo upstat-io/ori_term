@@ -2,7 +2,7 @@
 
 use super::Color;
 
-// --- Constants ---
+// Constants
 
 #[test]
 fn transparent_is_zero() {
@@ -31,14 +31,14 @@ fn black_is_opaque_zero() {
     assert_eq!(c.a, 1.0);
 }
 
-// --- Default ---
+// Default
 
 #[test]
 fn default_is_transparent() {
     assert_eq!(Color::default(), Color::TRANSPARENT);
 }
 
-// --- Constructors ---
+// Constructors
 
 #[test]
 fn rgba_constructor() {
@@ -126,7 +126,7 @@ fn from_rgb_u8_mid_values() {
     assert!((c.b - 192.0 / 255.0).abs() < 1e-6);
 }
 
-// --- Methods ---
+// Methods
 
 #[test]
 fn with_alpha_preserves_rgb() {
@@ -160,7 +160,7 @@ fn to_array_white() {
     assert_eq!(Color::WHITE.to_array(), [1.0, 1.0, 1.0, 1.0]);
 }
 
-// --- Equality ---
+// Equality
 
 #[test]
 fn equality_same_values() {
@@ -176,7 +176,7 @@ fn inequality_different_alpha() {
     assert_ne!(a, b);
 }
 
-// --- Copy semantics ---
+// Copy semantics
 
 #[test]
 fn copy_semantics() {
@@ -185,7 +185,7 @@ fn copy_semantics() {
     assert_eq!(a, b);
 }
 
-// --- Lerp ---
+// Lerp
 
 #[test]
 fn lerp_black_to_white_at_zero() {

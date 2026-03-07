@@ -23,7 +23,7 @@ pub struct LayerTree {
 }
 
 impl LayerTree {
-    // --- Constructors ---
+    // Constructors
 
     /// Creates a new tree with a root group layer spanning `viewport`.
     pub fn new(viewport: Rect) -> Self {
@@ -45,7 +45,7 @@ impl LayerTree {
         }
     }
 
-    // --- Accessors ---
+    // Accessors
 
     /// Returns the root layer's ID.
     pub fn root(&self) -> LayerId {
@@ -72,7 +72,7 @@ impl LayerTree {
         self.layers.len() <= 1
     }
 
-    // --- Tree mutation ---
+    // Tree mutation
 
     /// Adds a new layer as a child of `parent`. Returns the new layer's ID.
     ///
@@ -183,7 +183,7 @@ impl LayerTree {
         }
     }
 
-    // --- Property setters ---
+    // Property setters
 
     /// Sets a layer's opacity, marking it for re-composite.
     pub fn set_opacity(&mut self, id: LayerId, opacity: f32) {
@@ -220,7 +220,7 @@ impl LayerTree {
         }
     }
 
-    // --- Z-order ---
+    // Z-order
 
     /// Moves `id` above `sibling` in their shared parent's child list.
     ///
@@ -236,7 +236,7 @@ impl LayerTree {
         self.reorder_sibling(id, sibling, false);
     }
 
-    // --- Traversal ---
+    // Traversal
 
     /// Iterates all layers in depth-first back-to-front paint order.
     ///
@@ -293,7 +293,7 @@ impl LayerTree {
         result
     }
 
-    // --- Dirty queries ---
+    // Dirty queries
 
     /// Returns all layer IDs that need their content re-painted.
     pub fn layers_needing_paint(&self) -> Vec<LayerId> {
@@ -344,7 +344,7 @@ impl LayerTree {
         }
     }
 
-    // --- Private helpers ---
+    // Private helpers
 
     /// Allocates a new unique `LayerId`.
     fn alloc_id(&mut self) -> LayerId {
