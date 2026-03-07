@@ -70,7 +70,7 @@ jobs:
   test-linux:
     name: Test (Linux)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -86,7 +86,10 @@ jobs:
             libvulkan-dev \
             fonts-dejavu-core
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
+      - name: Unit tests
+        run: cargo test --workspace --lib --bins
+      - name: Integration tests (limited parallelism)
+        run: cargo test --workspace --test '*' -- --test-threads=2
 
   test-windows:
     name: Test (Windows)

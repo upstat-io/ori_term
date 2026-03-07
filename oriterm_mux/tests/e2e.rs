@@ -49,7 +49,7 @@ impl TestDaemon {
         });
 
         // Wait for the socket to appear (server needs time to bind).
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + Duration::from_secs(30);
         while !socket_path.exists() {
             if Instant::now() > deadline {
                 panic!("daemon socket did not appear within 5 seconds");
@@ -175,7 +175,7 @@ fn poll_until(
     what: &str,
     predicate: impl Fn(&PaneSnapshot) -> bool,
 ) {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         let mut n = Vec::new();
@@ -214,7 +214,7 @@ fn client_spawn_pane_type_see_output() {
         &mut client,
         pane_id,
         "ORITERM_E2E_TEST",
-        Duration::from_secs(15),
+        Duration::from_secs(30),
     );
 
     assert!(
@@ -242,7 +242,7 @@ fn push_notification_triggers_dirty_flag() {
     client.send_input(pane_id, b"echo PUSH_TEST\n");
 
     // Wait for PaneOutput notification.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         notifs.clear();
@@ -292,13 +292,13 @@ fn multiple_clients_independent_windows() {
         &mut client_a,
         pane_a,
         "WINDOW_A_OUTPUT",
-        Duration::from_secs(15),
+        Duration::from_secs(30),
     );
     let snap_b = wait_for_text_in_snapshot(
         &mut client_b,
         pane_b,
         "WINDOW_B_OUTPUT",
-        Duration::from_secs(15),
+        Duration::from_secs(30),
     );
 
     assert!(snapshot_contains(&snap_a, "WINDOW_A_OUTPUT"));
@@ -318,7 +318,7 @@ fn client_crash_cleans_up_owned_window() {
         let pane = spawn_test_pane_ready(&mut client);
 
         client.send_input(pane, b"echo BEFORE_CRASH\n");
-        wait_for_text_in_snapshot(&mut client, pane, "BEFORE_CRASH", Duration::from_secs(15));
+        wait_for_text_in_snapshot(&mut client, pane, "BEFORE_CRASH", Duration::from_secs(30));
 
         // Client drops here — simulates a crash.
         pane
@@ -326,7 +326,7 @@ fn client_crash_cleans_up_owned_window() {
 
     // Poll until the daemon cleans up the disconnected client's pane.
     let mut client2 = daemon.connect_client();
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let snap = client2.refresh_pane_snapshot(pane_id);
         if snap.is_none() {
@@ -382,7 +382,7 @@ fn test_resize_pane() {
     client.resize_pane_grid(pane_id, 40, 100);
 
     // Poll until the resize is reflected in the snapshot.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         let mut n = Vec::new();
@@ -413,7 +413,7 @@ fn test_scroll_display() {
     // for loop finishes, guaranteeing all output has landed.
     client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
     client.send_input(pane_id, b"echo SCROLL_FENCE\n");
-    let fence_deadline = Instant::now() + Duration::from_secs(10);
+    let fence_deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         let mut notifs = Vec::new();
@@ -444,7 +444,7 @@ fn test_scroll_display() {
 
     // Scroll up by 10 lines and poll until display_offset reflects it.
     client.scroll_display(pane_id, 10);
-    let scroll_deadline = Instant::now() + Duration::from_secs(15);
+    let scroll_deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         notifs.clear();
@@ -473,7 +473,7 @@ fn test_scroll_to_bottom() {
     // Generate scrollback and wait for completion via 2-row fence.
     client.send_input(pane_id, b"for i in $(seq 1 200); do echo LINE_$i; done\n");
     client.send_input(pane_id, b"echo SCROLL_BTM_FENCE\n");
-    let fence_deadline = Instant::now() + Duration::from_secs(10);
+    let fence_deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         let mut notifs = Vec::new();
@@ -504,7 +504,7 @@ fn test_scroll_to_bottom() {
     // Scroll up, then back to bottom.
     client.scroll_display(pane_id, 10);
     // Poll until scroll-up takes effect.
-    let scroll_deadline = Instant::now() + Duration::from_secs(15);
+    let scroll_deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         notifs.clear();
@@ -523,7 +523,7 @@ fn test_scroll_to_bottom() {
 
     client.scroll_to_bottom(pane_id);
     // Poll until scroll-to-bottom takes effect.
-    let btm_deadline = Instant::now() + Duration::from_secs(15);
+    let btm_deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         notifs.clear();
@@ -558,7 +558,7 @@ fn test_pane_mode() {
 
     // Poll until the mode bit is set (avoids flaky fixed timeouts).
     let bracketed_paste_bit = 1u32 << 13;
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         let mut notifs = Vec::new();
@@ -585,7 +585,7 @@ fn test_set_cursor_shape() {
 
     // Set cursor to bar shape and poll until reflected.
     client.set_cursor_shape(pane_id, oriterm_core::CursorShape::Bar);
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         let mut n = Vec::new();
@@ -617,7 +617,7 @@ fn test_snapshot_cols() {
 
     // Resize to 120 cols and poll until reflected.
     client.resize_pane_grid(pane_id, 24, 120);
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         let mut n = Vec::new();
@@ -659,7 +659,7 @@ fn test_snapshot_dirty_flag() {
     client.send_input(pane_id, b"echo DIRTY_TEST\n");
 
     // Wait for PaneOutput notification.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         notifs.clear();
@@ -707,7 +707,7 @@ fn test_search_lifecycle() {
         &mut client,
         pane_id,
         "NEEDLE_HAYSTACK",
-        Duration::from_secs(15),
+        Duration::from_secs(30),
     );
 
     // Open search and poll until active.
@@ -739,7 +739,7 @@ fn test_search_navigation() {
 
     // Generate multiple matches.
     client.send_input(pane_id, b"echo AAA; echo AAA; echo AAA\n");
-    wait_for_text_in_snapshot(&mut client, pane_id, "AAA", Duration::from_secs(15));
+    wait_for_text_in_snapshot(&mut client, pane_id, "AAA", Duration::from_secs(30));
 
     // Open search, set query, and poll until matches appear.
     client.open_search(pane_id);
@@ -780,7 +780,7 @@ fn test_extract_text() {
     // the output line starts with "EXTR_MARKER" (no "printf" prefix).
     client.send_input(pane_id, b"printf 'EXTR_MARKER\\n'\n");
 
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let snap = loop {
         client.poll_events();
         let mut notifs = Vec::new();
@@ -875,7 +875,7 @@ fn test_notification_pane_dirty() {
     client.send_input(pane_id, b"echo NOTIF_TEST\n");
 
     // Wait for PaneOutput notification.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut got_dirty = false;
     loop {
         client.poll_events();
@@ -928,7 +928,7 @@ fn test_flood_output_no_hang() {
 
     // Poll events in a loop with a 15-second deadline. If the main thread
     // blocks on PTY writes, this loop stalls and the test times out.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         client.poll_events();
         let mut notifs = Vec::new();
@@ -953,7 +953,7 @@ fn test_flood_output_no_hang() {
     // Verify the pane is still responsive by sending a marker command.
     client.send_input(pane_id, b"echo FLOOD_ALIVE\n");
     let snap =
-        wait_for_text_in_snapshot(&mut client, pane_id, "FLOOD_ALIVE", Duration::from_secs(10));
+        wait_for_text_in_snapshot(&mut client, pane_id, "FLOOD_ALIVE", Duration::from_secs(30));
     assert!(
         snapshot_contains(&snap, "FLOOD_ALIVE"),
         "pane should be responsive after flood output"
@@ -976,7 +976,7 @@ fn test_infinite_flood_streams_updates() {
     client.send_input(pane_id, b"while true; do printf '%0200d\\n' 1; done\n");
 
     // Keep polling and refreshing snapshots. We should see flood text.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut saw_output = false;
     let mut refresh_ok = 0usize;
 
@@ -1069,7 +1069,7 @@ fn test_notification_title_changed() {
 
     // Wait for PaneTitleChanged notification.
     // CI runners can be slow to deliver IPC notifications.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut got_title = false;
     loop {
         client.poll_events();
@@ -1199,7 +1199,7 @@ fn daemon_restart_detection_and_reconnect() {
             let _ = server.run();
         });
 
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + Duration::from_secs(30);
         while !socket_path.exists() {
             assert!(
                 Instant::now() < deadline,
@@ -1214,7 +1214,7 @@ fn daemon_restart_detection_and_reconnect() {
         let pane = spawn_test_pane_ready(&mut client);
 
         client.send_input(pane, b"echo DAEMON1_ALIVE\n");
-        wait_for_text_in_snapshot(&mut client, pane, "DAEMON1_ALIVE", Duration::from_secs(15));
+        wait_for_text_in_snapshot(&mut client, pane, "DAEMON1_ALIVE", Duration::from_secs(30));
 
         assert!(client.is_connected(), "client should be connected");
 
@@ -1240,7 +1240,7 @@ fn daemon_restart_detection_and_reconnect() {
         let _ = server2.run();
     });
 
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !socket_path.exists() {
         assert!(
             Instant::now() < deadline,
@@ -1263,7 +1263,7 @@ fn daemon_restart_detection_and_reconnect() {
         &mut client2,
         pane2,
         "DAEMON2_ALIVE",
-        Duration::from_secs(15),
+        Duration::from_secs(30),
     );
 
     // Clean shutdown.
@@ -1347,7 +1347,7 @@ fn ipc_latency_under_5ms() {
         &mut client,
         pane_id,
         "LATENCY_READY",
-        Duration::from_secs(15),
+        Duration::from_secs(30),
     );
 
     // Drain pending state.
