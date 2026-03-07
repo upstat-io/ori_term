@@ -129,7 +129,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 
 **Mux event flow (daemon mode):** PTY Reader → `MuxEvent` → MuxServer → `OutputCoalescer` (1ms/16ms/100ms tiered) → push to client via IPC → GUI renders.
 
-## Section Overview (42 Sections, 10 Tiers)
+## Section Overview (43 Sections, 10 Tiers)
 
 ### Tier 0 — Core Library + Cross-Platform Architecture
 | Section | Title | What |
@@ -197,6 +197,7 @@ Strictly one-way. `oriterm_core` has zero knowledge of GUI, fonts, PTY, config, 
 |---------|-------|------|
 | 24 | Visual Polish | Cursor blink, hide-while-typing, minimum contrast, HiDPI, vector icons, background images, gradients, backdrop effects, scrollable menus |
 | 25 | Theme System | 100+ themes, TOML theme files, discovery, light/dark auto-switch |
+| 46 | macOS App Bundle & Platform Packaging | .app bundle, Info.plist, universal binary (x86_64+aarch64), DMG, CI build-macos job |
 
 ### Tier 7 — Advanced
 | Section | Title | What |

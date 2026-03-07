@@ -923,6 +923,23 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 
 ---
 
+### Section 46: macOS App Bundle & Platform Packaging
+**File:** `section-46-macos-app-bundle.md` | **Tier:** 6 | **Status:** Not Started
+
+```
+macOS, .app, app bundle, Info.plist, CFBundle, bundle identifier
+icon, icns, iconset, iconutil, dock icon, Cmd+Tab, NSHighResolutionCapable
+universal binary, lipo, x86_64-apple-darwin, aarch64-apple-darwin, Apple Silicon, Intel
+DMG, disk image, hdiutil, UDZO, drag-to-install, Applications symlink
+codesign, ad-hoc signing, notarization, entitlements, Gatekeeper
+build-macos, CI pipeline, nightly, release, macos-14 runner
+MACOSX_DEPLOYMENT_TARGET, LSMinimumSystemVersion, NSRequiresAquaSystemAppearance
+scripts/build-macos-bundle.sh, scripts/build-macos-dmg.sh
+assets/macos/OriTerm.app, assets/icons/oriterm.iconset
+```
+
+---
+
 ## Quick Reference
 
 | ID | Title | File | Tier | Status |
@@ -974,6 +991,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 43 | Compositor Layer System + Animation Architecture | `section-43-compositor-layers.md` | 5 | Not Started |
 | **44** | **Multi-Process Window Architecture** | **`section-44-multi-process-windows.md`** | **0 (BLOCKER)** | **Not Started** |
 | 45 | Security Hardening | `section-45-security-hardening.md` | 5 | Not Started |
+| 46 | macOS App Bundle & Platform Packaging | `section-46-macos-app-bundle.md` | 6 | Not Started |
 
 ## Tier Summary
 
@@ -986,7 +1004,7 @@ remote attach TUI, --ssh, --host, connection status, auto-detach
 | 4 | ~~15~~, 16-17, ~~18~~, 19-21 | Chrome + tab bar + drag (15/18 superseded by 4M) |
 | **4M** | **29-33** | **Multiplexing foundation (mux crate, panes, domains, splits, floating)** |
 | 5 | 22-23, 38-39, 42-43, 45 | Hardening + features (terminal modes, performance, protocol extensions, image protocols, expose/overview, compositor layers, security) |
-| 6 | 24-25 | Polish (visual refinements, themes) |
+| 6 | 24-25, 46 | Polish (visual refinements, themes, macOS app bundle) |
 | 7 | ~~26~~, 27-28 | Advanced (command palette, extensibility) (26 superseded by 4M) |
 | **7A** | **34-37** | **Server + persistence + remote (daemon, IPC, sessions, SSH, WSL, remote attach, TUI client)** |
 

@@ -328,7 +328,7 @@ impl ClientTransport {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 impl ClientTransport {
     /// Set the next sequence number for testing wraparound behavior.
     pub(super) fn test_set_next_seq(&mut self, val: u32) {
