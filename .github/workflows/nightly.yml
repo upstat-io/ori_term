@@ -1,78 +1,28 @@
-name: Release
+name: Nightly
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
-# Cancel previous runs on the same tag (e.g., if tag is force-pushed)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: nightly
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
-  ORITERM_CHANNEL: release
+  ORITERM_CHANNEL: nightly
+
+permissions:
+  contents: write
 
 jobs:
-  validate:
-    name: Validate Release
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verify tag is on main branch
-        run: |
-          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
-            echo "ERROR: Release tags must be on the main branch."
-            echo ""
-            echo "The tagged commit (${{ github.sha }}) is not on main."
-            echo "Please ensure you're tagging a commit that has been merged to main."
-            exit 1
-          fi
-          echo "Tag is on main branch - OK"
-
-      - name: Extract expected version from tag
-        id: tag_version
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
-          echo "Tag version: $TAG_VERSION"
-
-      - name: Extract Cargo.toml version
-        id: cargo_version
-        run: |
-          CARGO_VERSION=$(sed -n '/\[workspace\.package\]/,/^\[/{ s/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p }' Cargo.toml)
-          echo "cargo_version=$CARGO_VERSION" >> $GITHUB_OUTPUT
-          echo "Cargo.toml version: $CARGO_VERSION"
-
-      - name: Validate tag matches Cargo.toml
-        run: |
-          if [[ "${{ steps.tag_version.outputs.tag_version }}" != "${{ steps.cargo_version.outputs.cargo_version }}" ]]; then
-            echo "ERROR: Tag version (${{ steps.tag_version.outputs.tag_version }}) does not match Cargo.toml version (${{ steps.cargo_version.outputs.cargo_version }})"
-            echo ""
-            echo "To fix:"
-            echo "  1. Delete the tag: git tag -d ${{ github.ref_name }} && git push origin :refs/tags/${{ github.ref_name }}"
-            echo "  2. Update Cargo.toml version to match"
-            echo "  3. Commit, tag, and push again"
-            exit 1
-          fi
-          echo "Version validation passed!"
-
   build-linux:
     name: Build Linux (x86_64)
-    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -80,65 +30,62 @@ jobs:
             pkg-config libx11-dev libxi-dev libxcursor-dev \
             libxrandr-dev libxinerama-dev libwayland-dev \
             libxkbcommon-dev libegl-dev libvulkan-dev
-
       - uses: Swatinem/rust-cache@v2
-
+        with:
+          key: nightly-linux
       - name: Build
         run: cargo build --release
-
       - name: Strip binaries
         run: |
           strip target/release/oriterm
           strip target/release/oriterm-mux
-
       - name: Package
         run: |
-          cd target/release
-          tar -czvf ../../oriterm-${{ github.ref_name }}-linux-x86_64.tar.gz oriterm oriterm-mux
-          cd ../..
-
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          DATE=$(date -u +%Y%m%d)
+          tar -czvf oriterm-nightly-${DATE}-${SHORT_SHA}-linux-x86_64.tar.gz \
+            -C target/release oriterm oriterm-mux
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: oriterm-linux-x86_64
-          path: oriterm-${{ github.ref_name }}-linux-x86_64.tar.gz
+          name: oriterm-nightly-linux-x86_64
+          path: oriterm-nightly-*-linux-x86_64.tar.gz
 
   build-windows:
     name: Build Windows (x86_64)
-    needs: validate
     runs-on: windows-2022
     timeout-minutes: 30
+    # CI builds natively on Windows using MSVC (not the x86_64-pc-windows-gnu
+    # cross-compile target used for local dev). MSVC produces better debuginfo
+    # and avoids MinGW runtime dependencies.
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-
       - uses: Swatinem/rust-cache@v2
-
+        with:
+          key: nightly-windows
       - name: Build
         run: cargo build --release --target x86_64-pc-windows-msvc
-
       - name: Package
+        shell: bash
         run: |
-          cd target/x86_64-pc-windows-msvc/release
-          7z a ../../../oriterm-${{ github.ref_name }}-windows-x86_64.zip oriterm.exe oriterm-mux.exe
-          cd ../../..
-
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          DATE=$(date -u +%Y%m%d)
+          7z a oriterm-nightly-${DATE}-${SHORT_SHA}-windows-x86_64.zip \
+            ./target/x86_64-pc-windows-msvc/release/oriterm.exe \
+            ./target/x86_64-pc-windows-msvc/release/oriterm-mux.exe
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: oriterm-windows-x86_64
-          path: oriterm-${{ github.ref_name }}-windows-x86_64.zip
+          name: oriterm-nightly-windows-x86_64
+          path: oriterm-nightly-*-windows-x86_64.zip
 
   release:
-    name: Create Release
+    name: Publish Nightly
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,17 +98,11 @@ jobs:
       - name: Install Copilot SDK
         run: pip install copilot-sdk
 
-      - name: Download Linux artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: oriterm-linux-x86_64
           path: artifacts
-
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: oriterm-windows-x86_64
-          path: artifacts
+          merge-multiple: true
 
       - name: Generate checksums
         run: |
@@ -169,49 +110,39 @@ jobs:
           sha256sum oriterm-* > checksums-sha256.txt
           cat checksums-sha256.txt
 
-      - name: Determine release type
-        id: release_type
+      - name: Compute release metadata
+        id: meta
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$VERSION" == *"alpha"* ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "name=oriterm $VERSION (Alpha)" >> $GITHUB_OUTPUT
-          elif [[ "$VERSION" == *"beta"* ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "name=oriterm $VERSION (Beta)" >> $GITHUB_OUTPUT
-          elif [[ "$VERSION" == *"rc"* ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "name=oriterm $VERSION (Release Candidate)" >> $GITHUB_OUTPUT
-          else
-            echo "prerelease=false" >> $GITHUB_OUTPUT
-            echo "name=oriterm $VERSION" >> $GITHUB_OUTPUT
-          fi
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          DATE=$(date -u +%Y-%m-%d)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+          echo "name=Nightly ($DATE / $SHORT_SHA)" >> $GITHUB_OUTPUT
 
       - name: Gather release context
         id: commits
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ github.ref_name }}"
-          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" \
-            | grep -v '^nightly$' | grep '^v' | head -1)
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v '^nightly$' \
+            | grep '^v\|^nightly-' | head -1)
 
           if [[ -n "$PREV_TAG" ]]; then
             PREV_DATE=$(git log -1 --format=%aI "$PREV_TAG")
             LOG=$(git log "${PREV_TAG}..HEAD" \
               --pretty=format:"- %s (%h)" --no-merges)
           else
-            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges -50)
+            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
             PREV_DATE=""
           fi
 
           if [[ -n "$PREV_DATE" ]]; then
-            PR_BODIES=$(gh pr list --state merged --base main --limit 50 \
+            PR_BODIES=$(gh pr list --state merged --base main --limit 20 \
               --json number,title,body,mergedAt \
               --jq "[.[] | select(.mergedAt >= \"$PREV_DATE\")] \
                 | .[] | \"## PR #\\(.number): \\(.title)\\n\\(.body // \"(no description)\")\\n\"")
           else
-            PR_BODIES=$(gh pr list --state merged --base main --limit 20 \
+            PR_BODIES=$(gh pr list --state merged --base main --limit 10 \
               --json number,title,body \
               --jq '.[] | "## PR #\(.number): \(.title)\n\(.body // "(no description)")\n"')
           fi
@@ -224,46 +155,32 @@ jobs:
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
         run: |
-          TAG="${{ github.ref_name }}"
-          PREV_TAG="${{ steps.commits.outputs.prev_tag }}"
-
           python3 << 'PYEOF'
-          import asyncio, os, sys
+          import asyncio, sys
           from pathlib import Path
 
-          TAG = os.environ["TAG"]
-          PREV_TAG = os.environ.get("PREV_TAG", "")
           COMMIT_LOG = Path("/tmp/commit-log.txt").read_text()
           PR_BODIES = Path("/tmp/pr-bodies.txt").read_text()
 
-          PROMPT = f"""Write detailed release notes for **oriterm** ({TAG}), a GPU-accelerated terminal emulator in Rust. The audience is developers and terminal enthusiasts.
+          PROMPT = f"""Write brief nightly release notes for **oriterm** (a GPU-accelerated terminal emulator). This is an automated nightly build, not a milestone release.
 
-          Format:
-          Start with a 1-2 sentence summary describing the theme of this release.
+          Format: A short summary paragraph (2-3 sentences) followed by a bulleted list of changes. Group into sections only if there are 5+ changes; otherwise use a flat list. Omit empty sections.
 
-          Then group changes into sections (omit empty ones):
-          - **Features** — new user-facing capabilities
-          - **Bug Fixes** — corrected behavior
-          - **Improvements** — enhancements, performance, error messages
-          - **Internals** — architecture changes, code quality (include for alpha releases — development IS the product at this stage)
-
-          For each bullet:
-          - **Bold title** followed by 1-2 sentences explaining what changed and why
-          - Use past tense ("Added", "Fixed", "Improved")
-          - Reference affected areas (renderer, grid, PTY, key encoding, etc.)
+          Sections (if needed): Features, Bug Fixes, Improvements
 
           Rules:
-          - PR descriptions are your PRIMARY source — they contain summaries of what changed and why
-          - The commit log is supplementary
-          - Every substantive change gets a meaningful description
-          - Skip CI automation PRs
-          - Do not reproduce test plan checklists
+          - PR descriptions are your PRIMARY source
+          - Write from the user's perspective
+          - Past tense ("Added", "Fixed")
+          - Skip CI/docs/chore commits
+          - Keep it concise — this is a nightly, not a milestone
           - Do NOT wrap in markdown fences
+          - If there are very few changes, a 1-2 sentence summary is fine
 
           Pull request descriptions:
           {PR_BODIES}
 
-          Commit log ({PREV_TAG}..{TAG}):
+          Commit log:
           {COMMIT_LOG}"""
 
           async def main():
@@ -325,14 +242,24 @@ jobs:
               Path("/tmp/release-notes.txt").write_text(body.strip())
           PYEOF
 
-      - name: Create Release
+      # softprops/action-gh-release appends assets; delete old ones first.
+      - name: Delete old nightly release assets
+        run: |
+          gh release view nightly --json assets --jq '.assets[].name' 2>/dev/null | while read -r asset; do
+            gh release delete-asset nightly "$asset" --yes
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Update nightly release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ steps.release_type.outputs.name }}
+          tag_name: nightly
+          name: ${{ steps.meta.outputs.name }}
           body_path: /tmp/release-notes.txt
-          files: |
-            artifacts/*
-          prerelease: ${{ steps.release_type.outputs.prerelease }}
-          make_latest: ${{ steps.release_type.outputs.prerelease != 'true' }}
+          files: artifacts/*
+          prerelease: true
+          make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

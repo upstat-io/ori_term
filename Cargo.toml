@@ -2,6 +2,11 @@
 members = ["oriterm_core", "oriterm", "oriterm_ui", "oriterm_ipc", "oriterm_mux"]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.0-alpha.3"
+edition = "2024"
+license = "MIT"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 dead_code = "deny"

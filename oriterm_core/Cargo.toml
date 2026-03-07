@@ -1,9 +1,9 @@
 [package]
 name = "oriterm_core"
-version = "0.1.0-alpha.3"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "Core terminal emulation data structures and logic for oriterm"
-license = "MIT"
+license.workspace = true
 
 [features]
 default = ["image-protocol"]

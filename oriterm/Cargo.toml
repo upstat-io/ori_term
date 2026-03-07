@@ -1,9 +1,9 @@
 [package]
 name = "oriterm"
-version = "0.1.0-alpha.3"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "GPU-accelerated terminal emulator"
-license = "MIT"
+license.workspace = true
 
 [dependencies]
 oriterm_core = { path = "../oriterm_core" }

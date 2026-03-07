@@ -17,7 +17,12 @@ use crate::keybindings::{self, Action, BindingKey, KeyBinding};
 
 /// GPU-accelerated terminal emulator.
 #[derive(Parser)]
-#[command(name = "oriterm", version, about)]
+#[command(
+    name = "oriterm",
+    version = env!("ORITERM_VERSION"),
+    long_version = env!("ORITERM_VERSION"),
+    about
+)]
 pub(crate) struct Cli {
     /// Subcommand to run (omit to launch the terminal).
     #[command(subcommand)]

@@ -1,9 +1,9 @@
 [package]
 name = "oriterm_mux"
-version = "0.1.0-alpha.3"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "Pane server for oriterm: PTY management, pane lifecycle, daemon server, and IPC protocol"
-license = "MIT"
+license.workspace = true
 
 [dependencies]
 bincode = "1.3"

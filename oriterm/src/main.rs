@@ -38,6 +38,7 @@ fn main() {
     }
 
     init_logger();
+    log::info!("oriterm {}", env!("ORITERM_VERSION"));
     install_panic_hook();
 
     if args.new_window {

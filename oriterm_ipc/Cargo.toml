@@ -1,9 +1,9 @@
 [package]
 name = "oriterm_ipc"
-version = "0.1.0-alpha.1"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "Platform-specific IPC abstraction for oriterm daemon mode"
-license = "MIT"
+license.workspace = true
 
 [dependencies]
 log = "0.4"
